@@ -384,12 +384,19 @@ def test_memory_is_off_by_default():
 
 def test_enabling_memory_does_not_change_behaviour_until_it_is_written():
     """Reversibility, per the project's engineering rules: turning a module on must be a
-    no-op until it is actually used."""
+    no-op until it is actually used.
+
+    The two models are given identical trunk weights explicitly rather than by seeding,
+    because constructing the ledger advances the RNG and would otherwise make them differ
+    for a reason that has nothing to do with the property under test.
+    """
     torch.manual_seed(0)
     without = _model_with_memory()
-    torch.manual_seed(0)
     with_memory = _model_with_memory(
         enabled=True, kind="product_key", layers=(2,), memory_dim=32, n_slots=1024
+    )
+    with_memory.load_state_dict(
+        {k: v for k, v in without.state_dict().items()}, strict=False
     )
 
     ids = torch.randint(0, 128, (1, 6))
