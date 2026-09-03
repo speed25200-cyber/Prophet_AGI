@@ -22,9 +22,13 @@ Ce sont des décisions que personne disposant de 200 000 GPU n'a de raison de pr
 C'est exactement là que se trouve l'espace de conception inexploré.
 
 ```
-Qwen3-4B   ≈ 8.6e23 FLOPs d'entraînement
-Prophet    ≈ 2.3e21 FLOPs d'entraînement      →  ~370× moins
+Qwen3-4B      ≈ 8.6e23 FLOPs d'entraînement   (2 200 000 heures-A100)
+SmolLM2-360M  ≈ 8.6e21 FLOPs d'entraînement   (    22 000 heures-A100)
+Prophet       ≈ 1.2e20 FLOPs d'entraînement   (       300 heures-A100)
 ```
+
+Nous sommes **73× sous le plus frugal** des concurrents, et 7 326× sous le plus gros.
+Ces chiffres sont produits par `python -m prophet.scaling`, pas estimés.
 
 Nous ne pouvons pas gagner en échelle. Nous pouvons gagner en **allocation**.
 
@@ -50,21 +54,63 @@ donc un seul modèle qui couvre les trois cibles matérielles.
 | Mac Studio Ultra | 96–512 GB unifiée | ~0.8 TB/s | Prophet (complet, contexte long) |
 | iPhone 17 Pro | ~8 GB unifiée | ~0.06–0.12 TB/s | Prophet-mini (dense, profondeur réduite) |
 
+## Configurations retenues
+
+Produites par `python scripts/design_search.py`, qui énumère l'espace de conception et ne
+retient que ce qui satisfait **simultanément** la mémoire d'entraînement (un A100 80GB),
+le budget de tokens, la mémoire de l'appareil cible et l'absence de mauvaise allocation.
+
+| | Total | Actifs/token | Prof. effective | Tokens | Cible |
+|---|---:|---:|---:|---:|---|
+| **Prophet-main** | 3.79B | 369M | 24 (k=4) | 24.6B | 5090 / Mac Studio |
+| **Prophet-mini** | 229M | 211M | 14 (k=2) | 58.3B | iPhone 17 Pro |
+
+Rapport de sparsité 10.3× : la capacité d'un modèle de 3.8B pour le coût par token d'un
+modèle de 369M.
+
 ## État du projet
 
-> **Phase 0 — Recherche et conception.** Aucun poids entraîné à ce jour.
-> Ce dépôt contient la cartographie des problèmes, les rapports de recherche par
-> verrou, la spécification d'architecture et le plan d'exécution.
+> **Phase 0 — Recherche et conception terminées. Aucun poids entraîné.**
+> Le dépôt contient la recherche, l'architecture arbitrée, le pipeline de données,
+> l'infrastructure d'entraînement et le plan d'exécution. 124 tests passent.
 
 | Document | Contenu |
 |---|---|
 | [`docs/00_PROBLEM_LANDSCAPE.md`](docs/00_PROBLEM_LANDSCAPE.md) | Les 12 verrous attaqués, priorisés — **commencer ici** |
-| [`docs/research/`](docs/research/) | Un rapport de recherche approfondi par verrou (R01–R12) |
-| [`docs/01_ARCHITECTURE.md`](docs/01_ARCHITECTURE.md) | Spécification de l'architecture Prophet |
-| [`docs/02_DATA.md`](docs/02_DATA.md) | Corpus, mélanges et pipeline de données |
-| [`docs/03_TRAINING.md`](docs/03_TRAINING.md) | Recette d'entraînement et budget de compute |
-| [`docs/04_EVAL.md`](docs/04_EVAL.md) | Tableau de bord et protocole d'évaluation |
-| [`docs/05_ROADMAP.md`](docs/05_ROADMAP.md) | Plan d'exécution semaine par semaine |
+| [`docs/research/README.md`](docs/research/README.md) | **Synthèse** des 12 tracks + avertissement de provenance |
+| [`docs/research/`](docs/research/) | Les 12 rapports détaillés (R01–R12, ~7 500 lignes) |
+| [`docs/01_ARCHITECTURE.md`](docs/01_ARCHITECTURE.md) | Architecture et **registre de décisions** |
+| [`docs/02_DATA.md`](docs/02_DATA.md) | Mélange de données (généré depuis la recette) |
+| [`docs/03_TRAINING.md`](docs/03_TRAINING.md) | Recette d'entraînement |
+| [`docs/04_EVAL.md`](docs/04_EVAL.md) | Tableau de bord et protocole |
+| [`docs/05_ROADMAP.md`](docs/05_ROADMAP.md) | Plan sur 11 semaines et arbitrage du budget |
+
+## Outils
+
+Tout est sans dépendance lourde et exécutable immédiatement :
+
+```bash
+python -m prophet.scaling --sweep          # points de fonctionnement par budget
+python -m prophet.budget configs/*.json    # paramètres, mémoire, débit par appareil
+python -m prophet.plan                     # allocation des heures-A100 entre tracks
+python scripts/design_search.py            # recherche de conception sous contraintes
+python scripts/build_data_docs.py          # régénère le mélange de données
+python -m pytest tests/ -q                 # 124 tests
+```
+
+Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant
+qu'elles ne coûtent quoi que ce soit — un budget de tokens surestimé d'un facteur 20, et
+805M de paramètres gaspillés dans des tables de hachage.
+
+## Décision ouverte
+
+Cinq analyses indépendantes concluent que **surpasser la concurrence par
+pré-entraînement de zéro est arithmétiquement exclu** à ce budget. Quatre recommandent la
+conversion d'un donneur ouvert. Le cahier des charges dit « repartir de A à Z », ce qui
+peut se lire comme *architecture de zéro* (compatible) ou *poids de zéro* (incompatible).
+
+Ce point est documenté en [`docs/01_ARCHITECTURE.md`](docs/01_ARCHITECTURE.md) §7 et reste
+ouvert. Tout le reste du projet est commun aux deux voies.
 
 ## Ce que ce projet ne prétend pas faire
 
