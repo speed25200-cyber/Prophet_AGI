@@ -71,8 +71,15 @@ modèle de 369M.
 ## État du projet
 
 > **Phase 0 — Recherche et conception terminées. Aucun poids entraîné.**
-> Le dépôt contient la recherche, l'architecture arbitrée, le pipeline de données,
-> l'infrastructure d'entraînement et le plan d'exécution. 124 tests passent.
+> Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le pipeline de
+> données, l'infrastructure d'entraînement, le harnais d'évaluation et le plan
+> d'exécution. **173 tests passent** et la boucle d'entraînement tourne de bout en bout
+> sur corpus synthétique.
+>
+> Réserve honnête : les identifiants de datasets et le tableau de bord concurrent
+> proviennent de rapports rédigés alors que l'accès au Hub et à arXiv était bloqué par le
+> proxy sortant. Ce sont des **cibles à vérifier**, pas des preuves — c'est la première
+> tâche du plan.
 
 | Document | Contenu |
 |---|---|
@@ -95,7 +102,9 @@ python -m prophet.budget configs/*.json    # paramètres, mémoire, débit par a
 python -m prophet.plan                     # allocation des heures-A100 entre tracks
 python scripts/design_search.py            # recherche de conception sous contraintes
 python scripts/build_data_docs.py          # régénère le mélange de données
-python -m pytest tests/ -q                 # 124 tests
+python scripts/verify_datasets.py          # confronte les identifiants au Hub (semaine 1)
+python scripts/train.py --config configs/prophet_tiny_smoke.json --smoke
+python -m pytest tests/ -q                 # 173 tests
 ```
 
 Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant

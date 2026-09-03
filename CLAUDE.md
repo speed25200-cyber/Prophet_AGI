@@ -35,15 +35,31 @@ Lire `docs/00_PROBLEM_LANDSCAPE.md` avant toute contribution.
 ```
 docs/           Spécifications et rapports de recherche (R01–R12)
 prophet/
-  modeling/     Modules d'architecture
-  data/         Pipeline de données et mélanges
-  train/        Boucles d'entraînement, optimiseurs, schedules
-  eval/         Harnais d'évaluation
-  kernels/      Noyaux Triton/CUDA
-configs/        Configurations d'expériences (YAML)
+  config.py     Schéma de configuration — tout pari est un interrupteur explicite
+  budget.py     Paramètres, mémoire, débit par appareil, alertes d'allocation
+  scaling.py    Points de fonctionnement sous budget d'heures-A100
+  plan.py       Allocation du compute entre les tracks
+  modeling/     Couches, MoE, modèle à profondeur récurrente
+  data/         Tokenizer, mélanges, décontamination, streaming reprenable
+  train/        Muon, planning WSD, checkpointing atomique, boucle
+  eval/         Métriques (BPB) et harnais à trois niveaux
+configs/        Configurations d'expériences (JSON/YAML)
 scripts/        Scripts exécutables (Colab compris)
-tests/          Tests unitaires et de forme
+tests/          173 tests
 ```
+
+## Avant de proposer un changement d'architecture
+
+Passer par les outils, pas par l'intuition :
+
+```bash
+python -m prophet.budget <config.json>   # est-ce que ça tient en mémoire ?
+python scripts/design_search.py          # qu'est-ce qui satisfait toutes les contraintes ?
+python -m prophet.plan                   # d'où vient le compute ?
+```
+
+Ces outils ont déjà corrigé deux erreurs de conception avant qu'elles ne coûtent quoi que
+ce soit. Une proposition sans passage par eux n'est pas recevable.
 
 ## Conventions
 
