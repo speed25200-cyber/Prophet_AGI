@@ -31,7 +31,7 @@ The constraint is brutal and specific:
 |---|---|---|
 | Total training compute | ~300 A100-hours (single Colab A100 80GB, interruptible) | ~8.6e23 FLOPs |
 | Post-training share | 20–40 % → **60–120 A100-hours** | Qwen3-8B on-policy distillation alone: **1,800 GPU-h**; its RL alternative: **17,920 GPU-h** **[V]** |
-| Post-training token budget (derived, §3.1) | **~2.7–5.5 B tokens** | SmolLM3-3B: 140 B mid-training + 8 B SFT tokens **[V]** |
+| Post-training token budget (derived, §3.1) | **~2.5–5.0 B tokens** on Prophet-M v1 | SmolLM3-3B: 140 B mid-training + 8 B SFT tokens **[V]** |
 | GPU count | 1 | 384 H100 (SmolLM3) **[V]** |
 
 So SmolLM3's published recipe — the single best-documented open recipe at our scale — costs roughly
@@ -43,15 +43,27 @@ Five sub-problems, in decreasing order of leverage:
 
 1. **Which open data**, at what licence risk, and in what mixture (§2.1).
 2. **Distillation**: off-policy (cheap, = SFT) vs on-policy logit KD (10× better per GPU-hour at
-   Qwen scale, but needs a resident teacher and a **shared tokenizer** — a hard collision with
-   R01) (§2.2, §3.3, §6.2).
+   Qwen scale, but needs a resident teacher and a **shared vocabulary** — R01's custom 32 k/64 k BPE
+   vs Qwen3's 151,936) (§2.2, §3.3, §6.2).
 3. **Preference optimisation**: worth ~5 A100-hours, or better spent on more SFT? (§2.3, §3.4).
-4. **RLVR on one GPU**: is GRPO physically feasible for a 1.3B-active model? (§3.2 — the answer is
+4. **RLVR on one GPU**: is GRPO physically feasible for a 1.07B-active MoE? (§3.2 — the answer is
    *yes, under a narrow configuration*).
 5. **Capability shaping that is nearly free**: hybrid think/no-think, instruction following, tool
    calling, contamination hygiene (§2.5, §4, §7).
 
-Two Prophet-specific facts change the calculus versus everyone else's recipe, and both are
+**Configuration this report is costed against** (taken from the sibling tracks, 2026-09):
+
+| Artifact | Spec | Source |
+|---|---|---|
+| Prophet-Dense-1.1B (trunk) | d_model 2048, 24 L, d_ff 5632, ~1.1 B dense | R05 §4.3 Phase 1 |
+| **Prophet-M v1** | **5.123 B total / 1.072 B active**, 64 routed experts, top-8, 1 shared | R05 §4.2 |
+| Prophet-M v2 (later) | 9.757 B total / 1.075 B active (expert cloning) | R05 §4.2 |
+| Prophet-mini | **564 M dense**, d_model 1280, 28 L | R05 §4.4 |
+| Tokenizer | custom byte-level BPE, **32,768** (R01) or **64,000** tied (R05) — *the two tracks disagree; R10 only depends on it being ≪ 128 k* | R01 §4.2 / R05 §4.2 |
+| Extra heads | 4-way **multi-token prediction** | R01 §4.1 |
+| Runtime depth dial | **Prophet-Loop** recurrent core, loop count `r` selectable at inference | R04 §4.1 |
+
+Three Prophet-specific facts change the calculus versus everyone else's recipe. Two are
 **advantages** we should exploit deliberately:
 
 - **R02's bounded-state recurrent core makes RL rollouts cheap.** GRPO's dominant cost is
@@ -59,14 +71,18 @@ Two Prophet-specific facts change the calculus versus everyone else's recipe, an
   KV-cache memory. A bounded-state core has *O(1)* state per sequence instead of *O(N)*, so we can
   hold far more concurrent rollouts in the same 80 GB. No one else training a transformer at this
   scale gets this.
-- **R01's small/adaptive vocabulary shrinks the logit tensor.** GRPO, DPO and GKD all compute
-  per-token log-probabilities over the full vocabulary. At 128k vocab and an 8k packed sequence the
-  bf16 logit tensor alone is 8192 × 128000 × 2 = **2.1 GB per micro-batch** before backward
-  intermediates. Prophet's frontend removes most of that.
+- **R01's small vocabulary shrinks the logit tensor.** GRPO, DPO and GKD all compute per-token
+  log-probabilities over the full vocabulary. For an 8,192-position packed micro-batch the bf16
+  logit tensor is **0.54 GB at V=32,768** and **1.05 GB at V=64,000**, against **2.49 GB at Qwen3's
+  V=151,936** (fp32: 1.07 / 2.10 / 4.98 GB). That is 2–5 GB of headroom per micro-batch handed
+  straight to rollout batch size.
 
-And one fact that is a **serious risk**: R05's MoE. Memory scales with *total* parameters, not
-active ones, and at high rollout concurrency essentially every expert is touched per batch, so
-generation throughput degrades toward that of a dense 10B model. The MoE rollout tax is ~5× (§3.2).
+And one fact that is a **serious risk**: R05's MoE. Memory scales with *total* parameters (5.123 B),
+not active ones (1.072 B), and at high rollout concurrency essentially every expert is touched per
+batch, so generation throughput degrades toward that of a **dense 5 B** model. The measured
+consequence is a ~3–4× rollout tax versus the dense trunk (§3.2). A fourth interaction is a
+constraint: **4-way MTP heads** mean every post-training loss must be defined over the main head
+only (or over all heads with a documented weighting) — decide once, in Stage 0, and keep it fixed.
 
 ---
 
@@ -146,7 +162,7 @@ in the project brief), and treat Qwen3.5-4B / Gemma-4-E4B as the *stretch* compa
 in R11 once their numbers are re-verified. Prophet's honest headline claim will be a
 **capability-per-active-parameter and per-training-FLOP** claim, not an absolute SOTA claim.
 
-**Prophet's concrete post-training targets** (thinking mode, own harness, 1.3B active):
+**Prophet's concrete post-training targets** (thinking mode, own harness, Prophet-M v1 = 5.123 B total / 1.072 B active):
 
 | Metric | Floor (must beat) | Target | Rationale |
 |---|---|---|---|
@@ -439,40 +455,46 @@ Achieved training throughput on one A100 80GB (SXM, 2,039 GB/s, 312 TFLOPS bf16 
 FA3** per `CLAUDE.md`), with sequence packing, FlashAttention-2, Liger kernels and gradient
 checkpointing:
 
-| Model | Assumed MFU | Effective TFLOPS | tok/s (6·N FLOPs/tok) | **M tok / A100-h** |
+| Model | Assumed MFU | Effective TFLOPS | tok/s (6·N_active FLOPs/tok) | **M tok / A100-h** |
 |---|---|---|---|---|
-| Prophet core, 1.3 B dense | 0.35 | 109 | 14,000 | **50** |
-| Prophet mini, 450 M dense | 0.29 | 91 | 33,500 | **121** |
-| Prophet MoE, 10 B total / 1.3 B active, LoRA | 0.22 | 69 | 8,800 | **32** |
+| Prophet-Dense-1.1B trunk | 0.35 | 109 | 16,500 | **60** |
+| **Prophet-M v1** (5.123 B total / 1.072 B active) | 0.24 | 75 | 11,600 | **42** |
+| Prophet-mini, 564 M dense | 0.30 | 94 | 27,700 | **100** |
 
 Therefore:
 
-| Post-training budget | Tokens available (1.3 B core) |
-|---|---|
-| 60 A100-h | **~2.7 B tokens** |
-| 90 A100-h | **~4.1 B tokens** |
-| 120 A100-h | **~5.5 B tokens** |
+| Post-training budget | Dense-1.1B trunk | **Prophet-M v1** | mini 564 M |
+|---|---|---|---|
+| 60 A100-h | 3.6 B tok | **2.5 B tok** | 6.0 B tok |
+| 95 A100-h | 5.7 B tok | **4.0 B tok** | 9.5 B tok |
+| 120 A100-h | 7.2 B tok | **5.0 B tok** | 12.0 B tok |
 
 **This is the single most important number in the report.** SmolLM3 spent 148 B post-training tokens.
-We can spend **~4 B** — about **2.7 %**. Every mixture decision below follows from that ratio. In
+We can spend **~4 B tokens on Prophet-M v1** — about **2.7 %**. Every mixture decision below follows from that ratio. In
 particular: a 140 B-token reasoning mid-training is not merely expensive, it is **35× our entire
 post-training budget**. We must get reasoning capability from *fewer, better* tokens
 (OpenThoughts3-quality traces, s1K/LIMO-style curation) and from **on-policy distillation**, which
 Qwen measured at 10× the sample-efficiency of RL **[V]**.
 
-### 3.2 Is GRPO feasible on ONE A100 80GB for a 1.3B-active model? — VERDICT
+### 3.2 Is GRPO feasible on ONE A100 80GB for a 1.07B-active MoE? — VERDICT
 
 **Memory.** Derived (bytes = params × dtype width):
 
 | Configuration | Weights | Grads | Optimiser | Sub-total |
 |---|---|---|---|---|
-| 1.3 B dense, bf16 + fp32 AdamW | 2.6 | 5.2 | 10.4 | **20.8 GB** |
-| 1.3 B dense, pure-bf16 + 8-bit AdamW | 2.6 | 2.6 | 2.6 | **7.8 GB** |
-| 1.3 B dense, LoRA r=32 (≈0.8 % trainable) | 2.6 | 0.02 | 0.13 | **2.7 GB** |
-| **10 B-total MoE, bf16 + fp32 AdamW** | 20.0 | 40.0 | 80.0 | **160 GB — IMPOSSIBLE** |
-| 10 B-total MoE, pure-bf16 + 8-bit AdamW | 20.0 | 20.0 | 20.0 | **60 GB — leaves ~15 GB, fragile** |
-| **10 B-total MoE, LoRA r=32 on frozen bf16 base** | 20.0 | 0.16 | 1.0 | **21.1 GB — comfortable** |
-| 10 B-total MoE, LoRA on NF4 4-bit base | 5.6 | 0.16 | 1.0 | **6.8 GB** |
+| Dense-1.1B trunk, bf16 + fp32 AdamW | 2.2 | 4.4 | 8.8 | **15.4 GB** |
+| Dense-1.1B trunk, pure-bf16 + 8-bit AdamW | 2.2 | 2.2 | 2.2 | **6.6 GB** |
+| mini 564 M, bf16 + fp32 AdamW | 1.1 | 2.3 | 4.5 | **7.9 GB** |
+| **Prophet-M v1 (5.123 B), bf16 + fp32 AdamW** | 10.2 | 20.5 | 41.0 | **71.7 GB — leaves ~8 GB: NO** |
+| **Prophet-M v1, pure-bf16 + 8-bit AdamW** | 10.2 | 10.2 | 10.2 | **30.7 GB — FITS** |
+| **Prophet-M v1, LoRA r=32 on frozen bf16 base** | 10.2 | 0.08 | 0.5 | **10.8 GB — comfortable** |
+| Prophet-M v2 (9.757 B), pure-bf16 + 8-bit AdamW | 19.5 | 19.5 | 19.5 | **58.5 GB — fragile** |
+| Prophet-M v2, LoRA r=32 | 19.5 | 0.16 | 1.0 | **20.7 GB** |
+
+*(This is a material improvement over a hypothetical 10 B-total v1: at 5.123 B, **full-parameter**
+post-training of the MoE is feasible with an 8-bit optimiser — R05's decision to size v1 at 5.1 B
+rather than 10 B is what makes R10's recipe possible on one GPU. Do not grow to v2 before
+post-training is done.)*
 
 On top of that, GRPO needs:
 
@@ -481,51 +503,71 @@ On top of that, GRPO needs:
 - **Colocated vLLM engine**: a second weight copy (2.6 GB dense / 20 GB MoE bf16 / 5.6 GB NF4) plus
   KV cache. Budget via `vllm_gpu_memory_utilization`; TRL recommends 0.3–0.4 for large N **[V]**, and
   `vllm_enable_sleep_mode=True` offloads vLLM params during the optimiser step **[V]**.
-- **Logit tensor**: `packed_len × vocab × 2 bytes` per micro-batch, ×2–3 for backward. At 8 k × 128 k
-  vocab that is 2.1 GB → 4–6 GB. **R01's small vocabulary is a direct RL enabler.**
+- **Logit tensor**: `packed_len × vocab × 2 bytes` per micro-batch, ×2–3 for backward. At 8,192
+  positions: **0.54 GB (V=32,768)** / **1.05 GB (V=64,000)** / 2.49 GB (V=151,936). **R01's small
+  vocabulary is a direct RL enabler** — and with 4-way MTP, budget the main head only unless the
+  auxiliary heads are deliberately included in the RL loss.
 
 **Verdict on memory: FEASIBLE.**
-- 1.3 B dense core, full-parameter GRPO: ≈ 20.8 (train) + ~24 (vLLM at util 0.3) + ~10 (activations
-  + logits) ≈ **55 GB of 80 GB**. Comfortable.
-- 10 B-total MoE: **only with LoRA** (and preferably a 4-bit base). Full-parameter MoE RL on one A100
-  is arithmetically impossible.
+- Dense-1.1B trunk, full-parameter GRPO: ~15.4 (train) + ~20 (vLLM at util 0.25) + ~8 (activations
+  + logits at V<=64k) = **~44 GB of 80 GB**. Comfortable.
+- **Prophet-M v1 (5.123 B), full-parameter GRPO with 8-bit AdamW**: 30.7 (train) + 10.2 (vLLM weight
+  copy) + ~14 (KV + activations) = **~55 GB**. Feasible, but with no margin for a bad batch - prefer
+  **LoRA r=32 (10.8 GB train)** for the RL stages and keep full-parameter for the SFT stages.
+- Prophet-M **v2** (9.757 B): **LoRA only.**
 
 **Time.** Generation dominates. Anchor: vLLM on one H100 80GB bf16 gives ~6,300 output tok/s
 aggregate for a 7B and ~1,200 tok/s for a 32B **[V]**. Bandwidth-scaling to A100 (×0.61) and
-parameter-scaling gives ~10,000 tok/s for a 1.3 B dense (planning figure; realistic range
-5,000–15,000). For the MoE, at high rollout concurrency essentially all experts are read per batch,
-so throughput tracks a dense **10 B** model → ~2,700 tok/s bandwidth-bound, derated to **~2,000
-tok/s** for Ampere MoE kernels: **a ~5× rollout tax**.
+parameter-scaling gives **~11,000 tok/s** for the 1.1 B dense trunk (planning figure; realistic range
+6,000–16,000). For **Prophet-M v1**, at high rollout concurrency essentially all 64 routed experts
+are read per batch, so throughput tracks a **dense 5.1 B** model → ~5,300 tok/s bandwidth-bound,
+derated for Ampere MoE kernels (no Hopper grouped-GEMM path) to **3,000–4,000 tok/s**: **a ~3× rollout
+tax versus the trunk**. R02's bounded-state core removes the KV-cache ceiling on concurrency, so this
+tax is expert-bandwidth-bound rather than memory-bound — which is the better of the two failure modes,
+because it improves with better kernels (R07) rather than requiring more VRAM.
 
-Derived GRPO step time (1.3 B dense core, `P` prompts × `G` samples × `L` completion tokens,
-prompt 512 tok, vLLM logprobs reused so no separate old-policy pass):
+Derived GRPO step time at `P = 32` prompts × `G = 8` samples × `L` completion tokens (prompt 512 tok;
+vLLM logprobs reused, so no separate old-policy forward pass):
 
-| P | G | L | Tokens/step | Generation | Train pass | **Step** | steps/h | **300 steps** |
-|---|---|---|---|---|---|---|---|---|
-| 32 | 8 | 1,024 | 0.26 M | 26 s | 28 s | **0.9 min** | 66 | **4.5 h** |
-| 32 | 8 | 2,048 | 0.52 M | 52 s | 47 s | **1.7 min** | 36 | **8.3 h** |
-| **32** | **8** | **4,096** | **1.05 M** | 105 s | 84 s | **3.2 min** | 19 | **15.8 h** |
-| 64 | 8 | 4,096 | 2.10 M | 210 s | 169 s | 6.3 min | 9.5 | 31.5 h |
-| 64 | 16 | 8,192 | 8.39 M | 839 s | 637 s | 24.6 min | 2.4 | **123 h** |
+**Dense-1.1B trunk** (generation ≈ 11,000 tok/s):
 
-Same for the MoE with LoRA at 2,000 tok/s: `32×8×2048` → 5.6 min/step → **28 h / 300 steps**;
-`32×8×4096` → 11.0 min/step → **55 h / 300 steps**.
+| L | Tokens/step | **Step** | **300 steps** |
+|---|---|---|---|
+| 1,024 | 0.26 M | **0.8 min** | **4.0 h** |
+| 2,048 | 0.52 M | **1.5 min** | **7.3 h** |
+| **4,096** | **1.05 M** | **2.8 min** | **13.9 h** |
+
+**Prophet-M v1** (5.123 B resident → generation ≈ 3,000–4,000 tok/s):
+
+| L | gen @3k | gen @4k | **Step (3k / 4k)** | **300 steps (3k / 4k)** |
+|---|---|---|---|---|
+| 1,024 | 87 s | 66 s | **2.0 / 1.7 min** | **10.1 / 8.3 h** |
+| **2,048** | 175 s | 131 s | **3.9 / 3.1 min** | **19.3 / 15.6 h** |
+| 4,096 | 350 s | 262 s | **7.5 / 6.1 min** | **37.6 / 30.3 h** |
+
+Scaling the last row: `P=64, G=16, L=8192` on Prophet-M v1 is **~8× that** → **240–300 A100-hours per
+300 steps**, i.e. the entire project budget for one RL run.
 
 **VERDICT: GRPO on one A100 80GB is FEASIBLE — but only inside a narrow box.**
 
-> **Feasible:** dense ~1.3 B policy · `max_completion_length ≤ 4096` · `G = 8` ·
+> **Feasible:** Prophet-M v1 (1.072 B active) · `max_completion_length ≤ 2048` · `G = 8` ·
 > `≤ 32 prompts/step` · `beta = 0` (no reference model) · `loss_type = dr_grpo` or `dapo` ·
-> vLLM colocate + sleep mode · **≈ 16 A100-hours per 300 steps**.
+> LoRA r=32 · vLLM colocate + sleep mode · **≈ 16–19 A100-hours per 300 steps**.
+> On the Dense-1.1B trunk the same configuration costs **7 h**, and `L = 4096` costs **14 h**.
 >
-> **Infeasible:** long-CoT RL (8 k–32 k completions) at **123 A100-hours per 300 steps** — that is our
-> *entire* post-training budget for one run. Full-parameter RL on the 10 B-total MoE (160 GB of
-> optimiser state). Any critic-based method (VAPO/PPO) — the value net doubles training memory **[V]**.
+> **Infeasible:** long-CoT RL (8 k–32 k completions) at **240–300 A100-hours per 300 steps** — the
+> entire project budget for one run. Prophet-M **v2** (9.757 B) with a full-parameter optimiser.
+> Any critic-based method (VAPO/PPO) — the value net doubles training memory **[V]**.
+>
+> **Direct consequence for the ordering of the program:** the dense trunk is **2.4× cheaper per RL
+> step** than Prophet-M v1. Every RL *ablation* (§7 A5–A7, A9) should be run on the trunk or the
+> mini, and only the final, chosen configuration re-run on the MoE.
 
 **Cross-checks against published runs:**
 
-| Reference | What | Cost | Scaled to 1.3 B |
+| Reference | What | Cost | Scaled to ~1.1 B |
 |---|---|---|---|
-| Dr.GRPO / Oat-Zero **[V]** | Qwen2.5-Math-7B R1-Zero recipe | **27 h × 8 A100 = 216 A100-h** | ÷5.4 params → **~40 A100-h** |
+| Dr.GRPO / Oat-Zero **[V]** | Qwen2.5-Math-7B R1-Zero recipe | **27 h × 8 A100 = 216 A100-h** | ÷6.5 params → **~33 A100-h** |
 | Tina **[V]** | LoRA RL on R1-Distill-Qwen-1.5B → **43.33 AIME'24** | **$9** best run; **$526** for *all* experiments | already at our scale |
 | DeepScaleR-1.5B **[V]** | full GRPO, 8K→16K→24K schedule → 43.1 AIME'24 | thousands of A100-h **[U]** | **10× our whole budget** |
 | Qwen3 Reasoning RL **[V]** | only **3,995 query-verifier pairs**; **170 steps** took Qwen3-235B AIME'24 **70.1 → 85.1** | — | **RLVR needs very few prompts, not many** |
@@ -536,17 +578,17 @@ steps.** Our 300-step / 16-hour box is not a crippled version of the real thing 
 
 ### 3.3 Distillation: what fits
 
-| Variant | Derived cost (1.3 B student) | Fits? |
+| Variant | Derived cost (Prophet-M v1 student) | Fits? |
 |---|---|---|
 | **Off-policy / sequence-KD** (SFT on someone else's teacher traces) | = SFT: **50 M tok / A100-h** | **Yes — this is the backbone.** Teacher inference is free because OpenThoughts/Nemotron already paid for it |
-| **On-policy GKD**, teacher = 4 B bf16, 200 M student tokens | generation 5.6 h + student bwd 4.0 h + teacher fwd 4.1 h = **~14 h** | **Yes**, for ~200 M tokens |
-| On-policy GKD, teacher = 8 B bf16, 200 M tokens | 5.6 + 4.0 + 8.1 = **~18 h** | Yes, but the teacher costs more than the student |
+| **On-policy GKD**, teacher = Qwen3-4B (NF4), 150 M student tokens | generation 11.9 h (@3.5 k tok/s) + student bwd 3.6 h + teacher fwd ~3 h = **~18 h** | **Yes**, for ~150 M tokens |
+| On-policy GKD, teacher = Qwen3-8B (NF4), 150 M tokens | 11.9 + 3.6 + ~6 = **~22 h** | Yes, but the teacher forward costs more than the student backward |
 | On-policy GKD, teacher = 32 B | 32 B bf16 = 64 GB alone | **No.** Only via NF4 (≈18 GB) at heavy throughput cost, or offline top-K logits |
-| Offline top-K teacher logits on disk | top-8 over 500 M tokens ≈ **24 GB**; top-64 over 1 B tokens ≈ **384 GB** | top-8/top-16 caching is viable; full-vocab caching is not |
+| Offline top-K teacher logits on disk | top-8 over 500 M tokens ≈ **24 GB**; top-64 over 1 B tokens ≈ **384 GB** | top-8/top-16 caching is viable; full-vocab caching is not. Note this only helps *after* the cross-vocabulary problem is solved (§6.2) |
 
 **Teacher-size choice must be ablated, not assumed** — the distillation scaling law predicts a
 **capacity gap** where a stronger teacher yields a *worse* student **[U, 2502.08606]**. Prophet's
-student is ~1.3 B active; the safe teacher band is likely **4–8 B**, not 32 B.
+student is ~1.07 B active; the safe teacher band is likely **4–8 B**, not 32 B.
 
 ### 3.4 Preference optimisation: is it worth the compute?
 
@@ -596,17 +638,20 @@ preference stage; keep it to one epoch; keep max_length ≤ 8 k.**
    insurance we have.
 4. **Licence-clean by construction.** Teachers: Apache-2.0 or MIT only (§6.1). No Gemma-derived data
    in any released artifact, ever.
-5. **Post-train the DENSE core, then port to the MoE with LoRA.** Full-parameter post-training of the
-   MoE is arithmetically out (§3.2). This also matches R05's "Phase 2 (upcycling)" sequencing.
+5. **Prototype on the dense trunk, ship on the MoE.** R05 upcycles to MoE *during* pre-training
+   (Phase 2 of 4), so post-training operates on **Prophet-M v1**, not on a dense model. That is
+   affordable at 5.123 B (§3.2) — but every RL *ablation* costs 2.4× more there than on the
+   Dense-1.1B trunk that Phase 1 already produces. **Run ablations on the trunk (or the 564 M mini),
+   run the final recipe on Prophet-M v1, and do not grow to v2 until post-training is finished.**
 
 ### 4.1 The recipe
 
-All token counts are for the **1.3 B dense Prophet core**. `[MINI]` marks the reduced pass for the
-450M model (≈ 0.42× the hours at the same token counts, per §3.1).
+All token counts are for **Prophet-M v1** (5.123 B total / 1.072 B active, **42 M tok / A100-h**).
+On the Dense-1.1B trunk the same token counts cost **0.70×**; on the 564 M mini, **0.42×** (§3.1).
 
 ---
 
-#### **Stage 0 — Reasoning mid-training (off-policy sequence-KD).** 1.0 B tokens · **20 A100-h**
+#### **Stage 0 — Reasoning mid-training (off-policy sequence-KD).** 0.85 B tokens · **20 A100-h**
 
 *Goal: install long-CoT structure before any chat formatting exists. This is SmolLM3's mid-training,
 compressed 140× — so curation quality replaces volume.*
@@ -623,12 +668,12 @@ compressed 140× — so curation quality replaces volume.*
 - `max_length` 16384 (not 32768 — halves activation memory, and R02's bounded-state core changes the
   long-context calculus anyway; revisit after R02 lands).
 - lr **2e-5**, cosine-with-min-lr 0.1, warmup 0.03, `max_grad_norm 0.2`, Liger, bf16, 8-bit AdamW.
-- 2 epochs over ~500 M unique tokens.
+- 2 epochs over ~425 M unique tokens (0.85 B total).
 - **Gate**: MATH-500 ≥ 60 and a stable `<think>…</think>` structure, else stop and re-curate.
 
 ---
 
-#### **Stage 1 — Dual-mode SFT (think / no_think).** 1.0 B tokens · **20 A100-h**
+#### **Stage 1 — Dual-mode SFT (think / no_think).** 0.85 B tokens · **20 A100-h**
 
 *Goal: chat, tools, instruction following, and the mode switch. Copy smoltalk2's structure exactly.*
 
@@ -663,7 +708,7 @@ metadata block (knowledge cutoff / date / reasoning mode), **separate `### XML T
 
 ---
 
-#### **Stage 2 — On-policy distillation (GKD).** ~200 M student tokens · **18 A100-h**
+#### **Stage 2 — On-policy distillation (GKD).** ~150 M student tokens · **18 A100-h**
 
 *The highest-leverage stage in the pipeline (Qwen3 Table 21). Only run it if §6.2's tokenizer
 condition is met.*
@@ -703,13 +748,14 @@ condition is met.*
 
 ---
 
-#### **Stage 4 — RLVR (Dr.GRPO / DAPO).** ~350 steps · **20 A100-h**
+#### **Stage 4 — RLVR (Dr.GRPO / DAPO).** ~350 steps · **20 A100-h**  *(LoRA r=32)*
 
 Two sub-runs from the same Stage-3 checkpoint, merged afterwards (this parallelises the *risk*, not
 the compute):
 
-**4a — Reasoning RLVR (~200 steps, 11 A100-h).**
-- Config: `P = 32`, `G = 8`, `max_completion_length = 4096`, `max_prompt_length = 512`.
+**4a — Reasoning RLVR (~180 steps, 11.5 A100-h).**
+- Config: `P = 32`, `G = 8`, **`max_completion_length = 2048`** (4096 would cost 37 h — see §3.2),
+  `max_prompt_length = 512`, **LoRA r=32** on all linears incl. router (10.8 GB, §3.2).
 - `loss_type: dr_grpo` (removes length and difficulty bias **[V]**), `beta: 0.0` (no reference
   model), `epsilon_low: 0.2`, `epsilon_high: 0.28` (DAPO clip-higher **[V]**),
   `scale_rewards: false`, **dynamic sampling** (drop groups with accuracy 0 or 1 **[V]**),
@@ -723,8 +769,9 @@ the compute):
 - Rewards: exact-match on boxed answers (math); sandboxed unit tests (code), **executed
   out-of-process with a hard timeout**.
 
-**4b — General RLVR: IF + tools + format (~150 steps, 9 A100-h).**
-- Config: `P = 32`, `G = 8`, `max_completion_length = 1024` → **0.9 min/step** (§3.2). This is the
+**4b — General RLVR: IF + tools + format (~250 steps, 8.5 A100-h).**
+- Config: `P = 32`, `G = 8`, `max_completion_length = 1024` → **~2.0 min/step** on Prophet-M v1
+  (0.8 min on the trunk, §3.2). This is the
   cheapest stage in the entire pipeline and, per Qwen3 Table 22, the one that moves IFEval (+6.6),
   Multi-IF (+8.4), ToolUse (+15.1) and ThinkFollow (→98.9) **[V]**.
 - Prompts: `allenai/RLVR-IFeval` + IF half of `allenai/RLVR-GSM-MATH-IF-Mixed-Constraints` +
@@ -735,10 +782,13 @@ the compute):
   3. **Mode-following**: response respects the `/think` vs `/no_think` flag and emits well-formed
      `<think>` blocks (Qwen3's "ThinkFollow" **[V]**);
   4. Tool-call schema validity + parameter correctness against the declared signature;
-  5. **Prophet-specific — compute penalty**: `reward ← reward − λ·(tokens_emitted/L_max) − μ·(k/k_max)`
-     where `k` is R04's recurrent-loop depth. **This directly trains the model to solve problems at
-     the lowest inference cost that still works**, which is the project thesis expressed as a reward
-     function. Start λ = μ = 0.05 and ablate (§7 A9).
+  5. **Prophet-specific — compute penalty**: `reward ← reward − λ·(tokens_emitted/L_max) − μ·(r/r_max)`
+     where `r` is **Prophet-Loop's** recurrent loop count (R04 §4.1), sampled per rollout. **This
+     directly trains the model to solve problems at the lowest inference cost that still works** —
+     the project thesis expressed as a reward function — and it is the natural RL analogue of Qwen3's
+     emergent "thinking budget" **[V]**. It also supplies the *training signal* R04's ponder head
+     needs in order for a low `r` to be a safe runtime choice on an iPhone. Start λ = μ = 0.05 and
+     ablate (§7 A9).
 
 ---
 
@@ -752,34 +802,37 @@ the compute):
 
 ---
 
-#### **Stage 6 — MoE port (only if R05 upcycling ships).** **~15 A100-h**
+#### **Stage 6 — v2 expert-cloning port (conditional, only after v1 ships).** **~15 A100-h**
 
-- Upcycle the merged dense checkpoint → 10 B-total / 1.3 B-active MoE.
-- **LoRA-only** re-tuning (§3.2): r = 32 on all linear layers incl. experts and router, frozen bf16
-  base (21 GB).
-- 150 M tokens of the Stage-1 mixture (re-balancing the router) + 100 GRPO steps at
-  `L = 2048` (≈ 9 h at the MoE's 2,000 tok/s).
-- **Use GSPO, not GRPO** — sequence-level importance ratios were designed precisely to stabilise MoE
-  RL **[U, 2507.18071]**, and the failure mode it addresses (router disagreement between the
-  inference and training stacks) is real and documented (§6.7).
+R05's growth path clones every routed expert (E: 64 → 128, r ≈ 0.5 Drop-Upcycling re-init) giving
+9.757 B total at unchanged active count. Post-training does **not** transfer for free across that
+surgery: the router distribution changes.
+
+- **LoRA-only** re-tuning (§3.2): r = 32 on all linears incl. experts and router, frozen bf16 base
+  (20.7 GB).
+- 150 M tokens of the Stage-1 mixture (router re-balancing) + 100 RLVR steps at `L = 1024`.
+- **Use GSPO, not GRPO.** Sequence-level importance ratios were designed to stabilise MoE RL
+  **[U, `2507.18071`]**, and the failure mode they address — router disagreement between the
+  inference and training stacks — is documented and unmitigated in every open library (§6.7).
+  It is already mainstream tooling (Unsloth ships a GSPO notebook **[V]**).
 
 ---
 
 ### 4.2 Ordered summary
 
-| # | Stage | Algorithm | Tokens / steps | **A100-h** |
+| # | Stage | Algorithm | Tokens / steps | **A100-h (Prophet-M v1)** |
 |---|---|---|---|---|
-| 0 | Reasoning mid-training | seq-KD (SFT) | 1.0 B tok | **20** |
-| 1 | Dual-mode SFT | SFT, assistant-only loss | 1.0 B tok | **20** |
-| 2 | On-policy distillation | GKD (JSD, λ=0.75) | 200 M student tok | **18** |
+| 0 | Reasoning mid-training | seq-KD (SFT), full-param 8-bit AdamW | 0.85 B tok | **20** |
+| 1 | Dual-mode SFT | SFT, assistant-only loss | 0.85 B tok | **20** |
+| 2 | On-policy distillation | GKD (JSD, λ=0.75), teacher Qwen3-4B | 150 M student tok | **18** |
 | 3 | Preference alignment | **APO-zero**, β=0.05 | 60 k pairs | **5** |
-| 4a | Reasoning RLVR | **Dr.GRPO + clip-higher + dyn. sampling** | 200 steps × (32×8×4096) | **11** |
-| 4b | IF / tool / format RLVR | same, L=1024 | 150 steps × (32×8×1024) | **9** |
-| 5 | Merge + eval | MergeKit linear | — | **2** |
+| 4a | Reasoning RLVR | **Dr.GRPO + clip-higher + dyn. sampling**, LoRA r=32 | 180 steps × (32×8×2048) | **11.5** |
+| 4b | IF / tool / format RLVR | same, L=1024, LoRA r=32 | 250 steps × (32×8×1024) | **8.5** |
+| 5 | Merge + eval | MergeKit linear soup + 0.9/0.1 anchor | — | **2** |
 | — | Reserve (Colab preemption, restarts) | — | — | **10** |
-| | **TOTAL (main core)** | | **~2.2 B tok + 350 RL steps** | **95** |
-| 6 | MoE port (conditional) | LoRA SFT + **GSPO** | 150 M tok + 100 steps | **+15** |
-| M | Mini 450M full pass | same recipe, 0.42× | | **+40** |
+| | **TOTAL (Prophet-M v1)** | | **~1.85 B tok + 430 RL steps** | **95** |
+| 6 | v2 expert-cloning port (conditional) | LoRA SFT + **GSPO** | 150 M tok + 100 steps | **+15** |
+| M | Prophet-mini 564 M full pass | same recipe at 0.42× | ~1.85 B tok | **+40** |
 
 ---
 
@@ -787,27 +840,43 @@ the compute):
 
 Assumes a 300 A100-hour project total (`docs/00_PROBLEM_LANDSCAPE.md` uses "~300 A100-heures").
 
-| Stage | Hours | % of post-training | % of project | Derivation |
+| Stage | Hours | % of post-training | % of project | Derivation (Prophet-M v1 @ 42 M tok/h) |
 |---|---:|---:|---:|---|
-| S0 Reasoning mid-training | 20 | 21 % | 6.7 % | 1.0 B tok ÷ 50 M tok/h |
-| S1 Dual-mode SFT | 20 | 21 % | 6.7 % | 1.0 B tok ÷ 50 M tok/h |
-| S2 On-policy distillation (GKD) | 18 | 19 % | 6.0 % | gen 5.6 h + student bwd 4.0 h + teacher-4B fwd 4.1 h + overhead |
-| S3 APO preference | 5 | 5 % | 1.7 % | 3.6 h policy + 1.2 h ref precompute |
-| S4a Reasoning RLVR | 11 | 12 % | 3.7 % | 200 × 3.15 min |
-| S4b IF/tool RLVR | 9 | 9 % | 3.0 % | 150 × 0.91 min + verifier overhead |
-| S5 Merge + full eval sweep | 2 | 2 % | 0.7 % | inference only |
+| S0 Reasoning mid-training | 20 | 21 % | 6.7 % | 0.85 B tok ÷ 42 M tok/h |
+| S1 Dual-mode SFT | 20 | 21 % | 6.7 % | 0.85 B tok ÷ 42 M tok/h |
+| S2 On-policy distillation (GKD) | 18 | 19 % | 6.0 % | gen 150 M tok @3.5 k tok/s = 11.9 h + student bwd 3.6 h + teacher-4B fwd ~3 h (NF4) |
+| S3 APO preference | 5 | 5 % | 1.7 % | 3.6 h policy + 1.2 h ref precompute (180 M tok) |
+| S4a Reasoning RLVR | 11.5 | 12 % | 3.8 % | 180 × 3.85 min (L=2048, gen 3 k tok/s) |
+| S4b IF/tool RLVR | 8.5 | 9 % | 2.8 % | 250 × 2.02 min (L=1024) |
+| S5 Merge + full eval sweep | 2 | 2 % | 0.7 % | inference only (merge itself is CPU) |
 | Reserve | 10 | 11 % | 3.3 % | Colab preemption ≈ 10 % |
 | **Post-training subtotal** | **95** | **100 %** | **32 %** | within the 20–40 % mandate |
-| S6 MoE port (conditional) | +15 | — | +5 % | LoRA, GSPO |
-| Mini 450M pass (conditional) | +40 | — | +13 % | 0.42× throughput advantage |
+| S6 v2 expert-cloning port (cond.) | +15 | — | +5 % | LoRA, GSPO |
+| Prophet-mini 564 M pass (cond.) | +40 | — | +13 % | 0.42× cost at the same token counts |
+
+**BUDGET COLLISION — needs a program-level decision.** R05 §4.3 allocates **all 300 hours** to
+pre-training (Phase 0 ablations 30 h + Phase 1 dense trunk 90 h + Phase 2 upcycle 5 h + Phase 3 MoE
+main 150 h + Phase 4 anneal/distil 25 h = 300 h), leaving **zero** for R10. R10 needs **95 h**.
+Three ways out, in order of preference:
+
+1. **Absorb R10's Stage 0 into R05's Phase 4** (which already reserves 25 h for "instruction data,
+   LR→0, optional logit distillation from a 4–8 B teacher" — that *is* reasoning mid-training under
+   another name). Net saving ≈ 20 h; R10 then needs **75 h**.
+2. **Cut R05 Phase 3 from 150 h to 95 h** (5.1 B → ~3.2 B MoE tokens). Justified by the asymmetry
+   this report documents: the base→instruct delta at this scale is larger than the delta from 60 %
+   more pre-training tokens (§1). This is the recommendation.
+3. **Raise the program total to ~375 h.** Only if a second compute tranche actually appears.
+
+Whichever is chosen, the split must be agreed **before** Phase 1 starts, because Phase 1's
+deliverable (Prophet-Dense-1.1B) is also R10's ablation platform (§7).
 
 **Compressed 60-hour variant** (if pre-training overruns): drop S2 entirely (−18 h), halve S0
-(−10 h), keep S1/S3/S4b in full, cut S4a to 100 steps (−5.5 h) → **~61 h**. Expected cost: most of
+(−10 h), keep S1/S3/S4b in full, cut S4a to 90 steps (−5.7 h) → **~61 h**. Expected cost: most of
 the AIME/MATH headroom, little of the IFEval/BFCL/Arena-Hard headroom. **Protect S1, S3 and S4b —
 they are the cheap benchmark points.**
 
 **Stretch 140-hour variant**: add a second GKD round after S4 (teacher re-scores post-RL rollouts,
-+18 h), 300 more RLVR steps at `L=2048` (+8 h), a full mini pass (+40 h).
++18 h), 200 more RLVR steps at `L=2048` (+13 h), a full Prophet-mini pass (+40 h).
 
 **Wall-clock reality check.** 95 A100-hours on interruptible Colab sessions (~12 h max) ≈ **10–14
 sessions**, assuming ~85 % effective utilisation. Every stage must therefore be resumable
@@ -852,21 +921,37 @@ checkpoint the rollout buffer and the vLLM engine state.
    and the split-level filter applied. CC-BY and ODC-BY both carry attribution obligations that must
    appear in the released model card.
 
-### 6.2 Tokenizer mismatch blocks logit-level distillation — **cross-track blocker with R01**
+### 6.2 Vocabulary mismatch blocks logit-level distillation — **cross-track issue with R01**
 
-Top-K logit / GKD distillation requires the teacher and student to share a vocabulary. R01 proposes
-an entropy-patched byte-level frontend — **structurally incompatible** with Qwen3's BPE.
+Top-K logit / GKD distillation requires the teacher and student to share a vocabulary.
+
+**Good news from R01's decision.** R01 §4.1 chose **Prophet-Tok v1, a purpose-built byte-level BPE**
+— *not* a tokenizer-free byte model. So the tooling problem disappears: `lm-eval-harness`, vLLM,
+MLX and CoreML all work with a normal BPE, and R01 explicitly lists "logit-level distillation
+main → mini" and "mini-as-draft speculative decoding" as reasons for keeping **one shared vocabulary
+across the Prophet family**. **Intra-family distillation (Prophet-M → Prophet-mini) is therefore
+native, exact and free of any alignment approximation.** That is a genuinely valuable asset: it makes
+the 564 M mini a *distillation* target rather than a from-scratch training target.
+
+**Bad news.** Prophet-Tok v1 is a **custom 32,768-entry** (R01) / **64,000-entry** (R05) vocabulary,
+and Qwen3's is **151,936**. Cross-*family* logit distillation — the Stage-2 lever worth 10× RL per
+GPU-hour **[V]** — still requires vocabulary alignment.
+
+*(Note also the unresolved 32,768-vs-64,000 disagreement between R01 §4.2 and R05 §4.2. R10 does not
+depend on which wins — both are ≪ 128 k and both make the logit tensor cheap — but it must be
+resolved before any tokenizer-coupled artifact is built.)*
 
 | Mitigation | Cost | Verdict |
 |---|---|---|
-| Keep a Qwen3-compatible BPE variant for the distillation stage only | maintains two tokenizers, poisons R01's thesis | Undesirable |
-| **Cross-tokenizer KD** (ULD `2402.12030`, approximate likelihood matching `2503.20083`) **[U]** | research risk, unproven at 1.3 B | Ablate early (§7 A2b) |
-| **Sequence-level KD only** (train on teacher *text*) | zero — text is tokenizer-agnostic | **Always available.** This is why S0/S1 are the backbone |
-| **Rejection-sampling self-distillation (RFT/STaR)** | no teacher at all | **The designated S2 fallback** |
+| **Sequence-level KD** (train on teacher *text*) | zero — text is tokenizer-agnostic | **Always available. This is why S0/S1 are the backbone and why the recipe is robust to this risk.** |
+| **Cross-tokenizer KD** (ULD `2402.12030`; approximated likelihood matching `2503.20083`) **[U]** | research risk, unproven at ~1 B | Ablate before committing S2 (§7 A2b) |
+| **Rejection-sampling self-distillation (RFT/STaR)** | no teacher at all, no shared vocab needed | **The designated S2 fallback** |
+| **Prophet-M → Prophet-mini logit KD** | native (shared vocab, R01) | **Adopt unconditionally** for the mini |
+| Keep a Qwen3-vocabulary variant just for S2 | two tokenizers, forfeits R01's thesis | Rejected |
 
-**Action for R01/R10 coordination: decide the tokenizer question before Stage 2 is budgeted.** If R01
-ships byte patches, delete Stage 2's GKD variant from the plan and reallocate its 18 hours to
-rejection-sampling self-distillation plus more RLVR steps. Flag this to the R01 track now.
+**Action for R01/R05/R10 coordination:** (a) settle 32 k vs 64 k; (b) run §7 A2b before Stage 2 is
+budgeted. If cross-tokenizer KD fails its gate, delete Stage 2's GKD variant and reallocate its 18
+hours to rejection-sampling self-distillation plus ~120 more RLVR steps at `L=1024`.
 
 ### 6.3 Teaching hallucination via SFT on unknown facts
 
@@ -876,7 +961,7 @@ al., *"Does Fine-Tuning LLMs on New Knowledge Encourage Hallucinations?"* (`2405
 examples containing facts absent from pre-training are learned slowly and, once learned, **linearly
 increase the model's tendency to hallucinate**.
 
-At 1.3 B active parameters and ~2 bits/parameter of knowledge capacity, most world facts in any large
+At 1.072 B active parameters and ~2 bits/parameter of knowledge capacity, most world facts in any large
 SFT mixture are "new knowledge" for Prophet. Mitigations:
 
 1. **Prefer procedural over factual data.** Maths, code, logic and tool use teach *operations*, not
@@ -915,7 +1000,7 @@ Measured, not hypothetical: Qwen3-32B lost **AIME'24 −1.9** and **LCB v5 −1.
 fusion and a further **−0.5 / −1.5** at general RL **[V]**. Budget for this: our S1 dual-mode SFT and
 S4b general RLVR will cost us a few points of peak maths in exchange for IFEval/BFCL/ThinkFollow.
 **That trade is correct for our benchmark table** (IFEval and BFCL are worth more points than the top
-of AIME for a 1.3 B model) — but it must be *measured*, and the pre-fusion checkpoint kept.
+of AIME for a ~1 B-active model) — but it must be *measured*, and the pre-fusion checkpoint kept.
 
 ### 6.7 MoE-specific RL correctness hazard
 
@@ -948,21 +1033,26 @@ vLLM on a fixed probe batch as a CI check.
 
 ## 7. Ablation plan
 
-Per `CLAUDE.md` rule 2, nothing enters the main recipe without an ablation. Run **A1–A7 on the 450 M
-mini** (2.4× cheaper per token) and confirm only the winners on the 1.3 B core.
+Per `CLAUDE.md` rule 2, nothing enters the main recipe without an ablation. **Run A1–A9 on
+Prophet-Dense-1.1B (R05 Phase 1's deliverable) or the 564 M mini — 1.4× and 2.4× cheaper per token
+respectively, and 2.4× / 4× cheaper per RL step (§3.2) — and confirm only the winners on Prophet-M
+v1.** Total ablation cost below is ~110 h if run on Prophet-M v1 and **~46 h on the mini**; budget it
+against R05's Phase 0 (30 h of ablations) rather than against R10's 95 h.
 
 | # | Question | Arms | Metric / gate | Cost |
 |---|---|---|---|---|
 | **A1** | Is a separate reasoning mid-training stage worth 20 h, vs folding it into SFT? | (a) S0+S1 (b) S1 only, same total tokens | MATH-500, AIME'25, GPQA | 2 × 6 h |
 | **A2a** | Off-policy seq-KD vs on-policy GKD at **matched compute** | (a) 18 h more SFT (b) 18 h GKD | AIME'25, MATH-500, **pass@64** | 2 × 8 h |
-| **A2b** | Does cross-tokenizer KD work at all for Prophet's frontend? | ULD vs shared-BPE control | KL on a held-out set; downstream MATH-500 | 6 h — **run before committing S2** |
+| **A2b** | Does cross-tokenizer KD (Prophet-Tok v1 ← Qwen3 BPE) work at all? | ULD / likelihood-matching vs (i) a shared-vocab control and (ii) seq-KD only | KL on a held-out set; downstream MATH-500 | 6 h — **gate for S2; run before Stage 2 is budgeted** |
+| **A2c** | Does native Prophet-M → Prophet-mini logit KD beat training the mini from the same data? | logit KD vs plain SFT, matched tokens | mini MATH-500, IFEval | 2 × 4 h |
 | **A3** | Teacher size / capacity gap (`2502.08606`) | Qwen3-1.7B / 4B / 8B teachers | student MATH-500, AIME'25 | 3 × 5 h |
 | **A4** | Is the preference stage worth 5 h vs 5 h more SFT? | (a) APO-zero (b) DPO-sigmoid (c) `sigmoid_norm` (d) extra SFT | Arena-Hard, IFEval, **mean length**, ECE | 4 × 2 h |
 | **A5** | RLVR variant | `grpo` / `dr_grpo` / `dapo` / GSPO (TRL `loss_type` **[V]**) | AIME'25 and **length drift** at fixed steps | 4 × 4 h |
 | **A6** | LoRA vs full-parameter RL (the Tina question) | full / r=16 / r=32 / r=64 | AIME'25 per A100-hour | 4 × 3 h |
 | **A7** | Rollout length | `L` ∈ {1024, 2048, 4096} at fixed wall-clock | AIME'25 per hour | 3 × 4 h |
 | **A8** | Think / no-think token ratio in S1 | 25 / 45 / 65 % think | joint (AIME'25, IFEval, mean length) Pareto | 3 × 5 h |
-| **A9** | **Compute-penalty reward** (λ, μ) — Prophet-specific | λ,μ ∈ {0, 0.05, 0.15} | accuracy vs **tokens-to-answer** and vs R04 depth `k` | 4 × 3 h |
+| **A9** | **Compute-penalty reward** (λ, μ) — Prophet-specific | λ,μ ∈ {0, 0.05, 0.15} | accuracy vs **tokens-to-answer** and vs Prophet-Loop depth `r`; must not degrade AIME'25 by >2 pts | 4 × 3 h |
+| **A12** | MTP heads in the post-training loss | main head only / all 4 heads weighted | loss stability, downstream parity | 2 × 3 h |
 | **A10** | Merge weight | 0.85 / 0.90 / 0.95 SFT-anchor | RULER-equivalent long-context + ECE + Arena-Hard | free (CPU + eval) |
 | **A11** | **Contamination audit** (not optional) | — | see §7.1 | 4 h CPU |
 
@@ -1092,6 +1182,6 @@ Every source entering any mixture passes this gate, and the result is published 
 | Which teachers may we legally distill? | **Qwen3/Qwen3.x (Apache-2.0)** and **DeepSeek-R1 (MIT, distillation explicitly permitted)**. **Never Gemma.** Llama only if we accept being named `Llama-Prophet`. §6.1 |
 | On-policy or off-policy distillation? | Off-policy is the backbone (it is free); on-policy GKD is the single highest-value stage **if** the tokenizer allows it — 10× better per GPU-hour than RL at Qwen scale. §2.2, §6.2 |
 | DPO or its variants — worth the compute? | **Yes, ~5 A100-h.** Use **APO-zero** (β=0.05, lr 1e-6, 1 epoch), switch to `sigmoid_norm` if length inflates. §3.4 |
-| **Is GRPO feasible on one A100 for a 1.3B-active model?** | **YES — dense core, `L ≤ 4096`, `G = 8`, `P ≤ 32`, `β = 0`, Dr.GRPO + clip-higher, vLLM colocate: ~16 A100-h per 300 steps. NO for long-CoT (123 h/300 steps) and NO for full-parameter MoE RL (160 GB optimiser state).** §3.2 |
+| **Is GRPO feasible on one A100 for a 1.07B-active model?** | **YES.** Prophet-M v1 (5.123 B total), LoRA r=32, `L ≤ 2048`, `G = 8`, `P ≤ 32`, `β = 0`, Dr.GRPO + clip-higher, vLLM colocate: **~19 h per 300 steps** (**7 h** on the Dense-1.1B trunk). **NO** for long-CoT `L ≥ 8192` (240–300 h/300 steps) and **NO** for full-parameter RL on Prophet-M **v2** (9.757 B). §3.2 |
 | What actually moves benchmarks under 4B? | Reasoning-trace distillation (MATH/AIME/LCB), then rule-based RLVR for IFEval/BFCL/mode-following (Qwen3 Table 22: ToolUse +15.1, IFEval +6.6, ThinkFollow →98.9). §2.5 |
-| Biggest single risk? | The Gemma "Model Derivatives" clause (a single Gemma-generated row could make Prophet un-releasable under Apache-2.0), closely followed by the R01 tokenizer/GKD collision. §6.1, §6.2 |
+| Biggest single risk? | The Gemma "Model Derivatives" clause — a single Gemma-generated row could make Prophet un-releasable under Apache-2.0 (§6.1). Then, in order: the R05/R10 **budget collision** (§5), the cross-vocabulary GKD gate (§6.2), and vLLM support for Prophet's architecture, which is a hard prerequisite of Stages 2 and 4 (§6.8). |

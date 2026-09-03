@@ -34,9 +34,13 @@ def _mix(**kw) -> Mixture:
         name="m",
         total_tokens=10 * B,
         phases=[
-            Phase("a", 0.6, [Source("s1", "x", "web", 0.7, available_tokens=100 * B),
-                             Source("s2", "y", "code", 0.3, available_tokens=100 * B)]),
-            Phase("b", 0.4, [Source("s3", "z", "math", 1.0, available_tokens=100 * B)]),
+            Phase("a", 0.6, [
+                Source("s1", "x", "web", 0.7, available_tokens=100 * B, license="Apache-2.0"),
+                Source("s2", "y", "code", 0.3, available_tokens=100 * B, license="Apache-2.0"),
+            ]),
+            Phase("b", 0.4, [
+                Source("s3", "z", "math", 1.0, available_tokens=100 * B, license="Apache-2.0"),
+            ]),
         ],
     )
     base.update(kw)
@@ -48,14 +52,14 @@ def test_valid_mixture_passes():
 
 
 def test_phase_weights_must_sum_to_one():
-    m = _mix(phases=[Phase("a", 0.6, [Source("s", "x", "web", 1.0)])])
+    m = _mix(phases=[Phase("a", 0.6, [Source("s", "x", "web", 1.0, license="MIT")])])
     with pytest.raises(MixtureError, match="phase weights sum"):
         m.validate()
 
 
 def test_source_weights_must_sum_to_one():
-    m = _mix(phases=[Phase("a", 1.0, [Source("s1", "x", "web", 0.4),
-                                      Source("s2", "y", "code", 0.4)])])
+    m = _mix(phases=[Phase("a", 1.0, [Source("s1", "x", "web", 0.4, license="MIT"),
+                                      Source("s2", "y", "code", 0.4, license="MIT")])])
     with pytest.raises(MixtureError, match="source weights sum"):
         m.validate()
 
@@ -66,7 +70,8 @@ def test_excessive_repetition_is_rejected():
     m = Mixture(
         name="m",
         total_tokens=100 * B,
-        phases=[Phase("a", 1.0, [Source("small", "x", "math", 1.0, available_tokens=2 * B)])],
+        phases=[Phase("a", 1.0, [Source("small", "x", "math", 1.0, available_tokens=2 * B,
+                                        license="MIT")])],
     )
     with pytest.raises(MixtureError, match="epochs"):
         m.validate()
@@ -76,7 +81,7 @@ def test_unverified_sources_are_reported_not_trusted():
     m = Mixture(
         name="m",
         total_tokens=10 * B,
-        phases=[Phase("a", 1.0, [Source("unknown", "x", "web", 1.0)])],
+        phases=[Phase("a", 1.0, [Source("unknown", "x", "web", 1.0, license="Apache-2.0")])],
     )
     m.validate()  # no size, so no epoch claim can be made
     assert m.unverified_sources() == ["a/unknown"]
@@ -138,6 +143,51 @@ def test_instruction_data_is_absent_from_the_stable_phase():
     assert phase_a.domain_shares().get("instruction", 0.0) == 0.0
     phase_c = next(p for p in mixture.phases if p.name.startswith("C"))
     assert phase_c.domain_shares()["instruction"] > 0.25
+
+
+def test_blocked_licence_is_rejected():
+    """R10 read the Gemma terms: a model trained on Gemma-generated synthetic data is a
+    Model Derivative. One row would bind the whole project, so this is an error, not a
+    warning -- discovering it after training cannot be fixed except by retraining."""
+    m = Mixture(
+        name="m", total_tokens=B,
+        phases=[Phase("a", 1.0, [Source("s", "x", "synthetic", 1.0,
+                                        license="Gemma Terms of Use")])],
+    )
+    with pytest.raises(MixtureError, match="Model Derivative"):
+        m.validate()
+
+
+def test_non_commercial_licence_is_rejected():
+    m = Mixture(
+        name="m", total_tokens=B,
+        phases=[Phase("a", 1.0, [Source("s", "x", "instruction", 1.0,
+                                        license="CC-BY-NC-4.0")])],
+    )
+    with pytest.raises(MixtureError, match="non-commercial"):
+        m.validate()
+
+
+def test_missing_licence_is_rejected():
+    m = Mixture(
+        name="m", total_tokens=B,
+        phases=[Phase("a", 1.0, [Source("s", "x", "web", 1.0)])],
+    )
+    with pytest.raises(MixtureError, match="licence not established"):
+        m.validate()
+
+
+def test_restricted_licences_produce_warnings_not_errors():
+    m = Mixture(
+        name="m", total_tokens=B,
+        phases=[Phase("a", 1.0, [Source("s", "x", "web", 1.0, license="mixed (per-subset)")])],
+    )
+    m.validate()
+    assert any("per-subset" in w for w in m.license_warnings())
+
+
+def test_shipped_recipe_has_no_blocked_licences():
+    prophet_v1_mixture().validate()
 
 
 def test_every_source_declares_a_licence():
