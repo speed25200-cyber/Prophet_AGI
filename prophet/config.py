@@ -160,10 +160,32 @@ class RecurrentCoreConfig:
     default_loop_k: int = 4
     """Inference default when the caller does not specify a depth."""
 
+    core_pattern: list[MixerKind] | None = None
+    """Mixer pattern for the looped core, overriding ``mixer.pattern``.
+
+    This exists because of a hard memory result. Every loop iteration of an
+    *attention* layer needs its own KV cache — iteration *i* asks different questions
+    than iteration *j* — so looping attention multiplies KV memory by ``k``. Looping a
+    bounded-state recurrent layer multiplies a few kilobytes instead. The default
+    Prophet stack therefore puts attention in the prelude and coda, where it is applied
+    exactly once, and keeps the looped core purely recurrent: full-attention recall and
+    cheap deep recurrence at the same time.
+    """
+    prelude_pattern: list[MixerKind] | None = None
+    coda_pattern: list[MixerKind] | None = None
+
     inject_input_each_step: bool = True
     """Re-add the prelude output at every iteration. Without it, deep recurrence drifts
     away from the input and the loop stops being conditioned on the prompt."""
     state_init: Literal["zeros", "randn", "prelude"] = "randn"
+    """Initial core state **during training**. Random init is a regulariser: it forces the
+    loop to converge to the same answer from any starting point, which is what makes the
+    depth dial safe to move at inference."""
+    eval_state_init: Literal["zeros", "randn", "prelude"] = "zeros"
+    """Initial core state at inference. Must be deterministic, or the same prompt gives
+    different answers on every call and incremental decoding stops matching a full
+    forward pass — a bug that produces fluent, plausible, wrong output and is therefore
+    very hard to notice without an equivalence test."""
 
     truncated_backprop_steps: int = 4
     """Backpropagate through at most this many trailing iterations; earlier ones run
@@ -346,12 +368,61 @@ class ProphetConfig:
         r = self.recurrent
         return r.prelude_layers + r.core_layers + r.coda_layers
 
-    def layer_mixer(self, index: int) -> MixerKind:
-        """Mixer kind for a given parameterised block index."""
+    def layer_mixer(self, index: int, section: str = "trunk") -> MixerKind:
+        """Mixer kind for a parameterised block.
+
+        ``section`` is one of ``"trunk"``, ``"prelude"``, ``"core"`` or ``"coda"``; the
+        recurrent sections may override the global pattern (see
+        :attr:`RecurrentCoreConfig.core_pattern`).
+        """
         pattern = self.mixer.pattern
+        if self.recurrent.enabled:
+            override = {
+                "prelude": self.recurrent.prelude_pattern,
+                "core": self.recurrent.core_pattern,
+                "coda": self.recurrent.coda_pattern,
+            }.get(section)
+            if override:
+                pattern = override
         if not pattern:
-            raise ValueError("mixer.pattern must not be empty")
+            raise ValueError("mixer pattern must not be empty")
         return pattern[index % len(pattern)]
+
+    def section_layout(self) -> list[tuple[str, int, MixerKind]]:
+        """The parameterised blocks in order, as ``(section, index_in_section, kind)``.
+
+        This is the single source of truth for how blocks are laid out, shared by the
+        model, the budget calculator and the tests.
+        """
+        if not self.recurrent.enabled:
+            return [("trunk", i, self.layer_mixer(i)) for i in range(self.n_layers)]
+        r = self.recurrent
+        out: list[tuple[str, int, MixerKind]] = []
+        for name, count in (
+            ("prelude", r.prelude_layers),
+            ("core", r.core_layers),
+            ("coda", r.coda_layers),
+        ):
+            for i in range(count):
+                out.append((name, i, self.layer_mixer(i, name)))
+        return out
+
+    def cache_slots(self, loop_k: int | None = None) -> list[tuple[str, int, int, MixerKind]]:
+        """Every distinct cache a forward pass needs: ``(section, block, iteration, kind)``.
+
+        A looped core block needs one cache *per iteration*, because its inputs differ
+        each time round. This is why the default core is recurrent rather than attentive:
+        the per-iteration cost is a fixed-size state, not a growing KV cache.
+        """
+        k = 1
+        if self.recurrent.enabled:
+            k = loop_k if loop_k is not None else self.recurrent.default_loop_k
+        slots: list[tuple[str, int, int, MixerKind]] = []
+        for section, idx, kind in self.section_layout():
+            iterations = k if section == "core" else 1
+            for it in range(iterations):
+                slots.append((section, idx, it, kind))
+        return slots
 
     def layer_is_moe(self, index: int) -> bool:
         if self.ffn.kind != "moe":
