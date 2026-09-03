@@ -448,3 +448,137 @@ def test_ledger_survives_a_checkpoint_round_trip(tmp_path):
     )
     restored.load_state_dict(torch.load(path, weights_only=True))
     assert torch.equal(restored.ledgers["2"].values, expected)
+
+
+# --------------------------------------------------------------------------------------
+# Depth consolidation: making expensive reasoning cheap
+# --------------------------------------------------------------------------------------
+
+
+def _recurrent_model() -> ProphetModel:
+    cfg = ProphetConfig(
+        d_model=96, max_seq_len=32,
+        frontend=FrontendConfig(vocab_size=128),
+        mixer=MixerConfig(
+            pattern=["swa", "full_attn"], n_heads=2, n_kv_heads=1, head_dim=48,
+            sliding_window=16, linear_heads=2, linear_head_dim=48,
+        ),
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=1, core_layers=2, coda_layers=1,
+            core_pattern=["gdn"], default_loop_k=2, train_loop_max=8,
+        ),
+        ffn=FeedForwardConfig(kind="dense", hidden_mult=2.0),
+    )
+    return ProphetModel(cfg).eval()
+
+
+def _depth_episodes(n: int, seed: int):
+    from prophet.memory.consolidate import DepthEpisode
+
+    g = torch.Generator().manual_seed(seed)
+    return [
+        DepthEpisode(tokens=torch.randint(0, 128, (1, 16), generator=g), tag=f"d{seed}_{i}")
+        for i in range(n)
+    ]
+
+
+def test_depth_consolidation_makes_a_shallow_pass_reproduce_a_deep_one():
+    """The mechanism against the wall nobody names: a model that spends ten minutes on a
+    problem today knows nothing more about it tomorrow. This is the link that keeps it."""
+    from prophet.memory.consolidate import consolidate_depth, depth_transfer_error
+
+    torch.manual_seed(0)
+    model = _recurrent_model()
+    mem = ledger(dim=96)
+    eps = _depth_episodes(10, seed=31)
+
+    before = depth_transfer_error(model, mem, eps, deep_k=8, shallow_k=2)
+    consolidate_depth(model, mem, eps, deep_k=8, shallow_k=2, passes=6)
+    after = depth_transfer_error(model, mem, eps, deep_k=8, shallow_k=2)
+
+    assert before == pytest.approx(1.0, abs=1e-6)
+    assert after < 0.3, f"shallow pass still {after:.3f} away from the deep one"
+
+
+def test_depth_consolidation_is_gradient_free():
+    """It has to run on a device, so no trunk parameter may move."""
+    from prophet.memory.consolidate import consolidate_depth
+
+    torch.manual_seed(0)
+    model = _recurrent_model()
+    before = {k: v.clone() for k, v in model.state_dict().items()}
+    consolidate_depth(model, ledger(dim=96), _depth_episodes(4, seed=32), passes=2)
+
+    for key, value in model.state_dict().items():
+        assert torch.equal(value, before[key]), f"{key} moved"
+
+
+def test_unverified_episodes_are_refused_by_default():
+    """Consolidating a wrong answer is worse than not consolidating: the model stops
+    recomputing it and returns the wrong answer confidently, faster."""
+    from prophet.memory.consolidate import DepthEpisode, consolidate_depth
+
+    torch.manual_seed(0)
+    model = _recurrent_model()
+    unverified = [
+        DepthEpisode(tokens=torch.randint(0, 128, (1, 8)), verified=False) for _ in range(3)
+    ]
+    with pytest.raises(ValueError, match="unverified"):
+        consolidate_depth(model, ledger(dim=96), unverified, passes=1)
+
+
+def test_unverified_episodes_can_be_admitted_deliberately():
+    from prophet.memory.consolidate import DepthEpisode, consolidate_depth
+
+    torch.manual_seed(0)
+    model = _recurrent_model()
+    episodes = [
+        DepthEpisode(tokens=torch.randint(0, 128, (1, 8)), verified=False) for _ in range(3)
+    ]
+    report = consolidate_depth(
+        model, ledger(dim=96), episodes, passes=1, require_verified=False
+    )
+    assert report.episodes == 3
+
+
+def test_consolidating_one_set_does_not_by_itself_transfer_to_another():
+    """The crux, and the measurement that separates a cache from a skill.
+
+    A ledger addressed by hidden states will generalise only insofar as neighbouring
+    problems produce neighbouring states. On unrelated held-out episodes it should not,
+    and a test that pretended otherwise would be measuring nothing.
+    """
+    from prophet.memory.consolidate import consolidate_depth, depth_transfer_error
+
+    torch.manual_seed(0)
+    model = _recurrent_model()
+    mem = ledger(dim=96)
+    consolidated = _depth_episodes(10, seed=41)
+    held_out = _depth_episodes(10, seed=42)
+
+    consolidate_depth(model, mem, consolidated, deep_k=8, shallow_k=2, passes=6)
+
+    recall = depth_transfer_error(model, mem, consolidated, deep_k=8, shallow_k=2)
+    transfer = depth_transfer_error(model, mem, held_out, deep_k=8, shallow_k=2)
+    assert recall < transfer, (
+        f"recall {recall:.3f} should beat transfer {transfer:.3f}; if it does not, the "
+        "measurement is not distinguishing consolidated from held-out material"
+    )
+
+
+def test_depth_agreement_reports_end_to_end_token_match():
+    """Residuals can improve without the model's output changing. This asks the only
+    question a user would: does the cheap pass now answer like the expensive one?"""
+    from prophet.memory.consolidate import consolidate_depth, depth_agreement
+
+    torch.manual_seed(0)
+    model = _recurrent_model()
+    mem = ledger(dim=96)
+    eps = _depth_episodes(8, seed=51)
+
+    baseline = depth_agreement(model, None, eps, deep_k=8, shallow_k=2)
+    consolidate_depth(model, mem, eps, deep_k=8, shallow_k=2, passes=6)
+    after = depth_agreement(model, mem, eps, deep_k=8, shallow_k=2)
+
+    assert 0.0 <= baseline <= 1.0 and 0.0 <= after <= 1.0
+    assert after >= baseline

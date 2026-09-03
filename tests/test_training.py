@@ -392,3 +392,96 @@ def test_gradient_accumulation_matches_the_token_count(tmp_path):
     )
     trainer.train()
     assert trainer.tokens_seen == 4 * 3 * 2 * 32
+
+
+# --------------------------------------------------------------------------------------
+# Ponder loss
+# --------------------------------------------------------------------------------------
+
+
+def _halting_config() -> ProphetConfig:
+    cfg = tiny_model_config()
+    cfg.recurrent = RecurrentCoreConfig(
+        enabled=True, prelude_layers=1, core_layers=1, coda_layers=1,
+        core_pattern=["gdn"], default_loop_k=5, halting="ponder",
+        halting_loss_weight=0.05, halting_target_steps=3.0,
+    )
+    return cfg
+
+
+def test_ponder_loss_reaches_the_halting_head():
+    """Without its own objective the halting head gets no gradient at all -- the halting
+    distribution does not enter the logits. An untrained head makes depth *look*
+    input-dependent while being noise."""
+    torch.manual_seed(0)
+    model = ProphetModel(_halting_config())
+    batch = torch.randint(0, VOCAB, (2, 8))
+
+    terms = compute_loss(
+        model(batch), batch, ponder_weight=0.05, ponder_target_steps=3.0,
+        project=model._project,
+    )
+    terms.total.backward()
+
+    grad = model.halt_head[1].weight.grad
+    assert grad is not None and grad.abs().sum() > 0
+
+
+def test_ponder_metrics_are_reported():
+    torch.manual_seed(0)
+    model = ProphetModel(_halting_config())
+    batch = torch.randint(0, VOCAB, (2, 8))
+    terms = compute_loss(
+        model(batch), batch, ponder_weight=0.05, project=model._project
+    )
+    assert {"loss/ponder", "loss/ponder_kl", "ponder/expected_depth"} <= terms.metrics.keys()
+
+
+def test_ponder_is_skipped_when_unweighted():
+    torch.manual_seed(0)
+    model = ProphetModel(_halting_config())
+    batch = torch.randint(0, VOCAB, (2, 8))
+    terms = compute_loss(model(batch), batch, ponder_weight=0.0)
+    assert terms.ponder is None and "loss/ponder" not in terms.metrics
+
+
+def test_the_prior_pulls_expected_depth_toward_its_target():
+    """Without the prior the head learns to always think as long as it is allowed: more
+    computation never hurts the language-modelling loss."""
+    from prophet.train.loss import _geometric_prior
+
+    for target in (2.0, 8.0):
+        prior = _geometric_prior(16, target, torch.device("cpu"), torch.float32)
+        mean = (prior * torch.arange(1, 17, dtype=torch.float32)).sum().item()
+        assert prior.sum().item() == pytest.approx(1.0, abs=1e-5)
+        assert mean < target + 2.0
+    shallow = _geometric_prior(16, 2.0, torch.device("cpu"), torch.float32)
+    deep = _geometric_prior(16, 8.0, torch.device("cpu"), torch.float32)
+    assert shallow[0] > deep[0]
+
+
+def test_trainer_picks_up_the_halting_weight_from_the_model_config(tmp_path):
+    """The silent failure this prevents: halting enabled architecturally, never trained,
+    producing a depth distribution that is pure noise."""
+    cfg = _halting_config()
+    trainer = Trainer(
+        ProphetModel(cfg), make_loader(),
+        TrainConfig(total_steps=2, log_every=1000, checkpoint_every=0,
+                    checkpoint_dir=str(tmp_path)),
+        model_config=cfg, on_log=lambda m: None,
+    )
+    assert trainer.cfg.ponder_weight == pytest.approx(0.05)
+    assert trainer.cfg.ponder_target_steps == pytest.approx(3.0)
+
+
+def test_training_with_halting_runs_and_reports_depth(tmp_path):
+    cfg = _halting_config()
+    logged: list = []
+    trainer = Trainer(
+        ProphetModel(cfg), make_loader(),
+        TrainConfig(total_steps=6, log_every=1, checkpoint_every=0,
+                    peak_lr_muon=0.01, checkpoint_dir=str(tmp_path)),
+        model_config=cfg, on_log=logged.append,
+    )
+    trainer.train()
+    assert logged and any("ponder/expected_depth" in m.extra for m in logged)

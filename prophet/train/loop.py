@@ -43,6 +43,10 @@ class TrainConfig:
 
     mtp_weight: float = 0.3
     z_loss_weight: float = 1e-4
+    ponder_weight: float = 0.0
+    """Weight on the halting objective. Zero disables it; the model config's
+    ``recurrent.halting_loss_weight`` is the value to mirror here when halting is on."""
+    ponder_target_steps: float = 4.0
 
     checkpoint_every: int = 200
     log_every: int = 10
@@ -117,6 +121,15 @@ class Trainer:
             cfg.peak_lr_muon if type(o).__name__ == "Muon" else cfg.peak_lr_adamw
             for o in self.optimizers
         ]
+
+        # Halting is only trained if the objective is actually weighted. Taking the
+        # weight from the model config when the trainer leaves it at zero prevents the
+        # silent failure where halting is enabled architecturally, receives no gradient,
+        # and produces a depth distribution that is pure noise.
+        if model_config is not None and model_config.recurrent.halting == "ponder":
+            if cfg.ponder_weight == 0.0:
+                cfg.ponder_weight = model_config.recurrent.halting_loss_weight
+            cfg.ponder_target_steps = model_config.recurrent.halting_target_steps
 
         self.ckpt = CheckpointManager(cfg.checkpoint_dir, keep_milestones=cfg.keep_milestones)
         self.step = 0
@@ -193,12 +206,15 @@ class Trainer:
                     batch,
                     mtp_weight=self.cfg.mtp_weight,
                     z_loss_weight=self.cfg.z_loss_weight,
+                    ponder_weight=self.cfg.ponder_weight,
+                    ponder_target_steps=self.cfg.ponder_target_steps,
+                    project=getattr(self.model, "_project", None),
                 )
                 (terms.total / self.cfg.grad_accum_steps).backward()
                 accumulated += terms.lm.item() / self.cfg.grad_accum_steps
                 extra = {
                     k: v for k, v in terms.metrics.items()
-                    if k.startswith("router/") or k == "loss/mtp"
+                    if k.startswith(("router/", "ponder/")) or k == "loss/mtp"
                 }
                 self.tokens_seen += batch.numel()
 

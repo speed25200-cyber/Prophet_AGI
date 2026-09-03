@@ -173,6 +173,27 @@ class ProphetOutput:
     aux_loss: Tensor | None = None
     router_stats: list[Any] = field(default_factory=list)
 
+    halt_probs: Tensor | None = None
+    """``(batch, seq, steps)`` probability that reasoning stopped at each iteration.
+
+    Present only when halting is enabled. Looping a constant number of times leaves the
+    model's depth bounded by a constant and therefore changes no complexity class; only
+    depth that *depends on the input* buys anything asymptotically, and this distribution
+    is what makes it depend on the input."""
+    hidden_per_step: list[Tensor] | None = None
+    """Coda-applied hidden state after each iteration, needed to compute the ponder loss
+    as an expectation over stopping times."""
+
+    def expected_depth(self) -> float | None:
+        """Mean number of iterations actually used, weighted by the halting distribution."""
+        if self.halt_probs is None:
+            return None
+        steps = torch.arange(
+            1, self.halt_probs.shape[-1] + 1, device=self.halt_probs.device,
+            dtype=self.halt_probs.dtype,
+        )
+        return float((self.halt_probs * steps).sum(-1).mean().item())
+
 
 # --------------------------------------------------------------------------------------
 # Model
@@ -264,6 +285,15 @@ class ProphetModel(nn.Module):
             else None
         )
 
+        # Learned halting. A single scalar per position per iteration: "is this enough
+        # thinking?". Cheap to add, and it is the only mechanism that makes recurrence
+        # depth a function of the input rather than a constant chosen by the caller.
+        self.halt_head = (
+            nn.Sequential(RMSNorm(d, cfg.norm_eps), nn.Linear(d, 1))
+            if cfg.recurrent.enabled and cfg.recurrent.halting == "ponder"
+            else None
+        )
+
         self.apply(self._init_weights)
 
     # -- setup -------------------------------------------------------------------------
@@ -320,6 +350,7 @@ class ProphetModel(nn.Module):
         cache: ProphetCache | None = None,
         loop_k: int | None = None,
         return_mtp: bool = True,
+        halt_threshold: float | None = None,
     ) -> ProphetOutput:
         cfg = self.cfg
         b, s = input_ids.shape
@@ -339,12 +370,14 @@ class ProphetModel(nn.Module):
 
         aux_terms: list[Tensor] = []
         router_stats: list[Any] = []
+        halt_logits: list[Tensor] = []
+        hidden_per_step: list[Tensor] = []
 
-        def run(section: str, iteration: int, h: Tensor) -> Tensor:
+        def run(section: str, iteration: int, h: Tensor, *, use_cache: bool = True) -> Tensor:
             for idx, block in enumerate(self.sections[section]):
                 slot = (
                     cache.get(section, idx, iteration, block.kind)
-                    if cache is not None
+                    if cache is not None and use_cache
                     else None
                 )
                 h = block(h, cos=cos, sin=sin, cache=slot)
@@ -390,6 +423,24 @@ class ProphetModel(nn.Module):
                     h = run("core", i, step_in)
                 if not grad_on:
                     h = h.detach()
+
+                if self.halt_head is not None:
+                    # Each candidate stopping point needs a real read-out to be scored
+                    # against, so the coda is applied per iteration. These probe passes
+                    # are deliberately **cache-free**: they share one cache slot, so
+                    # writing to it would append the same positions k times and silently
+                    # corrupt incremental decoding. The real, cached coda runs once below.
+                    step_out = run("coda", 0, h, use_cache=False)
+                    hidden_per_step.append(step_out)
+                    halt_logits.append(self.halt_head(step_out).squeeze(-1))
+
+                    if not self.training and halt_threshold is not None:
+                        survived = torch.stack(
+                            [1 - torch.sigmoid(l) for l in halt_logits]
+                        ).prod(dim=0)
+                        if float((1.0 - survived).mean().item()) >= halt_threshold:
+                            break
+
             x = run("coda", 0, h)
 
         hidden = self.norm_out(x)
@@ -408,6 +459,18 @@ class ProphetModel(nn.Module):
         if cache is not None:
             cache.position = offset + s
 
+        halt_probs = None
+        if halt_logits:
+            # PonderNet stopping distribution: halt at step i with probability lambda_i,
+            # having survived every earlier step.
+            lams = torch.sigmoid(torch.stack(halt_logits, dim=-1))
+            survive = torch.cumprod(1 - lams, dim=-1)
+            shifted = torch.cat([torch.ones_like(survive[..., :1]), survive[..., :-1]], -1)
+            halt_probs = lams * shifted
+            # The tail mass has to go somewhere: assign it to the last iteration, which
+            # is what actually happens when the loop runs out.
+            halt_probs[..., -1] = halt_probs[..., -1] + (1.0 - halt_probs.sum(-1))
+
         aux = torch.stack(aux_terms).sum() if aux_terms else None
         return ProphetOutput(
             logits=logits,
@@ -417,6 +480,8 @@ class ProphetModel(nn.Module):
             confidence=confidence,
             aux_loss=aux,
             router_stats=router_stats,
+            halt_probs=halt_probs,
+            hidden_per_step=hidden_per_step or None,
         )
 
     def _project(self, hidden: Tensor) -> Tensor:

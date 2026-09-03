@@ -41,6 +41,22 @@ distillation comme chemin réaliste. C'est la décision D10, laissée ouverte da
 
 ---
 
+## Seconde vague : les murs (W1–W4)
+
+Une seconde série de tracks attaque non plus les problèmes *attaquables sous notre budget*
+mais le **mécanisme** de verrous plus profonds. L'analyse de départ, avec son arithmétique,
+est dans [`../07_WALLS.md`](../07_WALLS.md) ; les quatre agents sont chargés de la
+contredire là où elle a tort.
+
+| Track | Question |
+|---|---|
+| [W1 — Chain-of-thought](W1_chain_of_thought_wall.md) | Le CoT est-il un goulot d'information de ~2000:1, et la discrétisation est-elle simultanément ce qui le stabilise ? Et la distinction profondeur/bloc-notes tient-elle ? |
+| [W2 — Expressivité des transformeurs](W2_transformer_expressivity_wall.md) | Que la boucle achète-t-elle *formellement* ? Et que perdons-nous en remplaçant l'attention par des mélangeurs à état borné ? |
+| [W3 — Apprentissage continu](W3_continual_learning_wall.md) | Le troisième étage de mémoire — la distillation vers les poids — que nous n'avons pas construit. Et la mesure qui distingue une mémoire d'une compétence. |
+| [W4 — Le calcul ne se cumule pas](W4_compute_does_not_compound.md) | Le mur que personne ne nomme. Est-il déjà résolu ailleurs, et notre mécanisme généralise-t-il ou mémorise-t-il ? |
+
+---
+
 ## Verdicts par track
 
 | Track | Verdict en une ligne | Effet sur la conception |

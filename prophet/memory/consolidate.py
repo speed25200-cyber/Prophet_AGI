@@ -184,3 +184,186 @@ def recall_error(
         total += (got - wanted).pow(2).sum().item()
         scale += wanted.pow(2).sum().item()
     return (total / max(scale, 1e-9)) ** 0.5
+
+
+# --------------------------------------------------------------------------------------
+# Depth consolidation: making expensive reasoning cheap
+# --------------------------------------------------------------------------------------
+
+
+@dataclass
+class DepthEpisode:
+    """A problem worth thinking hard about once."""
+
+    tokens: Tensor
+    """Token ids, shape ``(1, n)``."""
+    tag: str = ""
+    verified: bool = True
+    """Whether the deep answer was checked. Unverified episodes are refused by default:
+    a memory that confidently returns a wrong answer is worse than no memory, because the
+    model stops recomputing."""
+
+
+@torch.no_grad()
+def consolidate_depth(
+    model: nn.Module,
+    ledger: ProductKeyMemory,
+    episodes: Sequence[DepthEpisode],
+    *,
+    deep_k: int = 16,
+    shallow_k: int = 2,
+    lam: float = 1.0,
+    passes: int = 3,
+    replay: Sequence[DepthEpisode] = (),
+    replay_ratio: float = 0.25,
+    require_verified: bool = True,
+    lr: float | None = None,
+    seed: int = 0,
+) -> ConsolidationReport:
+    """Distil the result of deep recurrence into memory addressable by a shallow pass.
+
+    Test-time compute is the industry's answer to hard problems, and it is thrown away the
+    moment the response ends. A model that spent a long time on a problem yesterday knows
+    nothing more about it today; every query starts from the same frozen weights. Humans
+    get better at a class of problem by working on instances of it. Models do not.
+
+    Prophet has the two pieces needed to change that: recurrence depth is a runtime dial,
+    so we can deliberately spend a lot of compute on one problem, and the ledger takes a
+    closed-form backprop-free write, so we can keep the result. This function is the link:
+
+    .. math::
+        h^{deep} = f_{k=16}(x), \\quad h^{shallow} = f_{k=2}(x), \\quad
+        t = \\lambda (h^{deep} - h^{shallow})
+
+    written into the ledger **addressed by the shallow state**. A later cheap pass then
+    retrieves what the expensive pass computed. Structurally this is the same operation as
+    :func:`consolidate`, which distils along the *context* axis; this one distils along the
+    *depth* axis, using the same closed-form write.
+
+    Two things decide whether it is worth anything, and neither is settled here:
+
+    - **Verification.** Consolidating a wrong deep answer is worse than not consolidating,
+      because the model stops recomputing it. ``require_verified`` refuses unchecked
+      episodes; supplying the verifier is the caller's job and is the expensive part.
+    - **Generalisation.** Storing the answer to one problem helps only with that problem.
+      Whether the stored state transfers to *neighbouring* instances is what separates
+      learning from memoisation, and it is measured by
+      :func:`depth_transfer_error` on held-out instances, never on the consolidated ones.
+    """
+    usable = [e for e in episodes if e.verified or not require_verified]
+    if require_verified and len(usable) < len(episodes):
+        skipped = len(episodes) - len(usable)
+        if not usable:
+            raise ValueError(
+                f"all {skipped} episodes are unverified and require_verified is set; "
+                "consolidating unchecked answers makes the model confidently wrong and "
+                "stops it recomputing"
+            )
+
+    model.eval()
+    rng = random.Random(seed)
+
+    schedule: list[DepthEpisode] = []
+    replayed = 0
+    for _ in range(passes):
+        batch = list(usable)
+        if replay and replay_ratio > 0:
+            n_replay = max(1, int(len(batch) * replay_ratio))
+            sample = [rng.choice(list(replay)) for _ in range(n_replay)]
+            replayed += len(sample)
+            batch += sample
+        rng.shuffle(batch)
+        schedule.extend(batch)
+
+    residual_start = 0.0
+    residual_end = 0.0
+    clipped: list[float] = []
+
+    for step, episode in enumerate(schedule):
+        deep = model(episode.tokens, loop_k=deep_k, return_mtp=False).hidden
+        shallow = model(episode.tokens, loop_k=shallow_k, return_mtp=False).hidden
+
+        target = lam * (deep - shallow)
+        stats = ledger.write(shallow, target, lr=lr)
+
+        if step < len(usable):
+            residual_start += stats.residual_before / max(len(usable), 1)
+        residual_end = stats.residual_after
+        clipped.append(stats.clipped_fraction)
+
+    return ConsolidationReport(
+        episodes=len(usable),
+        passes=passes,
+        residual_start=residual_start,
+        residual_end=residual_end,
+        slots_touched=int(ledger.occupancy()["slots_used"]),
+        clipped_fraction=sum(clipped) / max(len(clipped), 1),
+        occupancy=ledger.occupancy(),
+        replayed=replayed,
+    )
+
+
+@torch.no_grad()
+def depth_transfer_error(
+    model: nn.Module,
+    ledger: ProductKeyMemory,
+    episodes: Sequence[DepthEpisode],
+    *,
+    deep_k: int = 16,
+    shallow_k: int = 2,
+    lam: float = 1.0,
+) -> float:
+    """How much of the deep pass a shallow pass plus memory recovers.
+
+    Zero means a cheap pass now reproduces what the expensive one computed; one means the
+    ledger contributes nothing. Run it on the **consolidated** episodes to measure recall,
+    and on **held-out instances of the same class** to measure whether anything was
+    learned rather than memorised. The second number is the one that matters: a ledger
+    that only ever retrieves is a cache, not a skill.
+    """
+    model.eval()
+    total = 0.0
+    scale = 0.0
+    for episode in episodes:
+        deep = model(episode.tokens, loop_k=deep_k, return_mtp=False).hidden
+        shallow = model(episode.tokens, loop_k=shallow_k, return_mtp=False).hidden
+
+        wanted = lam * (deep - shallow)
+        got = ledger(shallow)
+        total += (got - wanted).pow(2).sum().item()
+        scale += wanted.pow(2).sum().item()
+    return (total / max(scale, 1e-9)) ** 0.5
+
+
+@torch.no_grad()
+def depth_agreement(
+    model: nn.Module,
+    ledger: ProductKeyMemory | None,
+    episodes: Sequence[DepthEpisode],
+    *,
+    deep_k: int = 16,
+    shallow_k: int = 2,
+) -> float:
+    """Fraction of positions where a shallow pass predicts the same token as a deep one.
+
+    The end-to-end number. Bandwidth and residual measurements can improve without the
+    model's actual output changing; this asks the only question a user would: does the
+    cheap pass now answer like the expensive one? Pass ``ledger=None`` for the baseline.
+    """
+    model.eval()
+    matches = 0
+    total = 0
+    for episode in episodes:
+        deep_out = model(episode.tokens, loop_k=deep_k, return_mtp=False)
+        shallow_out = model(episode.tokens, loop_k=shallow_k, return_mtp=False)
+
+        hidden = shallow_out.hidden
+        if ledger is not None:
+            # No lambda here: it is already baked into what the ledger was trained to
+            # output, and applying it twice would scale the correction by lambda squared.
+            hidden = hidden + ledger(hidden)
+        logits = model._project(hidden)
+
+        matches += int((logits.argmax(-1) == deep_out.logits.argmax(-1)).sum().item())
+        total += logits.shape[0] * logits.shape[1]
+    return matches / max(total, 1)

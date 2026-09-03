@@ -496,3 +496,112 @@ def test_unimplemented_frontend_fails_loudly():
     cfg = tiny_config(frontend=FrontendConfig(mode="byte_patch"))
     with pytest.raises(NotImplementedError, match="not yet implemented"):
         ProphetModel(cfg)
+
+
+# --------------------------------------------------------------------------------------
+# Learned halting: making depth depend on the input
+# --------------------------------------------------------------------------------------
+
+
+def halting_config(**kw) -> ProphetConfig:
+    return tiny_config(
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=1, core_layers=1, coda_layers=1,
+            core_pattern=["gdn"], default_loop_k=6, halting="ponder",
+            halting_loss_weight=0.05, halting_target_steps=3.0, **kw,
+        )
+    )
+
+
+def test_halting_produces_a_proper_distribution_over_stopping_times():
+    """Looping a constant number of times leaves depth bounded by a constant and changes
+    no complexity class. Only depth that depends on the input buys anything, and this
+    distribution is what makes it depend on the input."""
+    torch.manual_seed(0)
+    model = ProphetModel(halting_config()).eval()
+    with torch.no_grad():
+        out = model(torch.randint(0, 256, (2, 8)), loop_k=6)
+
+    assert out.halt_probs is not None
+    assert out.halt_probs.shape == (2, 8, 6)
+    assert torch.allclose(out.halt_probs.sum(-1), torch.ones(2, 8), atol=1e-5)
+    assert (out.halt_probs >= -1e-6).all()
+
+
+def test_expected_depth_lies_within_the_loop_budget():
+    torch.manual_seed(0)
+    model = ProphetModel(halting_config()).eval()
+    with torch.no_grad():
+        depth = model(torch.randint(0, 256, (2, 8)), loop_k=6).expected_depth()
+    assert 1.0 <= depth <= 6.0
+
+
+def test_halting_is_absent_when_not_configured():
+    model = ProphetModel(tiny_config()).eval()
+    with torch.no_grad():
+        out = model(torch.randint(0, 256, (1, 6)))
+    assert out.halt_probs is None and out.expected_depth() is None
+
+
+def test_a_higher_threshold_buys_more_iterations():
+    """The runtime dial that a halting head is supposed to provide."""
+    torch.manual_seed(0)
+    model = ProphetModel(halting_config()).eval()
+    ids = torch.randint(0, 256, (2, 8))
+
+    used = {}
+    with torch.no_grad():
+        for threshold in (0.1, 0.5, 0.95):
+            used[threshold] = model(ids, loop_k=12, halt_threshold=threshold).halt_probs.shape[-1]
+
+    assert used[0.1] <= used[0.5] <= used[0.95]
+    assert used[0.95] > used[0.1]
+
+
+def test_halting_never_exceeds_the_loop_budget():
+    torch.manual_seed(0)
+    model = ProphetModel(halting_config()).eval()
+    with torch.no_grad():
+        out = model(torch.randint(0, 256, (1, 6)), loop_k=4, halt_threshold=0.999)
+    assert out.halt_probs.shape[-1] <= 4
+
+
+def test_per_step_hidden_states_are_returned_for_the_ponder_loss():
+    torch.manual_seed(0)
+    model = ProphetModel(halting_config())
+    out = model(torch.randint(0, 256, (2, 6)), loop_k=5)
+    assert out.hidden_per_step is not None and len(out.hidden_per_step) == 5
+    assert all(h.shape == (2, 6, model.cfg.d_model) for h in out.hidden_per_step)
+
+
+def test_halting_probe_passes_do_not_corrupt_the_cache():
+    """The bug this guards against is silent and severe.
+
+    Halting applies the coda once per iteration to score each candidate stopping point.
+    All those calls share one cache slot, so if they write to it they append the same
+    positions k times -- and incremental decoding then produces fluent, plausible, wrong
+    output with nothing to indicate why. The probe passes are cache-free; the real coda
+    runs once.
+    """
+    torch.manual_seed(0)
+    model = ProphetModel(halting_config()).eval()
+    ids = torch.randint(0, 256, (1, 10))
+
+    with torch.no_grad():
+        full = model(ids, loop_k=4, return_mtp=False).logits
+        cache = ProphetCache()
+        steps = [
+            model(ids[:, t : t + 1], cache=cache, loop_k=4, return_mtp=False).logits
+            for t in range(10)
+        ]
+
+    assert torch.allclose(full, torch.cat(steps, dim=1), atol=2e-3)
+
+    coda_slots = [k for k in cache.slots if k[0] == "coda"]
+    for key in coda_slots:
+        slot = cache.slots[key]
+        if hasattr(slot, "keys") and slot.keys is not None:
+            assert slot.keys.shape[2] == 10, (
+                f"coda cache holds {slot.keys.shape[2]} positions for 10 tokens; "
+                "the per-iteration probe passes are writing to it"
+            )

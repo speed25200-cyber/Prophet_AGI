@@ -60,6 +60,49 @@ reste une matrice de taille fixe, indépendante de la longueur du contexte.
 > dans le cœur. À comparer une fois le socle validé — mais pas avant, car cela
 > réintroduit un couplage entre profondeur et mémoire.
 
+### 2bis. Révision — ce que D1 a coûté
+
+*Ajouté après le track W1. Cette décision était présentée comme une élégance ; c'est un
+arbitrage, et il faut l'écrire ainsi.*
+
+Le chain-of-thought rend deux services distincts : de la **profondeur sérielle**, et un
+**bloc-notes relisible**. Le cœur bouclé remplace le premier. Il ne remplace pas le second :
+un état de taille fixe est un résumé, pas un tampon adressable.
+
+W1 donne à cette distinction une forme forte : *les boucles à état borné ne peuvent pas
+décider les problèmes P-complets sous réductions logspace, là où un CoT de longueur
+polynomiale le peut.* Empiriquement, sur les mêmes tâches, zéro token de mémoire échoue
+systématiquement et huit suffisent.
+
+**Le point qui nous concerne directement : D1 — « pas d'attention dans le cœur bouclé »,
+prise pour empêcher le cache KV de croître avec *k* — est exactement la décision qui a
+supprimé le bloc-notes.** Le gain mémoire (cache d'attention identique à l'octet près entre
+k=1 et k=8) et la perte de capacité sont **le même choix**, pas deux choix indépendants.
+
+Nous conservons D1, pour une raison qui reste valable : la mémoire d'inférence est notre
+contrainte dure. Mais le coût est maintenant nommé, et deux conséquences en découlent :
+
+1. **Prophet ne doit pas prétendre remplacer le CoT.** L'objectif honnête est de le
+   *comprimer* — atteindre l'essentiel de la qualité du CoT complet en émettant nettement
+   moins de tokens — et non de s'en passer.
+2. **Un tampon latent persistant est la réparation candidate.** W1 spécifie un petit nombre
+   d'emplacements latents portés d'un token décodé au suivant, écrits et lus par une
+   attention bornée, dont le coût est indépendant de la longueur du contexte. C'est le
+   bloc-notes restitué sans le cache KV. Non implémenté ; c'est le premier candidat si une
+   porte de décision libère du budget.
+
+### 2ter. Révision — la boucle à *k* constant n'achète aucune classe de complexité
+
+Seconde correction de W1, plus sévère. Boucler *k* fois avec *k* **constant** laisse la
+profondeur bornée par une constante : aucun changement de classe de complexité. Le gain est
+un facteur constant, pas un changement de nature.
+
+Seule une profondeur **dépendant de l'entrée** sort le modèle de sa classe — c'est-à-dire
+un mécanisme de **halte entraîné**. Notre schéma de configuration expose déjà
+`recurrent.halting`, mais nous le traitions comme une option agréable. C'est en réalité la
+seule voie vers ce que la boucle est censée acheter, et sa priorité doit être relevée en
+conséquence.
+
 ---
 
 ## 3. Décision 2 — Taille du modèle : arbitrage R04 contre R07
@@ -224,6 +267,8 @@ main assurent la spéculation sans modèle externe.
 | D2 | ≤ 4B total / ~370M actifs | R07, planificateur | **Acquis** (mémoire) |
 | D3 | Hybride GDN 3:1 avec SWA + globale NoPE | R02 | **Acquis** |
 | D4 | Profondeur réglable à l'exécution | R04 | **[ABLATION A1] à ≥ 350M** |
+| D4b | Halte entraînée, pour une profondeur dépendant de l'entrée | W1 | **Requis** — sans elle, la boucle n'achète qu'un facteur constant (§2ter) |
+| D1b | Bloc-notes latent persistant, pour réparer ce que D1 a coûté | W1 | **Candidat** — non implémenté (§2bis) |
 | D5 | Init d'état déterministe à l'inférence | interne | **Acquis** (test) |
 | D6 | BPE 32k à repli octet, pas de frontend octet en v1 | R01 | **Acquis** |
 | D7 | Ancrages multimodaux seulement | R12 | **Acquis** |

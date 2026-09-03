@@ -322,6 +322,21 @@ soit ajoutable sans ré-entraîner le tronc.
 
 ---
 
+## 12bis. Analyse plus profonde : voir `07_WALLS.md`
+
+Ce document recense les problèmes **attaquables sous notre budget**. Une analyse
+séparée, [`07_WALLS.md`](07_WALLS.md), cherche le **mécanisme** de quatre verrous plus
+profonds — dont un que la littérature ne nomme pas :
+
+- **A** — le chain-of-thought est un goulot d'information *et* un correcteur d'erreur ;
+  et il rend deux services distincts (profondeur sérielle, bloc-notes relisible) dont un
+  seul est remplaçable par la récurrence ;
+- **B** — la profondeur fixe borne la classe de circuits calculables ;
+- **C** — pourquoi la descente de gradient détruit ce qu'elle ne met pas à jour, et le
+  troisième étage de mémoire que nous n'avons pas construit ;
+- **D** — **le calcul d'inférence ne se cumule pas.** Un modèle qui passe dix minutes sur
+  un problème n'en sait rien le lendemain.
+
 ## 13. Verrous reconnus mais **hors périmètre v1**
 
 Listés pour l'honnêteté intellectuelle — nous ne les attaquons pas, et nous disons pourquoi.

@@ -92,6 +92,7 @@ modèle de 369M.
 | [`docs/04_EVAL.md`](docs/04_EVAL.md) | Tableau de bord et protocole |
 | [`docs/05_ROADMAP.md`](docs/05_ROADMAP.md) | Plan sur 11 semaines et arbitrage du budget |
 | [`docs/06_MEMORY.md`](docs/06_MEMORY.md) | Mémoire persistante : conception, mesures, limites |
+| [`docs/07_WALLS.md`](docs/07_WALLS.md) | **Les murs** : mécanisme des verrous profonds, y compris ceux qu'on ne franchit pas |
 
 ## Outils
 
