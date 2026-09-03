@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Data & artifacts (never commit)
+data/
+datasets/
+checkpoints/
+ckpt/
+runs/
+wandb/
+outputs/
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.gguf
+*.npy
+*.npz
+*.arrow
+*.parquet
+*.jsonl.zst
+
+# Local
+.env
+.DS_Store
+*.log
+nohup.out
