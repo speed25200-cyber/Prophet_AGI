@@ -1,0 +1,323 @@
+name: prophet-v1
+total_tokens: 40000000000.0
+description: Three-phase WSD mixture from track R06, proportions preserved and token
+  counts scaled to the measured single-A100 budget.
+phases:
+- name: A-stable
+  weight: 0.7
+  lr_schedule: warmup_then_constant
+  context_len: 4096
+  purpose: Build the world model. Broadest mixture, highest token volume, constant
+    peak learning rate. No instruction data at all — it is deliberately saved for
+    the phases where recency makes it count.
+  sources:
+  - name: nemotron-cc-v2-hq
+    hf_id: nvidia/Nemotron-CC-v2
+    domain: web
+    weight: 0.22
+    available_tokens: 1000000000000.0
+    license: NVIDIA Open Data (permissive)
+    config: null
+    filters: {}
+    notes: 'R06 D2: ranks above DCLM and FineWeb-Edu on downstream MMLU.'
+  - name: fineweb-edu
+    hf_id: HuggingFaceFW/fineweb-edu
+    domain: web
+    weight: 0.18
+    available_tokens: 1300000000000.0
+    license: ODC-By-1.0
+    config: null
+    filters:
+      edu_score_min: 3
+    notes: Kept for decorrelation from the Nemotron pipeline.
+  - name: dclm-baseline
+    hf_id: mlfoundations/dclm-baseline-1.0
+    domain: web
+    weight: 0.14
+    available_tokens: 2600000000000.0
+    license: CC-BY-4.0
+    config: null
+    filters: {}
+    notes: ''
+  - name: nemotron-cc-synthetic
+    hf_id: nvidia/Nemotron-CC-v2
+    domain: synthetic
+    weight: 0.08
+    available_tokens: 800000000000.0
+    license: NVIDIA Open Data (permissive)
+    config: synthetic
+    filters: {}
+    notes: Diverse-QA / Distill / Extract-Knowledge.
+  - name: stack-edu
+    hf_id: HuggingFaceTB/stack-edu
+    domain: code
+    weight: 0.09
+    available_tokens: 125000000000.0
+    license: ODC-By-1.0
+    config: null
+    filters: {}
+    notes: ''
+  - name: nemotron-code
+    hf_id: nvidia/Nemotron-Pretraining-Code-v2
+    domain: code
+    weight: 0.05
+    available_tokens: null
+    license: NVIDIA Open Data (permissive)
+    config: null
+    filters: {}
+    notes: ''
+  - name: nemotron-cc-math
+    hf_id: nvidia/Nemotron-CC-Math-v1
+    domain: math
+    weight: 0.06
+    available_tokens: 52000000000.0
+    license: NVIDIA Open Data (permissive)
+    config: 4plus
+    filters: {}
+    notes: ''
+  - name: megamath-finemath
+    hf_id: LLM360/MegaMath
+    domain: math
+    weight: 0.03
+    available_tokens: 25000000000.0
+    license: ODC-By-1.0
+    config: null
+    filters: {}
+    notes: ''
+  - name: cosmopedia-v2
+    hf_id: HuggingFaceTB/smollm-corpus
+    domain: synthetic
+    weight: 0.04
+    available_tokens: 28000000000.0
+    license: Apache-2.0
+    config: cosmopedia-v2
+    filters: {}
+    notes: ''
+  - name: curated-reference
+    hf_id: allenai/dolma3
+    domain: reference
+    weight: 0.05
+    available_tokens: null
+    license: ODC-By-1.0
+    config: null
+    filters: {}
+    notes: Wikipedia / StackExchange / books / science. Config IDs unverified.
+  - name: proof-pile-2
+    hf_id: EleutherAI/proof-pile-2
+    domain: reference
+    weight: 0.03
+    available_tokens: 55000000000.0
+    license: mixed (per-subset)
+    config: null
+    filters: {}
+    notes: ''
+  - name: fineweb2-hq
+    hf_id: epfml/FineWeb2-HQ
+    domain: multilingual
+    weight: 0.03
+    available_tokens: 1000000000000.0
+    license: ODC-By-1.0
+    config: null
+    filters: {}
+    notes: Top 6 languages only; capped per R06 D5.
+- name: B-midtrain
+  weight: 0.2
+  lr_schedule: hold_then_slow_decay
+  context_len: 16384
+  purpose: 'Capability injection: math, code and reasoning format, while the model
+    is still plastic. Context is extended 4k -> 16k over the last third of the phase.'
+  sources:
+  - name: nemotron-cc-math-up
+    hf_id: nvidia/Nemotron-CC-Math-v1
+    domain: math
+    weight: 0.14
+    available_tokens: 52000000000.0
+    license: NVIDIA Open Data (permissive)
+    config: 4plus
+    filters: {}
+    notes: ''
+  - name: megamath-finemath
+    hf_id: LLM360/MegaMath
+    domain: math
+    weight: 0.08
+    available_tokens: 25000000000.0
+    license: ODC-By-1.0
+    config: null
+    filters: {}
+    notes: ''
+  - name: stack-edu-anneal
+    hf_id: HuggingFaceTB/stack-edu
+    domain: code
+    weight: 0.16
+    available_tokens: 125000000000.0
+    license: ODC-By-1.0
+    config: null
+    filters:
+      edu_score_min: 4
+    notes: ''
+  - name: nemotron-cc-v2-hq
+    hf_id: nvidia/Nemotron-CC-v2
+    domain: web
+    weight: 0.16
+    available_tokens: 1000000000000.0
+    license: NVIDIA Open Data (permissive)
+    config: null
+    filters: {}
+    notes: ''
+  - name: fineweb-edu-4
+    hf_id: HuggingFaceFW/fineweb-edu
+    domain: web
+    weight: 0.1
+    available_tokens: 350000000000.0
+    license: ODC-By-1.0
+    config: null
+    filters:
+      edu_score_min: 4
+    notes: ''
+  - name: nemotron-diverse-qa
+    hf_id: nvidia/Nemotron-CC-v2
+    domain: synthetic
+    weight: 0.1
+    available_tokens: 400000000000.0
+    license: NVIDIA Open Data (permissive)
+    config: diverse-qa
+    filters: {}
+    notes: ''
+  - name: cosmopedia-v2
+    hf_id: HuggingFaceTB/smollm-corpus
+    domain: synthetic
+    weight: 0.06
+    available_tokens: 28000000000.0
+    license: Apache-2.0
+    config: cosmopedia-v2
+    filters: {}
+    notes: ''
+  - name: curated-reference
+    hf_id: allenai/dolma3
+    domain: reference
+    weight: 0.05
+    available_tokens: null
+    license: ODC-By-1.0
+    config: null
+    filters: {}
+    notes: ''
+  - name: instruction-as-documents
+    hf_id: HuggingFaceTB/smoltalk2
+    domain: instruction
+    weight: 0.08
+    available_tokens: null
+    license: Apache-2.0
+    config: null
+    filters: {}
+    notes: Rendered as pretraining documents, not chat turns.
+  - name: long-documents
+    hf_id: EleutherAI/proof-pile-2
+    domain: long_context
+    weight: 0.05
+    available_tokens: 55000000000.0
+    license: mixed (per-subset)
+    config: null
+    filters:
+      min_tokens: 16384
+    notes: ''
+  - name: fineweb2-hq
+    hf_id: epfml/FineWeb2-HQ
+    domain: multilingual
+    weight: 0.02
+    available_tokens: 1000000000000.0
+    license: ODC-By-1.0
+    config: null
+    filters: {}
+    notes: ''
+- name: C-anneal
+  weight: 0.1
+  lr_schedule: linear_to_zero
+  context_len: 32768
+  purpose: Learning rate decays to zero on the highest-quality data available. Zero
+    low-quality web. Run three times from the same phase-B checkpoint with different
+    orderings and soup the results — nearly free relative to the phase cost, and reliably
+    worth a point.
+  sources:
+  - name: openthoughts3
+    hf_id: open-thoughts/OpenThoughts3-1.2M
+    domain: instruction
+    weight: 0.18
+    available_tokens: 2000000000.0
+    license: Apache-2.0
+    config: null
+    filters: {}
+    notes: 'Long chain-of-thought traces: maths, science, code.'
+  - name: nemotron-cc-math
+    hf_id: nvidia/Nemotron-CC-Math-v1
+    domain: math
+    weight: 0.16
+    available_tokens: 52000000000.0
+    license: NVIDIA Open Data (permissive)
+    config: 4plus
+    filters: {}
+    notes: ''
+  - name: opc-annealing
+    hf_id: OpenCoder-LLM/opc-annealing-corpus
+    domain: code
+    weight: 0.14
+    available_tokens: null
+    license: MIT
+    config: null
+    filters: {}
+    notes: ''
+  - name: instruction-constraints
+    hf_id: HuggingFaceTB/smoltalk2
+    domain: instruction
+    weight: 0.14
+    available_tokens: null
+    license: Apache-2.0
+    config: null
+    filters: {}
+    notes: Drives IFEval. Plus a bespoke constraint-following set.
+  - name: fineweb-edu-top
+    hf_id: HuggingFaceFW/fineweb-edu
+    domain: web
+    weight: 0.12
+    available_tokens: 350000000000.0
+    license: ODC-By-1.0
+    config: null
+    filters:
+      edu_score_min: 4
+    notes: ''
+  - name: nemotron-diverse-qa
+    hf_id: nvidia/Nemotron-CC-v2
+    domain: synthetic
+    weight: 0.1
+    available_tokens: 400000000000.0
+    license: NVIDIA Open Data (permissive)
+    config: diverse-qa
+    filters: {}
+    notes: ''
+  - name: curated-reference
+    hf_id: allenai/dolma3
+    domain: reference
+    weight: 0.06
+    available_tokens: null
+    license: ODC-By-1.0
+    config: null
+    filters: {}
+    notes: ''
+  - name: cosmopedia-v2
+    hf_id: HuggingFaceTB/smollm-corpus
+    domain: synthetic
+    weight: 0.06
+    available_tokens: 28000000000.0
+    license: Apache-2.0
+    config: cosmopedia-v2
+    filters: {}
+    notes: ''
+  - name: long-context-32k
+    hf_id: EleutherAI/proof-pile-2
+    domain: long_context
+    weight: 0.04
+    available_tokens: 55000000000.0
+    license: mixed (per-subset)
+    config: null
+    filters:
+      min_tokens: 32768
+    notes: ''
