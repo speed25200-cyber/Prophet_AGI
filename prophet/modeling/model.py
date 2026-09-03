@@ -231,6 +231,24 @@ class ProphetModel(nn.Module):
                 sections[name] = nn.ModuleList(blocks)
         self.sections = nn.ModuleDict(sections)
 
+        # Persistent memory (track R03). Attached at the trunk indices named in the
+        # config, read as a residual addition. It is inert until written, so enabling it
+        # cannot change behaviour before anything has been stored.
+        self.ledgers = nn.ModuleDict()
+        if cfg.memory.enabled and cfg.memory.kind == "product_key":
+            from prophet.memory.ledger import LedgerConfig, ProductKeyMemory
+
+            for index in cfg.memory.layers:
+                self.ledgers[str(index)] = ProductKeyMemory(
+                    LedgerConfig(
+                        dim=d,
+                        memory_dim=cfg.memory.memory_dim,
+                        n_slots=cfg.memory.n_slots,
+                        write_lr=cfg.memory.write_lr,
+                        decay=cfg.memory.decay,
+                    )
+                )
+
         self.norm_out = RMSNorm(d, cfg.norm_eps)
         self.lm_head = nn.Linear(d, cfg.frontend.vocab_size, bias=False)
         if cfg.frontend.tie_word_embeddings:
@@ -333,6 +351,10 @@ class ProphetModel(nn.Module):
                 if isinstance(block.ffn, SparseMoE) and block.ffn.last_stats is not None:
                     router_stats.append(block.ffn.last_stats)
                     aux_terms.append(block.ffn.last_stats.aux_loss)
+                key = str(idx)
+                if section in ("trunk", "coda") and key in self.ledgers:
+                    # Residual read: the ledger contributes nothing until written.
+                    h = h + self.ledgers[key](h)
             return h
 
         if not cfg.recurrent.enabled:

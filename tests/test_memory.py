@@ -357,3 +357,87 @@ def test_lambda_scales_what_is_stored():
     consolidate(model, strong, eps, passes=4, lam=1.0)
 
     assert strong.values.norm() > weak.values.norm()
+
+
+# --------------------------------------------------------------------------------------
+# Integration with the model
+# --------------------------------------------------------------------------------------
+
+
+def _model_with_memory(**memory_kw) -> ProphetModel:
+    from prophet.config import MemoryConfig
+
+    cfg = ProphetConfig(
+        d_model=64, n_layers=4,
+        frontend=FrontendConfig(vocab_size=128),
+        mixer=MixerConfig(pattern=["full_attn"], n_heads=4, n_kv_heads=2, head_dim=16),
+        recurrent=RecurrentCoreConfig(enabled=False),
+        ffn=FeedForwardConfig(kind="dense", hidden_mult=2.0),
+        memory=MemoryConfig(**memory_kw) if memory_kw else MemoryConfig(),
+    )
+    return ProphetModel(cfg).eval()
+
+
+def test_memory_is_off_by_default():
+    assert len(_model_with_memory().ledgers) == 0
+
+
+def test_enabling_memory_does_not_change_behaviour_until_it_is_written():
+    """Reversibility, per the project's engineering rules: turning a module on must be a
+    no-op until it is actually used."""
+    torch.manual_seed(0)
+    without = _model_with_memory()
+    torch.manual_seed(0)
+    with_memory = _model_with_memory(
+        enabled=True, kind="product_key", layers=(2,), memory_dim=32, n_slots=1024
+    )
+
+    ids = torch.randint(0, 128, (1, 6))
+    with torch.no_grad():
+        assert torch.allclose(without(ids).logits, with_memory(ids).logits, atol=1e-6)
+
+
+def test_writing_to_the_ledger_changes_the_model_output():
+    torch.manual_seed(0)
+    model = _model_with_memory(
+        enabled=True, kind="product_key", layers=(2,), memory_dim=32, n_slots=1024
+    )
+    ids = torch.randint(0, 128, (1, 6))
+    with torch.no_grad():
+        before = model(ids).logits
+    model.ledgers["2"].write(torch.randn(1, 6, 64), torch.randn(1, 6, 64) * 5)
+    with torch.no_grad():
+        after = model(ids).logits
+    assert not torch.allclose(before, after, atol=1e-4)
+
+
+def test_ledger_state_is_a_buffer_not_a_parameter():
+    """It is updated by the write rule, never by an optimiser. If it became a parameter,
+    weight decay alone would slowly erase everything remembered."""
+    model = _model_with_memory(
+        enabled=True, kind="product_key", layers=(2,), memory_dim=32, n_slots=1024
+    )
+    names = dict(model.named_parameters())
+    assert "ledgers.2.values" not in names
+    assert "ledgers.2.write_counts" not in names
+    assert "ledgers.2.values" in dict(model.named_buffers())
+
+
+def test_ledger_survives_a_checkpoint_round_trip(tmp_path):
+    """Persistence is the whole point: a ledger that is not saved is not memory."""
+    torch.manual_seed(0)
+    model = _model_with_memory(
+        enabled=True, kind="product_key", layers=(2,), memory_dim=32, n_slots=1024
+    )
+    model.ledgers["2"].write(torch.randn(1, 4, 64), torch.randn(1, 4, 64))
+    expected = model.ledgers["2"].values.clone()
+
+    path = tmp_path / "model.pt"
+    torch.save(model.state_dict(), path)
+
+    torch.manual_seed(0)
+    restored = _model_with_memory(
+        enabled=True, kind="product_key", layers=(2,), memory_dim=32, n_slots=1024
+    )
+    restored.load_state_dict(torch.load(path, weights_only=True))
+    assert torch.equal(restored.ledgers["2"].values, expected)
