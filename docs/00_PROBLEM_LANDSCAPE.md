@@ -22,18 +22,62 @@ Le **score de priorité** = `Gravité × Levier / Risque`. Un problème très gr
 insoluble à notre échelle (ex. : couverture factuelle du monde) est *délibérément*
 contourné, pas attaqué de front.
 
-L'asymétrie fondamentale du projet :
+### L'asymétrie fondamentale, chiffrée
 
-```
-Qwen3-4B    : ~36T tokens  ×  4e9 params  ≈  8.6e23 FLOPs d'entraînement
-Prophet     : ~0.3T tokens × 1.3e9 actifs ≈  2.3e21 FLOPs d'entraînement
-                                              --------------------------
-                                              ~370× moins de compute
-```
+Ces nombres sont produits par `python -m prophet.scaling`, pas estimés à la main.
+Budget de référence : **300 heures-A100 à 35 % de MFU = 1.18e20 FLOPs**.
+
+| Modèle | Paramètres | Tokens | FLOPs d'entraînement | Heures-A100 équivalentes | Écart |
+|---|---:|---:|---:|---:|---:|
+| Gemma-3-1B | 1.0B | 2.0T | 1.2e22 | 30 500 | **102×** |
+| SmolLM2-360M | 360M | 4.0T | 8.6e21 | 22 000 | **73×** |
+| Llama-3.2-1B | 1.24B | 9.0T | 6.7e22 | 170 000 | **568×** |
+| SmolLM2-1.7B | 1.7B | 11.0T | 1.1e23 | 285 000 | **951×** |
+| Qwen3-1.7B | 1.7B | 36.0T | 3.7e23 | 934 000 | **3 114×** |
+| Qwen3-4B | 4.0B | 36.0T | 8.6e23 | 2 198 000 | **7 326×** |
+| **Prophet** | **~500M actifs** | **~40B** | **1.2e20** | **300** | — |
+
+Il faut nommer ce que cela implique, sans euphémisme :
+
+> **Nous sommes 73× sous le plus modeste des concurrents.** Même SmolLM2-360M — le
+> modèle le plus frugal de la liste — a coûté 22 000 heures-A100.
+
+Deux conséquences structurent tout le projet :
+
+1. **Les benchmarks de connaissance ne sont pas gagnables par pré-entraînement.**
+   La couverture factuelle s'achète en tokens, et il nous en manque deux à trois ordres
+   de grandeur. Attaquer MMLU de front consomme le budget sans résultat.
+2. **La capacité par paramètre et par gigaoctet est gagnable.** La distillation depuis
+   des professeurs ouverts, la profondeur de raisonnement achetée à l'inférence, et un
+   mélange de données optimisé pour un petit budget sont des leviers qui **ne dépendent
+   pas** de la taille du cluster adverse.
+
+Corollaire opérationnel majeur, qui n'était pas dans le plan initial :
+**la distillation n'est pas une option de post-entraînement, c'est la stratégie centrale
+de pré-entraînement.** Apprendre depuis les logits d'un professeur fort transfère
+l'information bien plus efficacement par token que la prédiction du token suivant sur du
+texte brut. C'est le seul mécanisme connu qui permette d'importer le résultat de
+36 000 milliards de tokens sans les payer.
+
+### Point de fonctionnement retenu
+
+À 300 heures-A100, la frontière compute-optimale se situe autour de 991M paramètres pour
+19.8B tokens. Mais la mémoire d'inférence est notre contrainte dure, donc nous acceptons
+un léger surcoût de perte pour un modèle plus petit et plus rapide :
+
+| Paramètres actifs | Tokens | Tokens/param | Perte prédite | Taille int4 | Rôle |
+|---:|---:|---:|---:|---:|---|
+| 700M | 28B | 40 | 2.577 | 0.35 GB | compute-optimal |
+| **500M** | **39B** | **79** | **2.582** | **0.25 GB** | **cible principale** |
+| 350M | 56B | 160 | 2.597 | 0.17 GB | variante iPhone |
+
+Le sur-entraînement (79 tokens/param contre 20 pour Chinchilla) est un choix délibéré :
+il coûte 0.005 de perte prédite et rend le modèle 30 % plus petit et plus rapide à
+l'inférence — exactement le bon échange quand la mémoire est rare.
 
 On ne gagne **pas** en faisant la même chose en plus petit. On gagne uniquement en
-changeant les termes du problème : architecture, allocation du budget de tokens,
-calcul au moment de l'inférence, et mémoire persistante.
+changeant les termes du problème : distillation, architecture, allocation du budget de
+tokens, calcul au moment de l'inférence, et mémoire persistante.
 
 ---
 
@@ -46,9 +90,11 @@ l'entraînement, qui :
 - fragmente les nombres de façon incohérente, ce qui sabote l'arithmétique ;
 - inflige une « fertilité » 2 à 5× plus élevée aux langues non-anglaises et au code
   (donc un coût d'inférence proportionnellement plus élevé pour ces usages) ;
-- coûte, à notre échelle, une fraction énorme des paramètres : un vocabulaire de 128k
-  avec `d_model = 2048` consomme **2 × 128k × 2048 ≈ 525M paramètres** en
-  embedding + tête de sortie — soit ~40 % d'un modèle de 1.3B, dépensés en table de correspondance ;
+- coûte, à notre échelle, une fraction énorme des paramètres. Mesuré par
+  `prophet.budget` sur une configuration réaliste (`d_model=1024`, 16 couches,
+  vocabulaire de 49 152, embeddings liés) : **50.3M paramètres sur 230.7M, soit 21.8 %
+  du modèle** dépensés en table de correspondance qui n'effectue aucun calcul. Avec un
+  vocabulaire de 128k, la part dépasse 40 % ;
 - crée des « glitch tokens » et des angles morts de sécurité ;
 - fixe définitivement le compromis compression/granularité avant d'avoir vu la moindre donnée.
 
@@ -164,12 +210,21 @@ Sous-problèmes :
 
 - qualité des corpus (le web brut est majoritairement du bruit) ;
 - allocation du budget de tokens entre domaines (web / code / maths / multilingue / synthétique) ;
-- combien d'époques peut-on répéter avant que la répétition cesse de payer ;
+- combien d'époques peut-on répéter avant que la répétition cesse de payer — question
+  critique pour nous, car 40B tokens de données réellement excellentes n'existent
+  peut-être pas en accès libre ;
 - la phase de *recuit* (décroissance du LR sur des données de très haute qualité) est
   souvent le plus gros gain unitaire de tout le pipeline, et elle est bon marché ;
 - données synthétiques : gains réels sur MMLU, mais risque d'effondrement et de licence.
 
 → Track **R06**. Gravité 5 · Levier 5 · Risque 2. **Priorité maximale.**
+
+**Reformulation après calibration du budget.** Avec ~40B tokens et non 300B, le problème
+change de nature : il ne s'agit plus de sélectionner le meilleur sous-ensemble d'un
+corpus abondant, mais de maximiser l'information transférée par token. Cela promeut la
+**distillation depuis des professeurs ouverts** (Qwen3 en Apache-2.0, DeepSeek-R1 en MIT)
+du rang de technique de post-entraînement à celui de mécanisme principal
+d'apprentissage.
 
 ---
 
