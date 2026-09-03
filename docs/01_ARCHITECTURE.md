@@ -166,7 +166,7 @@ l'exécution.
 
 ---
 
-## 7. La question stratégique ouverte : partir de zéro ou convertir un donneur
+## 7. Décision D10 — tranchée : la voie mixte
 
 **Quatre tracks indépendants sont arrivés à la même conclusion**, sans se coordonner :
 
@@ -175,33 +175,46 @@ l'exécution.
 | R01 | Le budget ne permet pas un frontend octet entraîné de zéro ; retrofit d'un checkpoint. |
 | R02 | « 300 heures-A100 ≈ 5.6B tokens à 1.2B actifs — nous ne pouvons pas surpasser Qwen3 en pré-entraînement. La conversion de donneur est le chemin réaliste. » |
 | R04 | « Nous sommes ~2 500× sous le compute de pré-entraînement de Qwen3-1.7B. La récurrence achète de la profondeur, pas de la connaissance. » |
-| R07 | ≤ 4B au total, atteint par *upcycling* d'un checkpoint dense bien entraîné plutôt que depuis une initialisation aléatoire. |
+| R05 | « 466× — le multiple de compute nécessaire pour égaler Qwen3-1.7B depuis une init aléatoire. » |
+| R07 | ≤ 4B au total, atteint par *upcycling* d'un checkpoint dense plutôt que depuis une init aléatoire. |
 
-Notre propre calculateur, écrit indépendamment, donne le même verdict : **73× à 7 326×**
-sous le compute des concurrents.
+**Décision retenue : les deux, sur deux modèles distincts.**
 
-**Ce que « conversion de donneur » signifie concrètement.** Partir de poids ouverts
-(Qwen3 en Apache-2.0, par exemple), remplacer la majorité des couches d'attention par des
-couches GDN, et poursuivre l'entraînement sur ~2–5B tokens pour récupérer la qualité. La
-littérature 2026 sur la linéarisation rapporte des coûts de cet ordre. On hérite alors de
-36 000 milliards de tokens de connaissance et on n'achète que l'architecture.
+| Modèle | Origine | Rôle |
+|---|---|---|
+| **Prophet-mini** (229M) | **Poids aléatoires** | Preuve scientifique honnête de l'architecture. Cible iPhone. Ne doit rien au pré-entraînement de personne. |
+| **Prophet-main** (~970M) | **Conversion d'un donneur Apache-2.0** | Modèle compétitif. Hérite de la connaissance ; nous n'achetons que l'architecture. |
 
-**La tension.** Le cahier des charges dit « repartir de A à Z ». Deux lectures :
+Les deux partagent l'architecture, le tokenizer d'entrée près, les données et l'évaluation.
+Seule l'initialisation diffère.
 
-- *Architecture de zéro* — compatible avec la conversion de donneur.
-- *Poids de zéro* — incompatible.
+### Ce que la conversion fait concrètement
 
-**Ce que cela change.** La lecture retenue modifie le calendrier, le budget de tokens,
-les scores atteignables et le positionnement du projet. Tout le reste — architecture,
-pipeline de données, infrastructure d'entraînement, évaluation — est **commun aux deux
-voies** et se construit sans attendre la réponse.
+Implémentée dans `prophet/convert/`. Résultat mesuré pour Qwen3-1.7B :
 
-**Recommandation.** Une voie mixte : *entraîner Prophet-mini de zéro* (229M, faisable et
-honnête, prouve l'architecture), *et* produire Prophet-main par conversion de donneur.
-Les deux partagent l'architecture ; seule l'initialisation diffère. Cela donne une preuve
-scientifique de l'architecture **et** un modèle compétitif.
+| | Donneur | Prophet converti |
+|---|---:|---:|
+| Paramètres | 1.72B | **0.97B** |
+| Couches | 28 | 12 paramétrées, **28 effectives** (k=5) |
+| Couverture paramétrique | — | **89 %** |
 
----
+- **Prélude et coda** prennent les premières et dernières couches du donneur par **copie directe**. La configuration Prophet est générée *depuis* le donneur (`head_dim`, `n_kv_heads`, largeur, largeur FFN) précisément pour que la copie soit directe et non une interpolation.
+- **Le cœur partagé** est initialisé par la **moyenne** des couches médianes du donneur. Des couches consécutives d'un transformeur entraîné calculent des mises à jour similaires ; leur moyenne est un point de départ défendable pour un bloc appliqué en boucle. C'est une initialisation, pas une équivalence.
+- **Les couches à delta gated** n'ont pas d'équivalent chez le donneur. Leurs projections q/k sont amorcées depuis l'attention (les deux projettent le flux résiduel dans un espace où un produit scalaire signifie « similarité »), et la projection de sortie place les poids du donneur dans la première moitié avec **des zéros dans la seconde** — la capacité élargie démarre inerte, donc la fonction initiale de la couche est aussi proche de l'attention du donneur qu'un mélangeur à état borné peut l'être.
+
+### Garde-fous
+
+- **Licence.** `assert_donor_is_usable` **refuse** un donneur dont les conditions suivent la dérivée. Llama-3.2 est rejeté par défaut : sa licence contraindrait le nom du modèle produit et interdirait une publication sous Apache-2.0.
+- **Couverture minimale.** En dessous de 50 % de paramètres hérités, `scripts/convert_donor.py` refuse : à ce niveau, la « conversion » est en réalité du pré-entraînement à départ chaud et doit être budgétée comme tel.
+- **Vérification.** Les chiffres d'architecture des donneurs ont été écrits alors que le Hub était injoignable. Tous sont marqués `verified=False` et la conversion refuse de s'exécuter tant que `scripts/verify_donors.py` n'a pas confronté chaque champ au `config.json` du Hub. Un `head_dim` erroné n'échoue pas bruyamment : il produit des incompatibilités de forme silencieusement laissées en initialisation fraîche.
+
+### Conséquence acceptée
+
+Prophet-mini utilise Prophet-Tok v1 (32k) ; Prophet-main hérite du vocabulaire du donneur
+(~152k). **Ils ne partagent donc pas de vocabulaire**, et mini ne peut pas servir de
+modèle brouillon pour le décodage spéculatif de main — une propriété que R01 valorisait.
+Le remplacement est déjà dans l'architecture : les têtes de prédiction multi-tokens de
+main assurent la spéculation sans modèle externe.
 
 ## 8. Traçabilité des décisions
 
@@ -216,4 +229,4 @@ scientifique de l'architecture **et** un modèle compétitif.
 | D7 | Ancrages multimodaux seulement | R12 | **Acquis** |
 | D8 | Mémoire persistante à deux étages | R03 | **[ABLATION E2]** |
 | D9 | Tête de confiance + abstention | R09 | **[ABLATION A1-R09]** |
-| D10 | Zéro contre conversion de donneur | R01/R02/R04/R07 | **Ouvert — §7** |
+| D10 | Zéro contre conversion de donneur | R01/R02/R04/R07 | **Tranché : voie mixte — §7** |

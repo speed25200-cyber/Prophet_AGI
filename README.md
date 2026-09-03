@@ -73,7 +73,7 @@ modèle de 369M.
 > **Phase 0 — Recherche et conception terminées. Aucun poids entraîné.**
 > Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le pipeline de
 > données, l'infrastructure d'entraînement, le harnais d'évaluation et le plan
-> d'exécution. **173 tests passent** et la boucle d'entraînement tourne de bout en bout
+> d'exécution. **205 tests passent** et la boucle d'entraînement tourne de bout en bout
 > sur corpus synthétique.
 >
 > Réserve honnête : les identifiants de datasets et le tableau de bord concurrent
@@ -103,23 +103,38 @@ python -m prophet.plan                     # allocation des heures-A100 entre tr
 python scripts/design_search.py            # recherche de conception sous contraintes
 python scripts/build_data_docs.py          # régénère le mélange de données
 python scripts/verify_datasets.py          # confronte les identifiants au Hub (semaine 1)
+python scripts/verify_donors.py            # confronte les donneurs au Hub (semaine 1)
+python scripts/convert_donor.py --donor qwen3-1.7b --plan-only
 python scripts/train.py --config configs/prophet_tiny_smoke.json --smoke
-python -m pytest tests/ -q                 # 173 tests
+python -m pytest tests/ -q                 # 205 tests
 ```
 
 Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant
 qu'elles ne coûtent quoi que ce soit — un budget de tokens surestimé d'un facteur 20, et
 805M de paramètres gaspillés dans des tables de hachage.
 
-## Décision ouverte
+## La voie retenue : deux modèles, deux origines
 
 Cinq analyses indépendantes concluent que **surpasser la concurrence par
-pré-entraînement de zéro est arithmétiquement exclu** à ce budget. Quatre recommandent la
-conversion d'un donneur ouvert. Le cahier des charges dit « repartir de A à Z », ce qui
-peut se lire comme *architecture de zéro* (compatible) ou *poids de zéro* (incompatible).
+pré-entraînement depuis des poids aléatoires est arithmétiquement exclu** à ce budget.
+La réponse retenue n'est pas de choisir un camp, mais de faire les deux sur deux modèles :
 
-Ce point est documenté en [`docs/01_ARCHITECTURE.md`](docs/01_ARCHITECTURE.md) §7 et reste
-ouvert. Tout le reste du projet est commun aux deux voies.
+| Modèle | Origine | Budget | Rôle |
+|---|---|---:|---|
+| **Prophet-mini** (229M) | Poids aléatoires | 85 h-A100 | Preuve honnête de l'architecture. Cible iPhone. |
+| **Prophet-main** (~970M) | Conversion d'un donneur Apache-2.0 | 30 h-A100 | Modèle compétitif. 89 % des paramètres hérités. |
+
+Le rapport de coût — 85 heures contre 30 — est le résultat central : la conversion coûte
+un tiers de l'entraînement de zéro pour un modèle quatre fois plus gros, parce qu'elle
+n'achète que l'architecture. Mesuré sur Qwen3-1.7B : 1.72B paramètres et 28 couches
+deviennent 0.97B paramètres et 12 blocs pour **la même profondeur effective de 28**.
+
+```bash
+python scripts/convert_donor.py --donor qwen3-1.7b --plan-only
+```
+
+Détail et garde-fous (licence, couverture minimale, vérification) en
+[`docs/01_ARCHITECTURE.md`](docs/01_ARCHITECTURE.md) §7.
 
 ## Ce que ce projet ne prétend pas faire
 

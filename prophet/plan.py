@@ -32,7 +32,13 @@ class Ask:
     hours: float
     kind: Kind
     priority: int
-    """1 is highest. Ties are broken by hours ascending, so cheap decisive work runs first."""
+    """1 is highest. Ties are broken by **declaration order**, not by cost.
+
+    Cheapest-first looks efficient and is not: it funds three small requests ahead of the
+    one large request the deliverable depends on, and the shortfall lands on whatever is
+    biggest rather than on whatever is least important. Within a priority band the order
+    in :data:`ASKS` is the intended order, so it is the order used.
+    """
     rationale: str
     blocks: tuple[str, ...] = ()
     """Names of asks that are pointless if this one fails — a failed gate makes its
@@ -46,70 +52,85 @@ class Ask:
 
 #: The requests, as returned by the twelve research tracks and trimmed to their
 #: decision-relevant core. Hours are the tracks' own estimates.
+#:
+#: Two entries carry an explicit project decision rather than a track's recommendation:
+#: the mixed path (train the mini from scratch, convert a donor for the main model), and
+#: the promotion of persistent memory to priority 2.
 ASKS: list[Ask] = [
     # --- gates: cheap experiments that can kill an expensive plan -------------------
-    Ask("R04", "loop-vs-depth go/no-go", 24.0, "gate", 1,
-        "Iso-FLOP comparison of looped depth against plain depth, plus depth "
-        "generalisation. If looping does not beat equal-FLOP depth, the central "
-        "architectural bet is dead and everything downstream changes.",
-        blocks=("R04 depth ablations", "R03 two-tier memory")),
-    Ask("R07", "optimiser bake-off (trimmed)", 14.0, "gate", 1,
-        "Muon against a properly tuned AdamW. Break-even is a 1.058x speedup; below "
-        "that the bake-off costs more than it saves and we keep AdamW.",),
     Ask("R01", "byte-frontend MFU probe", 2.0, "gate", 1,
         "Measure realised MFU of patch gather/scatter kernels. Below 0.18 the entire "
         "byte-level track is dead, and 2 hours settles it.",
-        blocks=("R01 byte-frontend ablations",)),
+        blocks=("R01 byte-frontend retrofit",)),
+    Ask("R07", "optimiser bake-off (trimmed)", 14.0, "gate", 1,
+        "Muon against a properly tuned AdamW. Break-even is a 1.058x speedup; below "
+        "that the bake-off costs more than it saves and we keep AdamW."),
+    Ask("R04", "loop-vs-depth go/no-go", 24.0, "gate", 1,
+        "Iso-FLOP comparison of looped depth against plain depth, plus depth "
+        "generalisation, at >=350M parameters. If looping does not beat equal-FLOP "
+        "depth, the central architectural bet is dead and everything downstream changes.",
+        blocks=("R04 depth ablations", "R03 two-tier memory")),
+
+    # --- production: the deliverables themselves --------------------------------------
+    Ask("R11", "evaluation", 19.0, "production", 1,
+        "Three-tier harness plus reproducing four competitor baselines in our own "
+        "harness. Without it every other number is unverifiable."),
+    Ask("R06", "Prophet-mini pretraining", 85.0, "production", 1,
+        "The dense 229M model, trained from random initialisation. It is the honest "
+        "existence proof of the architecture and the iPhone target, and the half of the "
+        "mixed path that owes nothing to anyone else's pretraining."),
+    Ask("R02", "Prophet-main donor conversion", 30.0, "production", 1,
+        "Convert an open Apache-2.0 donor into the Prophet architecture and train to "
+        "recover. At ~89% parameter coverage this is recovery, not pretraining, which is "
+        "why it costs a fraction of what the from-scratch mini needs and is the only way "
+        "the compute arithmetic permits a competitive main model."),
+    Ask("R10", "post-training", 45.0, "production", 1,
+        "Reasoning mid-training, dual-mode SFT, then on-policy distillation. Priority 1 "
+        "because a base model is not a deliverable. Trimmed from the track's 95 hours by "
+        "dropping the RL polish stage on R10's own evidence: on-policy distillation beat "
+        "RL on every metric at 1,800 GPU-hours against 17,920."),
+
+    # --- second tier: gates and ablations that shape the production runs ---------------
     Ask("R09", "confidence-probe AUROC probe", 3.0, "gate", 2,
         "Every published confidence-probe result is at 7B or above. If AUROC at 0.6B "
         "is below 0.70 the head is dropped. No training required.",
         blocks=("R09 confidence head training",)),
     Ask("R02", "hybrid recall gate (MK-NIAH)", 8.0, "gate", 2,
         "Multi-key retrieval is where linear mixers collapse. Gate the interleave "
-        "ratio on it before committing to the stack.",),
-
-    # --- ablations that shape the production run ------------------------------------
+        "ratio on it before committing to the stack."),
     Ask("R06", "data mixture ablations", 20.0, "ablation", 2,
         "Mixture weights are the highest-leverage decision at our budget and the "
         "cheapest to test, at ~4 hours per arm on a 150M proxy."),
+    Ask("R03", "two-tier memory", 20.0, "ablation", 2,
+        "Write, clear context, read -- against a retrieval baseline at equal context "
+        "budget. Unproven at any scale, and promoted to priority 2 by an explicit "
+        "project decision: it is the one capability no competitor has, and the donor "
+        "conversion frees the hours that fund it."),
+
+    # --- third tier: fund from the reserve or from a cancelled gate --------------------
     Ask("R04", "depth ablations", 24.0, "ablation", 3,
         "Recurrence depth schedule, injection, truncation depth. Must run at >=350M: "
         "recursion underperforms vanilla at 135M and only wins from ~360M, so a 130M "
         "ablation would produce a false negative."),
+    Ask("R08", "quantisation ladder", 20.0, "ablation", 3,
+        "Trimmed from 100-200 hours. Establishes how far the over-trained mini can be "
+        "quantised before the on-device claim fails."),
     Ask("R02", "interleave and long-context ablations", 20.0, "ablation", 3,
         "Trimmed from the track's full 96-hour plan to the arms that change the stack."),
     Ask("R05", "MoE routing and upcycling", 16.0, "ablation", 3,
         "Router balance and the dense-to-sparse upcycling recipe."),
-    Ask("R08", "quantisation ladder", 20.0, "ablation", 3,
-        "Trimmed from 100-200 hours. Establishes how far the over-trained mini can be "
-        "quantised before the on-device claim fails."),
-    Ask("R03", "two-tier memory", 20.0, "ablation", 4,
-        "Write, clear context, read — against a retrieval baseline at equal context "
-        "budget. The differentiating bet, but unproven at any scale."),
-
-    # --- production ------------------------------------------------------------------
-    Ask("R06", "Prophet-mini pretraining", 90.0, "production", 1,
-        "The dense 229M model. Trained from scratch, it is the honest existence proof "
-        "of the architecture and the iPhone target."),
-    Ask("R10", "post-training", 60.0, "production", 2,
-        "Reasoning mid-training, dual-mode SFT, on-policy distillation, then RL. "
-        "Trimmed from the track's 95-hour recipe. Distillation gets the compute; RL is "
-        "polish -- on-policy distillation beat RL on every metric at a tenth the cost."),
     Ask("R02", "long-context extension", 12.0, "production", 3,
         "Costs 1.19x base FLOPs rather than the 7.9x a dense model would pay, because "
         "NoPE and bounded-state layers have nothing positional to relearn."),
-    Ask("R11", "evaluation", 19.0, "production", 1,
-        "Three-tier harness plus reproducing four competitor baselines in our own "
-        "harness. Without it every other number is unverifiable."),
 
-    # --- optional --------------------------------------------------------------------
+    # --- optional ---------------------------------------------------------------------
+    Ask("R09", "confidence head training", 20.0, "optional", 4,
+        "Gated on the AUROC probe."),
     Ask("R12", "vision adapter", 26.0, "optional", 5,
         "Vision adds nothing to the benchmarks that decide our win condition. Only if "
         "the budget survives everything above."),
     Ask("R01", "byte-frontend retrofit", 36.0, "optional", 5,
         "Retrofit onto a finished checkpoint, gated on the MFU probe."),
-    Ask("R09", "confidence head training", 20.0, "optional", 4,
-        "Gated on the AUROC probe."),
 ]
 
 
@@ -123,7 +144,8 @@ def allocate(total_hours: float, *, reserve_frac: float = 0.10) -> tuple[list[As
     available = total_hours - reserve
 
     asks = [Ask(**{k: v for k, v in a.__dict__.items() if k != "granted"}) for a in ASKS]
-    ordered = sorted(asks, key=lambda a: (a.priority, a.hours))
+    ordered = sorted(enumerate(asks), key=lambda pair: (pair[1].priority, pair[0]))
+    ordered = [ask for _, ask in ordered]
 
     spent = 0.0
     for ask in ordered:
