@@ -9,6 +9,7 @@ quietly worse model.
 from __future__ import annotations
 
 import math
+import pickle
 
 import pytest
 import torch
@@ -35,6 +36,10 @@ from prophet.train.optim import (
 from prophet.train.schedule import CosineSchedule, WSDSchedule
 
 VOCAB = 64
+
+
+class _UnsupportedCheckpointPayload:
+    pass
 
 
 def tiny_model_config() -> ProphetConfig:
@@ -177,7 +182,7 @@ def test_wsd_warmup_is_monotone_and_never_zero():
     s = WSDSchedule(peak_lr=1e-3, total_steps=1000)
     lrs = [s.lr_at(i) for i in range(s.warmup_steps)]
     assert lrs[0] > 0
-    assert all(b >= a for a, b in zip(lrs, lrs[1:]))
+    assert all(b >= a for a, b in zip(lrs, lrs[1:], strict=False))
 
 
 def test_wsd_decays_to_zero_by_the_end():
@@ -194,7 +199,7 @@ def test_wsd_rejects_a_schedule_with_no_plateau():
 def test_all_decay_shapes_are_monotone(shape):
     s = WSDSchedule(peak_lr=1e-3, total_steps=2000, decay_shape=shape)
     lrs = [s.lr_at(i) for i in range(s.decay_start, s.total_steps)]
-    assert all(b <= a + 1e-12 for a, b in zip(lrs, lrs[1:]))
+    assert all(b <= a + 1e-12 for a, b in zip(lrs, lrs[1:], strict=False))
 
 
 def test_one_minus_sqrt_stays_higher_than_linear_early_in_decay():
@@ -223,6 +228,14 @@ def test_checkpoint_roundtrip(tmp_path):
     state, meta = cm.load_latest()
     assert meta.step == 5
     assert torch.equal(state["w"], torch.arange(10))
+
+
+def test_checkpoint_loader_rejects_non_allowlisted_pickle_objects(tmp_path):
+    cm = CheckpointManager(tmp_path)
+    cm.save({"payload": _UnsupportedCheckpointPayload()}, step=1)
+
+    with pytest.raises(pickle.UnpicklingError, match="Weights only load failed"):
+        cm.load_latest()
 
 
 def test_slots_alternate_so_a_torn_write_cannot_destroy_both(tmp_path):
@@ -373,6 +386,97 @@ def test_resume_restores_the_token_counter(tmp_path):
     assert resumed.tokens_seen == tokens
 
 
+def test_resume_rejects_an_incompatible_model_config_before_mutating_state(tmp_path):
+    original_cfg = tiny_model_config()
+    original = Trainer(
+        ProphetModel(original_cfg), make_loader(),
+        TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path / "original")),
+        model_config=original_cfg, on_log=lambda m: None,
+    )
+    state = original.state_dict()
+    state["step"] = 3
+
+    changed_cfg = tiny_model_config()
+    changed_cfg.recurrent.default_loop_k = 1
+    resumed = Trainer(
+        ProphetModel(changed_cfg), make_loader(),
+        TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path / "changed")),
+        model_config=changed_cfg, on_log=lambda m: None,
+    )
+
+    with pytest.raises(ValueError, match="model config does not match"):
+        resumed.load_state_dict(state)
+    assert resumed.step == 0
+
+
+def test_resume_rejects_a_different_optimizer_count_before_mutating_state(tmp_path):
+    cfg = tiny_model_config()
+    trainer = Trainer(
+        ProphetModel(cfg), make_loader(),
+        TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path)),
+        model_config=cfg, on_log=lambda m: None,
+    )
+    state = trainer.state_dict()
+    state["step"] = 3
+    state["optimizers"] = state["optimizers"][:-1]
+
+    with pytest.raises(ValueError, match="optimizer count"):
+        trainer.load_state_dict(state)
+    assert trainer.step == 0
+
+
+def test_resume_rejects_a_different_data_stream_before_mutating_state(tmp_path):
+    cfg = tiny_model_config()
+    original = Trainer(
+        ProphetModel(cfg), make_loader(seed=1),
+        TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path / "original")),
+        model_config=cfg, on_log=lambda m: None,
+    )
+    state = original.state_dict()
+    state["step"] = 3
+
+    resumed = Trainer(
+        ProphetModel(cfg), make_loader(seed=2),
+        TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path / "changed")),
+        model_config=cfg, on_log=lambda m: None,
+    )
+    before = {name: value.clone() for name, value in resumed.model.state_dict().items()}
+
+    with pytest.raises(ValueError, match="manifest fingerprint"):
+        resumed.load_state_dict(state)
+    assert resumed.step == 0
+    assert all(torch.equal(resumed.model.state_dict()[name], value) for name, value in before.items())
+
+
+def test_current_resume_fails_closed_when_config_metadata_is_missing(tmp_path):
+    cfg = tiny_model_config()
+    trainer = Trainer(
+        ProphetModel(cfg), make_loader(),
+        TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path)),
+        model_config=cfg, on_log=lambda m: None,
+    )
+    state = trainer.state_dict()
+    state.pop("config")
+
+    with pytest.raises(ValueError, match="does not contain a model config"):
+        trainer.load_state_dict(state)
+
+
+def test_legacy_resume_without_config_warns_but_remains_loadable(tmp_path):
+    cfg = tiny_model_config()
+    trainer = Trainer(
+        ProphetModel(cfg), make_loader(),
+        TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path)),
+        model_config=cfg, on_log=lambda m: None,
+    )
+    state = trainer.state_dict()
+    state.pop("trainer_state_version")
+    state.pop("config")
+
+    with pytest.warns(RuntimeWarning, match="legacy checkpoint"):
+        trainer.load_state_dict(state)
+
+
 def test_no_resume_on_an_empty_directory(tmp_path):
     trainer = Trainer(
         ProphetModel(tiny_model_config()), make_loader(),
@@ -437,6 +541,42 @@ def test_ponder_metrics_are_reported():
     assert {"loss/ponder", "loss/ponder_kl", "ponder/expected_depth"} <= terms.metrics.keys()
 
 
+def test_ponder_loss_preserves_per_position_depth_preferences():
+    """E[p*CE] must route easy and hard positions differently.
+
+    The old mean(p)*mean(CE) formulation erased this covariance and could only learn one
+    global depth schedule.
+    """
+    from prophet.modeling.model import ProphetOutput
+
+    raw = torch.zeros(1, 3, 2, requires_grad=True)
+    halt_probs = raw.softmax(-1)
+    # Position 0 is solved by step 0; position 1 is solved by step 1.
+    step0 = torch.tensor([[[8.0, -8.0], [8.0, -8.0], [0.0, 0.0]]])
+    step1 = torch.tensor([[[-8.0, 8.0], [-8.0, 8.0], [0.0, 0.0]]])
+    targets = torch.tensor([[0, 0, 1]])
+    output = ProphetOutput(
+        logits=step0,
+        hidden=step0,
+        loop_k=2,
+        halt_probs=halt_probs,
+        hidden_per_step=[step0, step1],
+    )
+
+    terms = compute_loss(
+        output,
+        targets,
+        z_loss_weight=0.0,
+        ponder_weight=1.0,
+        ponder_target_steps=1e9,
+        project=lambda hidden: hidden,
+    )
+    terms.ponder.backward()
+
+    assert raw.grad[0, 0, 0] < 0  # first prediction prefers the early step
+    assert raw.grad[0, 1, 1] < 0  # second prediction prefers the later step
+
+
 def test_ponder_is_skipped_when_unweighted():
     torch.manual_seed(0)
     model = ProphetModel(_halting_config())
@@ -458,6 +598,22 @@ def test_the_prior_pulls_expected_depth_toward_its_target():
     shallow = _geometric_prior(16, 2.0, torch.device("cpu"), torch.float32)
     deep = _geometric_prior(16, 8.0, torch.device("cpu"), torch.float32)
     assert shallow[0] > deep[0]
+
+
+def test_geometric_prior_rejects_a_singular_target():
+    from prophet.train.loss import _geometric_prior
+
+    with pytest.raises(ValueError, match="target_steps"):
+        _geometric_prior(8, 1.0, torch.device("cpu"), torch.float32)
+
+
+def test_geometric_prior_stays_finite_near_one_with_a_long_tail():
+    from prophet.train.loss import _geometric_prior
+
+    prior = _geometric_prior(512, 1.000001, torch.device("cpu"), torch.float32)
+    assert torch.isfinite(prior).all()
+    assert (prior > 0).all()
+    assert prior.sum().item() == pytest.approx(1.0)
 
 
 def test_trainer_picks_up_the_halting_weight_from_the_model_config(tmp_path):

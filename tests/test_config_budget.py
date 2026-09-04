@@ -20,7 +20,6 @@ from prophet.budget import (
 from prophet.config import (
     FeedForwardConfig,
     FrontendConfig,
-    HeadsConfig,
     MemoryConfig,
     MixerConfig,
     ProphetConfig,
@@ -99,6 +98,26 @@ def test_moe_layer_placement_skips_leading_dense_blocks():
         (
             {"recurrent": RecurrentCoreConfig(enabled=True, train_loop_min=8, train_loop_max=2)},
             "train_loop_min",
+        ),
+        (
+            {"recurrent": RecurrentCoreConfig(enabled=True, halting_loss_weight=-0.1)},
+            "halting_loss_weight",
+        ),
+        (
+            {"recurrent": RecurrentCoreConfig(enabled=True, halting_target_steps=1.0)},
+            "halting_target_steps",
+        ),
+        (
+            {"recurrent": RecurrentCoreConfig(enabled=True, halting_target_steps=float("nan"))},
+            "halting_target_steps",
+        ),
+        (
+            {"recurrent": RecurrentCoreConfig(enabled=True, halting_loss_weight=float("inf"))},
+            "halting_loss_weight",
+        ),
+        (
+            {"recurrent": RecurrentCoreConfig(enabled=True, default_loop_k=0)},
+            "default_loop_k",
         ),
     ],
 )
@@ -369,7 +388,6 @@ def test_a_parity_blind_write_strength_is_flagged():
 
 def test_shipped_configs_satisfy_every_invariant():
     """The generated configurations are the ones ablations will run on."""
-    import json
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent / "configs"

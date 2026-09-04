@@ -1,11 +1,9 @@
 """Tests for persistent memory.
 
 This is the project's most speculative bet: a model that keeps learning after
-deployment. Track R03's case rests on one finding -- sparse memory updates lose roughly
-11% of prior knowledge where full fine-tuning loses 89% -- so the tests here are built
-around demonstrating the *mechanism* that claim depends on, at a scale we can actually
-run. They do not validate the published number; they check that what we built behaves the
-way the number would require.
+deployment. Sparse Memory Finetuning reports much lower forgetting than full fine-tuning
+or LoRA, but it uses a different pretrained memory and update rule. These tests establish
+local mechanics only; continual retention and transfer require separate experiments.
 """
 
 from __future__ import annotations
@@ -208,6 +206,38 @@ def test_session_state_round_trips(tmp_path):
         assert torch.equal(fresh.slots[(section, int(block), int(iteration))].state, state)
 
 
+def test_session_load_rejects_non_tensor_state(tmp_path):
+    path = tmp_path / "invalid-session.pt"
+    torch.save(
+        {
+            "version": 1,
+            "states": {"core.0.0": "not-a-tensor"},
+            "conv_states": {},
+            "tokens_seen": 1,
+            "model_fingerprint": "abc",
+        },
+        path,
+    )
+    with pytest.raises(TypeError, match="map strings to tensors"):
+        SessionMemory.load(path)
+
+
+def test_session_load_rejects_negative_position(tmp_path):
+    path = tmp_path / "invalid-position.pt"
+    torch.save(
+        {
+            "version": 1,
+            "states": {},
+            "conv_states": {},
+            "tokens_seen": -1,
+            "model_fingerprint": "abc",
+        },
+        path,
+    )
+    with pytest.raises(ValueError, match="tokens_seen"):
+        SessionMemory.load(path)
+
+
 def test_attention_caches_are_not_persisted():
     """Persisting them would reintroduce exactly the linear-memory growth the recurrent
     core exists to avoid."""
@@ -218,7 +248,8 @@ def test_attention_caches_are_not_persisted():
 
     memory = extract_session(cache)
     assert len(memory.states) < len(cache.slots)
-    assert all("prelude" not in k or True for k in memory.states)  # only gdn slots kept
+    assert memory.states
+    assert all(k.startswith("core.") for k in memory.states)  # only GDN slots are kept
 
 
 def test_session_size_is_independent_of_conversation_length():
@@ -259,6 +290,23 @@ def test_fingerprint_distinguishes_checkpoints():
     a, b = tiny_model(), tiny_model()
     assert model_fingerprint(a) == model_fingerprint(a)
     assert model_fingerprint(a) != model_fingerprint(b)
+
+
+def test_fingerprint_ignores_mutable_ledger_contents_but_not_addressing():
+    model = tiny_model()
+    model.ledgers["0"] = ledger()
+    before = model_fingerprint(model)
+
+    model.ledgers["0"].write(torch.randn(1, 1, 128), torch.randn(1, 1, 128))
+    assert model_fingerprint(model) == before
+
+    model.ledgers["0"].sub_keys.flatten()[0].add_(1.0)
+    assert model_fingerprint(model) != before
+
+
+def test_fingerprint_rejects_an_empty_sample():
+    with pytest.raises(ValueError, match="n_sampled"):
+        model_fingerprint(tiny_model(), n_sampled=0)
 
 
 def test_unknown_format_version_is_refused(tmp_path):
@@ -477,7 +525,11 @@ def _depth_episodes(n: int, seed: int):
 
     g = torch.Generator().manual_seed(seed)
     return [
-        DepthEpisode(tokens=torch.randint(0, 128, (1, 16), generator=g), tag=f"d{seed}_{i}")
+        DepthEpisode(
+            tokens=torch.randint(0, 128, (1, 16), generator=g),
+            tag=f"d{seed}_{i}",
+            verified=True,
+        )
         for i in range(n)
     ]
 
@@ -525,6 +577,31 @@ def test_unverified_episodes_are_refused_by_default():
     ]
     with pytest.raises(ValueError, match="unverified"):
         consolidate_depth(model, ledger(dim=96), unverified, passes=1)
+
+
+def test_depth_episodes_are_unverified_unless_attested():
+    from prophet.memory.consolidate import DepthEpisode
+
+    episode = DepthEpisode(tokens=torch.randint(0, 128, (1, 8)))
+    assert episode.verified is False
+
+
+def test_unverified_replay_is_not_smuggled_into_consolidation():
+    from prophet.memory.consolidate import DepthEpisode, consolidate_depth
+
+    model = _recurrent_model()
+    unverified_replay = [
+        DepthEpisode(tokens=torch.randint(0, 128, (1, 8))) for _ in range(3)
+    ]
+    report = consolidate_depth(
+        model,
+        ledger(dim=96),
+        _depth_episodes(2, seed=33),
+        replay=unverified_replay,
+        replay_ratio=1.0,
+        passes=1,
+    )
+    assert report.replayed == 0
 
 
 def test_unverified_episodes_can_be_admitted_deliberately():

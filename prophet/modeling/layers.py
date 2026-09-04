@@ -16,7 +16,7 @@ Design constraints that shape every module here:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
@@ -442,7 +442,11 @@ class GatedDeltaNet(nn.Module):
         xt = x.transpose(1, 2)  # (b, c, s)
         pad = self.conv_kernel - 1
         if state is not None and state.conv_state is not None:
-            xt = torch.cat([state.conv_state, xt], dim=2)
+            # Session files are intentionally loaded on CPU. Migrate lazily to the
+            # activation device/dtype so restored state works on CUDA without making
+            # the persistence layer guess where the model will run.
+            restored_conv = state.conv_state.to(device=xt.device, dtype=xt.dtype)
+            xt = torch.cat([restored_conv, xt], dim=2)
         else:
             xt = F.pad(xt, (pad, 0))
         if state is not None:
@@ -474,7 +478,11 @@ class GatedDeltaNet(nn.Module):
         if self.allow_fused and HAS_FLA and x.is_cuda:  # pragma: no cover
             out, new_state = _fla_gated_delta(
                 q=q, k=k, v=v, g=alpha.log(), beta=beta,
-                initial_state=None if state is None else state.state,
+                initial_state=(
+                    None
+                    if state is None or state.state is None
+                    else state.state.to(device=q.device)
+                ),
                 output_final_state=state is not None,
                 head_first=False,
             )
@@ -503,7 +511,7 @@ class GatedDeltaNet(nn.Module):
         dtype = torch.float32  # the recurrence is where precision actually matters
 
         S = (
-            state.state.to(dtype)
+            state.state.to(device=q.device, dtype=dtype)
             if state is not None and state.state is not None
             else q.new_zeros(b, h, dv, dk, dtype=dtype)
         )

@@ -18,9 +18,11 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main() -> None:
     mixture = prophet_v1_mixture(40e9)
-    mixture.validate()
+    mixture.validate(allow_pending_license_review=True)
     mixture.to_yaml(ROOT / "configs" / "data_mixture_v1.yaml")
     print(f"wrote configs/data_mixture_v1.yaml ({mixture.total_tokens / 1e9:.0f}B tokens)")
+    for warning in mixture.license_warnings():
+        print(f"warning: {warning}", file=sys.stderr)
     print(mixture.report())
 
 

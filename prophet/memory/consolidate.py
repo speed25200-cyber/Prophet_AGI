@@ -28,15 +28,24 @@ avoid, merely relocated from the weights into the memory.
 from __future__ import annotations
 
 import random
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
 
 import torch
 from torch import Tensor, nn
 
 from prophet.memory.ledger import ProductKeyMemory
 
-__all__ = ["Episode", "ConsolidationReport", "consolidate", "recall_error"]
+__all__ = [
+    "Episode",
+    "ConsolidationReport",
+    "consolidate",
+    "recall_error",
+    "DepthEpisode",
+    "consolidate_depth",
+    "depth_transfer_error",
+    "depth_agreement",
+]
 
 
 @dataclass
@@ -198,7 +207,7 @@ class DepthEpisode:
     tokens: Tensor
     """Token ids, shape ``(1, n)``."""
     tag: str = ""
-    verified: bool = True
+    verified: bool = False
     """Whether the deep answer was checked. Unverified episodes are refused by default:
     a memory that confidently returns a wrong answer is worse than no memory, because the
     model stops recomputing."""
@@ -277,6 +286,7 @@ def consolidate_depth(
       :func:`depth_transfer_error` on held-out instances, never on the consolidated ones.
     """
     usable = [e for e in episodes if e.verified or not require_verified]
+    usable_replay = [e for e in replay if e.verified or not require_verified]
     if require_verified and len(usable) < len(episodes):
         skipped = len(episodes) - len(usable)
         if not usable:
@@ -293,9 +303,9 @@ def consolidate_depth(
     replayed = 0
     for _ in range(passes):
         batch = list(usable)
-        if replay and replay_ratio > 0:
+        if usable_replay and replay_ratio > 0:
             n_replay = max(1, int(len(batch) * replay_ratio))
-            sample = [rng.choice(list(replay)) for _ in range(n_replay)]
+            sample = [rng.choice(usable_replay) for _ in range(n_replay)]
             replayed += len(sample)
             batch += sample
         rng.shuffle(batch)

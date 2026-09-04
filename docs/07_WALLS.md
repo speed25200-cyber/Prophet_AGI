@@ -88,17 +88,19 @@ comme une élégance ; c'est un arbitrage, et il faut l'écrire ainsi.
 
 **Une seconde correction, plus sévère encore.** Boucler *k* fois avec *k* **constant** ne
 change aucune classe de complexité : la profondeur reste bornée par une constante. La
-boucle n'obtient donc **aucun crédit asymptotique**. Seule une profondeur dépendant de
-l'entrée — c'est-à-dire un mécanisme de **halte** — sort le modèle de sa classe.
+boucle n'obtient donc **aucun crédit asymptotique**. Une halte sous un plafond constant
+adapte le coût moyen à l'entrée, mais ne change toujours pas la classe. Il faudrait que le
+plafond lui-même croisse avec la taille de l'entrée, et entraîner le modèle dans ce régime.
 
-**Conséquence : la halte est passée d'option à exigence, et elle est implémentée.**
+**Conséquence pratique : la halte est requise pour l'efficacité adaptative, pas comme
+preuve d'expressivité asymptotique.**
 Une tête scalaire par position et par itération produit une distribution de temps d'arrêt ;
 la perte de ponderation combine la perte de modélisation espérée sur ces temps d'arrêt et
 une divergence vers un prior géométrique. Le prior n'est pas décoratif : sans lui, la tête
 apprend à toujours réfléchir aussi longtemps qu'on l'y autorise, puisque calculer davantage
 ne dégrade jamais la perte.
 
-Deux détails que l'implémentation a fait apparaître :
+Trois détails que l'implémentation a fait apparaître :
 
 - Sans sa propre perte, la tête de halte **ne reçoit aucun gradient** — la distribution
   d'arrêt n'entre pas dans les logits. Une tête non entraînée donne une profondeur qui
@@ -107,8 +109,14 @@ Deux détails que l'implémentation a fait apparaître :
 - Évaluer le coda à chaque itération pour scorer les points d'arrêt candidats écrivait
   *k* fois dans le **même** emplacement de cache. Le décodage incrémental produisait alors
   une sortie fluide, plausible et fausse, sans rien pour le signaler. Les passes de sonde
-  sont désormais sans cache ; le vrai coda ne s'exécute qu'une fois. Vérifié par test :
-  10 positions de cache pour 10 tokens, pas 40.
+  sont désormais sans écriture et le vrai coda ne s'exécute qu'une fois. Mais une sonde
+  sans cache ne voit pas non plus l'historique exact du coda ; le seuil adaptatif est donc
+  refusé en décodage incrémental tant qu'un read-only cache ou un read-out équivalent
+  n'existe pas.
+- Une profondeur variable crée aussi des trous dans les caches récurrents : si le token
+  *t* s'arrête à 1, l'état de profondeur 4 ne voit pas *t* lorsque *t+1* remonte à 4. La
+  combinaison `halt_threshold + cache` échoue maintenant explicitement. Il faudra un
+  backfill/recalcul démontré ou une profondeur monotone avant de la réactiver.
 
 ## Mur B — La profondeur fixe borne la classe de calcul
 
@@ -127,10 +135,11 @@ sérielle égale, un cœur bouclé *k* fois devrait égaler *k* tokens de CoT su
 pure composition, et les battre sur celles qui exigent de transporter beaucoup d'état entre
 les pas.
 
-**Réserve, apportée par W1 (§A.3) :** avec un *k* constant, ce gain est un facteur constant,
-pas un changement de classe. Pour que la boucle achète réellement de la profondeur au sens
-de la complexité, il faut que *k* dépende de l'entrée — donc un mécanisme de halte
-entraîné, pas un cadran fixé par l'appelant.
+**Réserve, apportée par W1 (§A.3) :** avec un plafond *k_max* constant, ce gain est un
+facteur constant, pas un changement de classe. Une halte dépendant de l'entrée réduit le
+coût moyen mais ne suffit pas : pour acheter réellement de la profondeur au sens de la
+complexité, il faut que *k_max* puisse croître avec la taille de l'entrée et entraîner le
+modèle dans ce régime.
 
 **Ce que nous avions surestimé — et un bug d'un caractère.** Notre pile est
 majoritairement à état borné. W2 a trouvé que notre implémentation était *strictement plus
@@ -185,12 +194,14 @@ D'où le résultat que R03 a trouvé et sur lequel repose notre conception :
 |---|---:|
 | Fine-tuning complet | 89 % |
 | LoRA | 71 % |
-| **Mise à jour mémoire creuse** | **11 %** |
+| **Sparse Memory Finetuning (SMF)** | **11 %** |
 
-La sparsité n'est pas une optimisation, c'est **la condition d'orthogonalité rendue
-approximativement vraie**. Écrire dans quelques emplacements est la seule variante qui ne
-détruit pas ce qui était là, parce que c'est la seule où la mise à jour touche un
-sous-espace petit.
+Dans cette expérience, la sparsité rend approximativement vraie la condition
+d'orthogonalité : seules les rangées d'une couche mémoire préentraînée qui distinguent les
+nouvelles données d'un corpus de fond sont ajustées. **Ce résultat ne valide pas encore le
+registre Prophet** : ses clés sont aléatoires et gelées, et ses valeurs suivent une
+écriture locale en forme close. Le 11 % est une motivation pour l'ablation, pas une mesure
+du système présent.
 
 ### C.2 Le troisième étage que nous n'avons pas construit
 

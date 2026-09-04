@@ -39,7 +39,7 @@ Nous ne pouvons pas gagner en échelle. Nous pouvons gagner en **allocation**.
 | 1 | **Dépenser les paramètres dans le calcul, pas dans le vocabulaire** — frontend adaptatif au lieu d'une table d'embedding de 128k | [§1](docs/00_PROBLEM_LANDSCAPE.md#1-le-verrou-du-tokenizer) |
 | 2 | **Mémoire à état borné plutôt qu'à croissance linéaire** — pile hybride récurrent/attention | [§2](docs/00_PROBLEM_LANDSCAPE.md#2-le-coût-quadratique-de-lattention-et-le-mur-du-cache-kv) |
 | 3 | **Acheter la profondeur avec du calcul, pas avec des poids** — cœur récurrent bouclé, profondeur réglable à l'exécution | [§4](docs/00_PROBLEM_LANDSCAPE.md#4-le-raisonnement--profondeur-fixe-et-pensée-verbeuse) |
-| 4 | **Accumuler après le déploiement** — mémoire persistante + consolidation hors-ligne ([implémentée](docs/06_MEMORY.md)) | [§3](docs/00_PROBLEM_LANDSCAPE.md#3-le-cerveau-gelé--aucune-mémoire-persistante-aucun-apprentissage-continu) |
+| 4 | **Accumuler après le déploiement** — prototype de mémoire persistante + consolidation hors-ligne ([état et limites](docs/06_MEMORY.md)) | [§3](docs/00_PROBLEM_LANDSCAPE.md#3-le-cerveau-gelé--aucune-mémoire-persistante-aucun-apprentissage-continu) |
 | 5 | **Savoir ce qu'on ignore** — abstention calibrée plutôt que couverture factuelle (physiquement hors d'atteinte à 1.3B params) | [§9](docs/00_PROBLEM_LANDSCAPE.md#9-lhallucination-et-labsence-de-calibration) |
 
 La profondeur récurrente est le pari central : elle transforme la profondeur en un
@@ -70,11 +70,11 @@ modèle de 369M.
 
 ## État du projet
 
-> **Phase 0 — Recherche et conception terminées. Aucun poids entraîné.**
-> Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le pipeline de
-> données, l'infrastructure d'entraînement, le harnais d'évaluation et le plan
-> d'exécution. **235 tests passent** et la boucle d'entraînement tourne de bout en bout
-> sur corpus synthétique.
+> **Phase 0 — recherche et falsification en cours. Aucun poids entraîné.**
+> Le dépôt contient des spécifications, prototypes et tests ; leur présence ne valide pas
+> encore les paris de profondeur récurrente, contexte borné ou apprentissage continu.
+> [`docs/08_ARCHITECTURE_V03.md`](docs/08_ARCHITECTURE_V03.md) donne les gates qui doivent
+> décider — y compris les conditions sous lesquelles l'architecture sera rejetée.
 >
 > Réserve honnête : les identifiants de datasets et le tableau de bord concurrent
 > proviennent de rapports rédigés alors que l'accès au Hub et à arXiv était bloqué par le
@@ -93,6 +93,7 @@ modèle de 369M.
 | [`docs/05_ROADMAP.md`](docs/05_ROADMAP.md) | Plan sur 11 semaines et arbitrage du budget |
 | [`docs/06_MEMORY.md`](docs/06_MEMORY.md) | Mémoire persistante : conception, mesures, limites |
 | [`docs/07_WALLS.md`](docs/07_WALLS.md) | **Les murs** : mécanisme des verrous profonds, y compris ceux qu'on ne franchit pas |
+| [`docs/08_ARCHITECTURE_V03.md`](docs/08_ARCHITECTURE_V03.md) | **Continuum v0.3** : architecture multi-échelle, preuves, budget et critères de mort |
 
 ## Outils
 
@@ -108,7 +109,7 @@ python scripts/verify_datasets.py          # confronte les identifiants au Hub (
 python scripts/verify_donors.py            # confronte les donneurs au Hub (semaine 1)
 python scripts/convert_donor.py --donor qwen3-1.7b --plan-only
 python scripts/train.py --config configs/prophet_tiny_smoke.json --smoke
-python -m pytest tests/ -q                 # 235 tests
+python -m pytest tests/ -q                 # suite complète ; le CI vérifie un clone propre
 ```
 
 Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant

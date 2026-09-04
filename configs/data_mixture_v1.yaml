@@ -107,7 +107,7 @@ phases:
     domain: reference
     weight: 0.03
     available_tokens: 55000000000.0
-    license: mixed (per-subset)
+    license: 'REVIEW: mixed (per-subset)'
     config: null
     filters: {}
     notes: ''
@@ -215,7 +215,7 @@ phases:
     domain: long_context
     weight: 0.05
     available_tokens: 55000000000.0
-    license: mixed (per-subset)
+    license: 'REVIEW: mixed (per-subset)'
     config: null
     filters:
       min_tokens: 16384
@@ -316,7 +316,7 @@ phases:
     domain: long_context
     weight: 0.04
     available_tokens: 55000000000.0
-    license: mixed (per-subset)
+    license: 'REVIEW: mixed (per-subset)'
     config: null
     filters:
       min_tokens: 32768

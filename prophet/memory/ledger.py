@@ -1,11 +1,12 @@
 """Persistent memory: the ledger.
 
 Today's models cannot learn after deployment. Weights are frozen, the only memory is the
-context window, and fine-tuning causes catastrophic forgetting. Track R03 found the
-result the whole design rests on: **sparse memory updates lose 11% of prior knowledge
-where full fine-tuning loses 89% and LoRA loses 71%, at equal new knowledge learned**.
-Writing to a few slots is not merely cheaper than adjusting all the weights — it is the
-only variant that does not destroy what was already there.
+context window, and fine-tuning causes catastrophic forgetting. Sparse Memory Finetuning
+(arXiv:2510.15103) reports an 11% NaturalQuestions F1 drop, versus 89% for full
+fine-tuning and 71% for LoRA at matched new-fact acquisition. That result motivates sparse
+write support, but it does **not** validate this ledger: SMF gradient-updates selected rows
+of a pretrained memory layer, whereas Prophet uses frozen random product keys and a
+closed-form value write. Their retention must be compared experimentally.
 
 The ledger is a product-key memory layer whose values are rewritten by a **closed-form
 local update**, not by gradient descent through the model:
@@ -29,7 +30,7 @@ instead of 65,536.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F

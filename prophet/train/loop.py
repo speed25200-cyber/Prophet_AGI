@@ -10,9 +10,10 @@ uninterrupted one, and :mod:`tests.test_training` asserts exactly that.
 from __future__ import annotations
 
 import time
+import warnings
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 import torch
 from torch import Tensor, nn
@@ -25,6 +26,8 @@ from prophet.train.optim import build_optimizers
 from prophet.train.schedule import WSDSchedule
 
 __all__ = ["TrainConfig", "Trainer", "TrainMetrics"]
+
+_TRAINER_STATE_VERSION = 2
 
 
 @dataclass
@@ -140,7 +143,7 @@ class Trainer:
 
     def _apply_lr(self) -> float:
         multiplier = self.schedule.lr_at(self.step)
-        for opt, peak in zip(self.optimizers, self._peak_lrs):
+        for opt, peak in zip(self.optimizers, self._peak_lrs, strict=True):
             for group in opt.param_groups:
                 group["lr"] = peak * multiplier
         return self._peak_lrs[0] * multiplier if self._peak_lrs else 0.0
@@ -149,6 +152,7 @@ class Trainer:
 
     def state_dict(self) -> dict[str, Any]:
         return {
+            "trainer_state_version": _TRAINER_STATE_VERSION,
             "model": self.model.state_dict(),
             "optimizers": [o.state_dict() for o in self.optimizers],
             "step": self.step,
@@ -159,12 +163,66 @@ class Trainer:
         }
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
+        version = state.get("trainer_state_version")
+        if version is not None and (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version not in (1, _TRAINER_STATE_VERSION)
+        ):
+            raise ValueError(f"unsupported trainer state version: {version!r}")
+
+        current_config = self.model_config.to_dict() if self.model_config else None
+        has_saved_config = "config" in state and state["config"] is not None
+        if has_saved_config:
+            raw_saved_config = state["config"]
+            if not isinstance(raw_saved_config, Mapping):
+                raise ValueError("checkpoint model config must be a mapping")
+            # A current-format state was written by ``state_dict`` above and must contain
+            # the complete config. Legacy states are normalised through ``from_dict`` so
+            # fields added since they were written receive their historical defaults.
+            saved_config = (
+                dict(raw_saved_config)
+                if version == _TRAINER_STATE_VERSION
+                else ProphetConfig.from_dict(dict(raw_saved_config)).to_dict()
+            )
+            if current_config is None or saved_config != current_config:
+                raise ValueError(
+                    "checkpoint model config does not match the current trainer config"
+                )
+        elif version == _TRAINER_STATE_VERSION:
+            if current_config is not None or "config" not in state:
+                raise ValueError(
+                    "checkpoint does not contain a model config compatible with the "
+                    "current trainer"
+                )
+        elif current_config is not None:
+            warnings.warn(
+                "loading a legacy checkpoint without model config metadata; "
+                "compatibility cannot be verified",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+        optimizer_states = state.get("optimizers")
+        if not isinstance(optimizer_states, (list, tuple)):
+            raise ValueError("checkpoint optimizers must be a list of optimizer states")
+        if len(optimizer_states) != len(self.optimizers):
+            raise ValueError(
+                "checkpoint optimizer count does not match the current trainer: "
+                f"{len(optimizer_states)} != {len(self.optimizers)}"
+            )
+
+        # Validate stream identity and cursor bounds before changing model or optimizer
+        # state. A seed/corpus/packing mismatch is otherwise detected only after a
+        # partial restore, leaving the Trainer unusable for a clean fallback.
+        loader_state = self.loader.validate_state(LoaderState.from_dict(state["loader"]))
+
         self.model.load_state_dict(state["model"])
-        for opt, opt_state in zip(self.optimizers, state["optimizers"]):
+        for opt, opt_state in zip(self.optimizers, optimizer_states, strict=True):
             opt.load_state_dict(opt_state)
         self.step = int(state["step"])
         self.tokens_seen = int(state["tokens_seen"])
-        self.loader.load_state(LoaderState.from_dict(state["loader"]))
+        self.loader.load_state(loader_state)
         if "torch_rng" in state and state["torch_rng"] is not None:
             torch.set_rng_state(state["torch_rng"].cpu().to(torch.uint8))
 

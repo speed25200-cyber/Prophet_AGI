@@ -18,8 +18,9 @@ something specific:
 
 from __future__ import annotations
 
+import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 import torch
 import torch.nn.functional as F
@@ -55,6 +56,25 @@ def _shifted_cross_entropy(logits: Tensor, targets: Tensor, offset: int) -> Tens
     return F.cross_entropy(pred.float(), gold, ignore_index=-100)
 
 
+def _shifted_cross_entropy_per_position(
+    logits: Tensor, targets: Tensor, offset: int
+) -> tuple[Tensor, Tensor]:
+    """Unreduced shifted loss and validity mask, both shaped ``(batch, positions)``."""
+    if offset >= logits.shape[1]:
+        empty = logits.new_zeros((logits.shape[0], 0), dtype=torch.float32)
+        return empty, empty.bool()
+    pred = logits[:, :-offset]
+    gold = targets[:, offset:]
+    valid = gold != -100
+    loss = F.cross_entropy(
+        pred.reshape(-1, pred.shape[-1]).float(),
+        gold.reshape(-1),
+        ignore_index=-100,
+        reduction="none",
+    ).view_as(gold)
+    return loss, valid
+
+
 def _geometric_prior(n_steps: int, target_steps: float, device, dtype) -> Tensor:
     """Truncated geometric distribution over stopping times.
 
@@ -62,9 +82,19 @@ def _geometric_prior(n_steps: int, target_steps: float, device, dtype) -> Tensor
     without it the halting head learns to put all its mass on the last iteration, since
     more computation never hurts the language-modelling loss.
     """
-    lam = 1.0 / max(target_steps, 1.0)
-    steps = torch.arange(n_steps, device=device, dtype=dtype)
-    prior = lam * (1.0 - lam) ** steps
+    if n_steps < 1:
+        raise ValueError("n_steps must be >= 1")
+    if not math.isfinite(target_steps) or target_steps <= 1.0:
+        raise ValueError("target_steps must be finite and > 1")
+
+    # Build in log-space. Near target_steps=1, or with a long loop budget, direct powers
+    # underflow to zero and make the subsequent KL logarithm inf/NaN.
+    lam = 1.0 / target_steps
+    steps = torch.arange(n_steps, device=device, dtype=torch.float64)
+    log_prior = math.log(lam) + steps * math.log1p(-lam)
+    log_prior = log_prior - torch.logsumexp(log_prior, dim=0)
+    prior = log_prior.exp().to(dtype=dtype)
+    prior = prior.clamp_min(torch.finfo(prior.dtype).tiny)
     return prior / prior.sum()
 
 
@@ -78,7 +108,7 @@ def compute_loss(
     confidence_targets: Tensor | None = None,
     ponder_weight: float = 0.0,
     ponder_target_steps: float = 4.0,
-    project: "Callable[[Tensor], Tensor] | None" = None,
+    project: Callable[[Tensor], Tensor] | None = None,
 ) -> LossTerms:
     """Combine every training objective into one scalar.
 
@@ -136,9 +166,16 @@ def compute_loss(
         expected = lm.new_zeros(())
         if project is not None and output.hidden_per_step:
             for i, hidden in enumerate(output.hidden_per_step):
-                step_loss = _shifted_cross_entropy(project(hidden), targets, 1)
-                weight = p[..., i].mean()
-                expected = expected + weight * step_loss
+                step_loss, valid = _shifted_cross_entropy_per_position(
+                    project(hidden), targets, 1
+                )
+                # E[p * CE] preserves which examples benefit from which depth.
+                # mean(p) * mean(CE) only learns a global schedule.
+                weighted = p[:, :-1, i] * step_loss
+                expected = (
+                    expected
+                    + weighted.masked_select(valid).sum() / valid.sum().clamp_min(1)
+                )
 
         prior = _geometric_prior(p.shape[-1], ponder_target_steps, p.device, p.dtype)
         kl = (p * ((p + 1e-9).log() - prior.log())).sum(-1).mean()

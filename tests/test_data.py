@@ -8,12 +8,17 @@ announce themselves, so each gets an assertion.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from prophet.data.decontaminate import Decontaminator, normalise, ngrams
+import scripts.verify_datasets as verify_datasets
+from prophet.data.decontaminate import Decontaminator, ngrams, normalise
 from prophet.data.mixture import Mixture, MixtureError, Phase, Source
 from prophet.data.recipes import prophet_v1_mixture
 from prophet.data.streaming import (
+    LOADER_STATE_FORMAT_VERSION,
+    IterableSource,
     LoaderState,
     MixtureSampler,
     SequencePacker,
@@ -22,6 +27,7 @@ from prophet.data.streaming import (
 )
 
 B = 1e9
+ROOT = Path(__file__).resolve().parent.parent
 
 
 # --------------------------------------------------------------------------------------
@@ -77,6 +83,22 @@ def test_excessive_repetition_is_rejected():
         m.validate()
 
 
+def test_epoch_limit_is_cumulative_across_phase_aliases():
+    m = Mixture(
+        name="m",
+        total_tokens=8,
+        phases=[
+            Phase("a", 0.5, [Source("first", "same/corpus", "math", 1.0,
+                                    available_tokens=1, license="MIT")]),
+            Phase("b", 0.5, [Source("alias", "same/corpus", "math", 1.0,
+                                    available_tokens=1, license="MIT")]),
+        ],
+    )
+
+    with pytest.raises(MixtureError, match="cumulative planned 8.00 epochs"):
+        m.validate()
+
+
 def test_unverified_sources_are_reported_not_trusted():
     m = Mixture(
         name="m",
@@ -100,7 +122,7 @@ def test_rescaling_preserves_proportions():
 
 
 def test_yaml_roundtrip(tmp_path):
-    m = prophet_v1_mixture(40 * B)
+    m = _mix()
     path = tmp_path / "mix.yaml"
     m.to_yaml(path)
     restored = Mixture.from_yaml(path)
@@ -113,9 +135,63 @@ def test_yaml_roundtrip(tmp_path):
 # --------------------------------------------------------------------------------------
 
 
-def test_prophet_v1_recipe_is_valid_at_every_plausible_budget():
+def test_prophet_v1_recipe_is_blocked_until_mixed_licences_are_reviewed():
     for budget in (10 * B, 25 * B, 40 * B, 60 * B, 300 * B):
-        prophet_v1_mixture(budget).validate()
+        with pytest.raises(MixtureError, match="requires REVIEW"):
+            prophet_v1_mixture(budget).validate()
+
+
+def test_documentation_override_allows_only_explicit_pending_reviews():
+    prophet_v1_mixture().validate(allow_pending_license_review=True)
+
+    for licence, message in (
+        ("All Rights Reserved", "restrictive licence"),
+        ("Some new permissive licence", "not on the release allowlist"),
+    ):
+        unapproved = Mixture(
+            name="m", total_tokens=B,
+            phases=[Phase("a", 1.0, [Source("s", "x", "web", 1.0,
+                                            license=licence)])],
+        )
+        with pytest.raises(MixtureError, match=message):
+            unapproved.validate(allow_pending_license_review=True)
+
+
+def test_shipped_yaml_exactly_matches_the_recipe():
+    from_yaml = Mixture.from_yaml(ROOT / "configs" / "data_mixture_v1.yaml")
+    assert from_yaml.to_dict() == prophet_v1_mixture().to_dict()
+
+
+def test_dataset_verifier_treats_licence_mismatch_as_a_problem(monkeypatch, capsys):
+    mixture = Mixture(
+        name="m", total_tokens=B,
+        phases=[Phase("a", 1.0, [Source("s", "org/data", "web", 1.0, license="MIT")])],
+    )
+    monkeypatch.setattr(verify_datasets, "hub_reachable", lambda: True)
+    monkeypatch.setattr(verify_datasets, "prophet_v1_mixture", lambda _tokens: mixture)
+    monkeypatch.setattr(
+        verify_datasets,
+        "fetch",
+        lambda hf_id: verify_datasets.Check(
+            source="", hf_id=hf_id, exists=True, hub_license="Apache-2.0"
+        ),
+    )
+    monkeypatch.setattr("sys.argv", ["verify_datasets.py"])
+
+    assert verify_datasets.main() == 1
+    assert "does not match" in capsys.readouterr().out
+
+
+def test_dataset_verifier_reuses_fail_closed_hub_licence_policy():
+    check = verify_datasets.Check(
+        source="a/s",
+        hf_id="org/data",
+        exists=True,
+        declared_license="CC BY NC 4.0",
+        hub_license="CC‑BY‑NC‑4.0",
+    )
+    assert check.license_matches
+    assert "restrictive licence" in check.hub_license_problem
 
 
 def test_prophet_v1_matches_the_r06_domain_targets():
@@ -164,7 +240,49 @@ def test_non_commercial_licence_is_rejected():
         phases=[Phase("a", 1.0, [Source("s", "x", "instruction", 1.0,
                                         license="CC-BY-NC-4.0")])],
     )
-    with pytest.raises(MixtureError, match="non-commercial"):
+    with pytest.raises(MixtureError, match="restrictive licence"):
+        m.validate()
+
+
+@pytest.mark.parametrize(
+    "licence",
+    [
+        "CC BY NC 4.0",
+        "CC_BY_NC_4.0",
+        "CC‑BY‑NC‑4.0",
+        "NonCommercial",
+        "ALL RIGHTS RESERVED",
+        "Proprietary",
+    ],
+)
+def test_restrictive_licence_spellings_are_rejected(licence):
+    m = Mixture(
+        name="m", total_tokens=B,
+        phases=[Phase("a", 1.0, [Source("s", "x", "web", 1.0, license=licence)])],
+    )
+    with pytest.raises(MixtureError, match="restrictive licence"):
+        m.validate()
+
+
+@pytest.mark.parametrize(
+    "licence",
+    ["Apache-2.0", "MIT", "CC-BY-4.0", "ODC-By-1.0", "BSD-3-Clause"],
+)
+def test_reviewed_commercial_licences_are_allowed(licence):
+    m = Mixture(
+        name="m", total_tokens=B,
+        phases=[Phase("a", 1.0, [Source("s", "x", "web", 1.0, license=licence)])],
+    )
+    m.validate()
+
+
+def test_unreviewed_licence_is_rejected_fail_closed():
+    m = Mixture(
+        name="m", total_tokens=B,
+        phases=[Phase("a", 1.0, [Source("s", "x", "web", 1.0,
+                                        license="Some new permissive licence")])],
+    )
+    with pytest.raises(MixtureError, match="not on the release allowlist"):
         m.validate()
 
 
@@ -177,17 +295,21 @@ def test_missing_licence_is_rejected():
         m.validate()
 
 
-def test_restricted_licences_produce_warnings_not_errors():
+def test_mixed_licences_are_explicitly_blocked_for_review():
     m = Mixture(
         name="m", total_tokens=B,
-        phases=[Phase("a", 1.0, [Source("s", "x", "web", 1.0, license="mixed (per-subset)")])],
+        phases=[Phase("a", 1.0, [Source("s", "x", "web", 1.0,
+                                        license="REVIEW: mixed (per-subset)")])],
     )
-    m.validate()
-    assert any("per-subset" in w for w in m.license_warnings())
+    with pytest.raises(MixtureError, match="requires REVIEW"):
+        m.validate()
+    assert any("cannot train yet" in warning for warning in m.license_warnings())
 
 
-def test_shipped_recipe_has_no_blocked_licences():
-    prophet_v1_mixture().validate()
+def test_shipped_recipe_identifies_every_pending_licence_review():
+    warnings = prophet_v1_mixture().license_warnings()
+    assert len(warnings) == 3
+    assert all("REVIEW" in warning for warning in warnings)
 
 
 def test_every_source_declares_a_licence():
@@ -253,6 +375,11 @@ def test_threshold_governs_partial_overlap():
     assert not d_strict.is_contaminated(partial)
 
 
+def test_zero_threshold_is_rejected_instead_of_matching_every_document():
+    with pytest.raises(ValueError, match="above 0"):
+        Decontaminator(n=3, threshold=0.0)
+
+
 def test_report_lists_per_benchmark_counts():
     d = Decontaminator(n=4, threshold=0.5)
     d.add_benchmark("bench_a", ["one two three four five six"])
@@ -288,7 +415,7 @@ def test_sampler_is_deterministic_and_stateless():
 
 def test_sampler_realises_the_requested_mixture():
     shares = MixtureSampler([0.5, 0.3, 0.2], seed=1).empirical_shares(200_000)
-    for observed, target in zip(shares, (0.5, 0.3, 0.2)):
+    for observed, target in zip(shares, (0.5, 0.3, 0.2), strict=True):
         assert observed == pytest.approx(target, abs=0.005)
 
 
@@ -346,6 +473,8 @@ def test_carry_tokens_survive_a_checkpoint():
     restored = LoaderState.from_dict(state.to_dict())
     assert restored.carry == state.carry
     assert restored.cursors == state.cursors
+    assert restored.format_version == LOADER_STATE_FORMAT_VERSION
+    assert restored.manifest_fingerprint == state.manifest_fingerprint
 
 
 def test_checkpoint_state_is_small():
@@ -358,8 +487,131 @@ def test_checkpoint_state_is_small():
 
 def test_unknown_source_in_checkpoint_is_rejected():
     loader = StreamingLoader(sources_from_iterables(_docs()), seq_len=8, seed=0)
+    state = loader.state()
+    state.cursors["nonexistent"] = 3
     with pytest.raises(KeyError, match="unknown source"):
-        loader.load_state(LoaderState(step=0, cursors={"nonexistent": 3}))
+        loader.load_state(state)
+
+
+def test_missing_source_cursor_in_checkpoint_is_rejected():
+    loader = StreamingLoader(sources_from_iterables(_docs()), seq_len=8, seed=0)
+    state = loader.state()
+    state.cursors.pop("s1")
+
+    with pytest.raises(KeyError, match="missing source cursor"):
+        loader.load_state(state)
+
+
+def test_out_of_range_source_cursor_is_rejected_without_mutation():
+    loader = StreamingLoader(sources_from_iterables(_docs()), seq_len=8, seed=0)
+    list(loader.batches(2))
+    before = loader.state().to_dict()
+    invalid = loader.state()
+    invalid.cursors["s0"] = len(loader.sources[0].documents)
+
+    with pytest.raises(ValueError, match="exceeds"):
+        loader.load_state(invalid)
+    assert loader.state().to_dict() == before
+
+
+def test_validate_state_is_non_mutating_and_accepts_sparse_carry():
+    loader = StreamingLoader(sources_from_iterables(_docs()), seq_len=8, seed=0)
+    state = loader.state()
+    before = loader.state().to_dict()
+
+    validated = loader.validate_state(state.to_dict())
+
+    assert validated.carry == {}
+    assert loader.state().to_dict() == before
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        pytest.param(
+            lambda docs: StreamingLoader(
+                sources_from_iterables(docs), seq_len=16, batch_size=2, seed=43, separator=0
+            ),
+            id="seed",
+        ),
+        pytest.param(
+            lambda docs: StreamingLoader(
+                list(reversed(sources_from_iterables(docs))),
+                seq_len=16,
+                batch_size=2,
+                seed=42,
+                separator=0,
+            ),
+            id="source-order",
+        ),
+        pytest.param(
+            lambda docs: StreamingLoader(
+                [
+                    IterableSource(source.name, source.weight + (0.1 if index == 0 else 0.0),
+                                   source.documents)
+                    for index, source in enumerate(sources_from_iterables(docs))
+                ],
+                seq_len=16,
+                batch_size=2,
+                seed=42,
+                separator=0,
+            ),
+            id="source-weight",
+        ),
+        pytest.param(
+            lambda docs: StreamingLoader(
+                sources_from_iterables(docs), seq_len=8, batch_size=2, seed=42, separator=0
+            ),
+            id="sequence-length",
+        ),
+        pytest.param(
+            lambda docs: StreamingLoader(
+                sources_from_iterables(docs), seq_len=16, batch_size=1, seed=42, separator=0
+            ),
+            id="batch-size",
+        ),
+        pytest.param(
+            lambda docs: StreamingLoader(
+                sources_from_iterables(docs), seq_len=16, batch_size=2, seed=42, separator=99
+            ),
+            id="separator",
+        ),
+    ],
+)
+def test_resume_rejects_changed_stream_parameters(replacement):
+    docs = _docs()
+    original = StreamingLoader(
+        sources_from_iterables(docs), seq_len=16, batch_size=2, seed=42, separator=0
+    )
+    list(original.batches(3))
+
+    with pytest.raises(ValueError, match="manifest fingerprint"):
+        replacement(docs).load_state(original.state())
+
+
+def test_resume_rejects_changed_source_contents():
+    docs = _docs()
+    original = StreamingLoader(
+        sources_from_iterables(docs), seq_len=16, batch_size=2, seed=42, separator=0
+    )
+    state = original.state()
+    changed = _docs()
+    changed["s0"][1][0][0] += 1
+    resumed = StreamingLoader(
+        sources_from_iterables(changed), seq_len=16, batch_size=2, seed=42, separator=0
+    )
+
+    with pytest.raises(ValueError, match="manifest fingerprint"):
+        resumed.load_state(state)
+
+
+def test_resume_rejects_an_unversioned_state_mapping():
+    loader = StreamingLoader(sources_from_iterables(_docs()), seq_len=8, seed=0)
+    legacy = loader.state().to_dict()
+    legacy.pop("format_version")
+
+    with pytest.raises(ValueError, match="format_version"):
+        loader.load_state(legacy)
 
 
 def test_exhausted_source_wraps_instead_of_stalling():
