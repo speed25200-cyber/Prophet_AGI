@@ -119,6 +119,14 @@ class MixerConfig:
     conv_kernel: int = 4
     """Short causal depthwise convolution before the recurrence; standard in this family
     and worth several points of local-pattern quality."""
+    linear_beta_max: float = 2.0
+    """Upper bound of the delta-rule write strength.
+
+    At 1.0 every eigenvalue of the state transition is strictly positive, and a product of
+    such transitions provably cannot express parity or other sign-flipping problems. At
+    2.0 the transition may reflect, and those problems come back within reach. This costs
+    one multiplication and is the difference between chance and 0.9+ on length-generalised
+    parity, so 1.0 is kept only as an ablation arm."""
 
     # --- positions ---
     rope_theta: float = 500_000.0
@@ -491,6 +499,68 @@ class ProphetConfig:
             raise ValueError(
                 "Invalid ProphetConfig:\n" + "\n".join(f"  - {e}" for e in errors)
             )
+
+    def design_warnings(self) -> list[str]:
+        """Flag configurations that contradict the architecture's own invariants.
+
+        These are not structural errors -- every one of them trains perfectly well and
+        produces a plausible loss curve. They are silent design mistakes, which is worse:
+        a run configured this way confounds every ablation built on top of it, and nothing
+        in the metrics says so. This check exists because exactly such a mistake shipped
+        in ``configs/prophet_500m_probe.json``, where the only full-attention layer sat
+        inside the looped core.
+        """
+        out: list[str] = []
+        layout = self.section_layout()
+
+        if self.recurrent.enabled:
+            core_attn = [
+                f"core[{i}]" for sec, i, kind in layout
+                if sec == "core" and kind in ("full_attn", "swa")
+            ]
+            if core_attn:
+                k = self.recurrent.default_loop_k
+                out.append(
+                    f"attention inside the looped core ({', '.join(core_attn)}): its KV "
+                    f"cache is duplicated per iteration, so memory scales with k (x{k} at "
+                    "the default depth). This is decision D1's invariant; enable it only "
+                    "as the deliberate A-KV ablation."
+                )
+            outer_attn = any(
+                kind in ("full_attn", "swa")
+                for sec, _, kind in layout
+                if sec in ("prelude", "coda")
+            )
+            if not outer_attn:
+                out.append(
+                    "no attention in the prelude or coda: the model has no exact-recall "
+                    "layer that runs at constant cost, which is what those sections are for"
+                )
+
+        if not any(kind == "full_attn" for _, _, kind in layout):
+            out.append(
+                "no full-attention layer anywhere: bounded-state mixers alone collapse on "
+                "multi-key retrieval, and the fix is more global layers, not a wider window"
+            )
+
+        n_full = sum(1 for _, _, kind in layout if kind == "full_attn")
+        if n_full and not self.mixer.nope_layers:
+            out.append(
+                "full-attention layers are present but nope_layers is empty: without a "
+                "position-free global layer, length extrapolation has to be bought with a "
+                "context-extension run instead of coming for free"
+            )
+
+        if self.mixer.linear_beta_max <= 1.0 and any(
+            kind in ("gdn", "mamba2") for _, _, kind in layout
+        ):
+            out.append(
+                "linear_beta_max <= 1.0 keeps every state-transition eigenvalue positive, "
+                "which provably cannot express parity or other sign-flipping problems; "
+                "2.0 costs one multiplication"
+            )
+
+        return out
 
     # ---- serialisation ---------------------------------------------------------------
 

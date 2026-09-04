@@ -1,6 +1,6 @@
 {
-  "name": "prophet-tiny-smoke",
-  "d_model": 256,
+  "name": "prophet-mini",
+  "d_model": 1280,
   "n_layers": 16,
   "norm_eps": 1e-05,
   "norm_kind": "rmsnorm",
@@ -11,7 +11,7 @@
   "dropout": 0.0,
   "frontend": {
     "mode": "bpe",
-    "vocab_size": 2048,
+    "vocab_size": 32768,
     "tie_word_embeddings": true,
     "byte_vocab_size": 260,
     "patch_target_bytes": 4.5,
@@ -35,16 +35,16 @@
       "swa",
       "full_attn"
     ],
-    "n_heads": 4,
+    "n_heads": 10,
     "n_kv_heads": 2,
-    "head_dim": 64,
+    "head_dim": 128,
     "qk_norm": true,
-    "sliding_window": 256,
-    "attention_sink_tokens": 4,
+    "sliding_window": 2048,
+    "attention_sink_tokens": 1,
     "kv_compression": "none",
     "kv_lora_rank": 512,
-    "linear_heads": 4,
-    "linear_head_dim": 64,
+    "linear_heads": 10,
+    "linear_head_dim": 128,
     "linear_expand": 2.0,
     "conv_kernel": 4,
     "linear_beta_max": 2.0,
@@ -57,9 +57,9 @@
   },
   "recurrent": {
     "enabled": true,
-    "prelude_layers": 2,
-    "core_layers": 2,
-    "coda_layers": 2,
+    "prelude_layers": 3,
+    "core_layers": 4,
+    "coda_layers": 3,
     "train_loop_min": 1,
     "train_loop_max": 4,
     "train_loop_dist": "log_uniform",
@@ -73,10 +73,10 @@
     "inject_input_each_step": true,
     "state_init": "randn",
     "eval_state_init": "zeros",
-    "truncated_backprop_steps": 2,
-    "halting": "none",
-    "halting_loss_weight": 0.01,
-    "halting_target_steps": 4.0
+    "truncated_backprop_steps": 3,
+    "halting": "ponder",
+    "halting_loss_weight": 0.05,
+    "halting_target_steps": 2.0
   },
   "ffn": {
     "kind": "dense",
@@ -110,7 +110,7 @@
   "heads": {
     "n_multi_token_predict": 1,
     "mtp_loss_weight": 0.3,
-    "confidence_head": false,
+    "confidence_head": true,
     "confidence_loss_weight": 0.1
   },
   "modality": {

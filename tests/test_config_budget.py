@@ -183,9 +183,22 @@ def test_allocation_warning_fires_on_oversized_hash_tables():
 
 
 def test_no_allocation_warnings_on_a_sane_config():
-    cfg = _hybrid(
+    """A well-formed configuration should be silent -- allocation *and* design checks.
+
+    ``_hybrid`` deliberately omits ``core_pattern``, which puts attention inside the loop,
+    so this test builds its stack explicitly rather than reusing the helper.
+    """
+    cfg = ProphetConfig(
         d_model=1536,
         frontend=FrontendConfig(mode="bpe", vocab_size=32768),
+        mixer=MixerConfig(
+            pattern=["swa", "full_attn"], n_heads=12, n_kv_heads=3, head_dim=128,
+            nope_layers=(1,), linear_beta_max=2.0,
+        ),
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=4, core_layers=4, coda_layers=4,
+            core_pattern=["gdn"], default_loop_k=4,
+        ),
         ffn=FeedForwardConfig(kind="dense", hidden_mult=4.0),
     )
     assert allocation_warnings(cfg) == []
@@ -266,3 +279,119 @@ def test_report_renders():
     text = report(_hybrid(), a100_hours=300)
     assert "Budget report" in text
     assert "active / token" in text
+
+
+# --------------------------------------------------------------------------------------
+# Design invariants
+# --------------------------------------------------------------------------------------
+
+
+def test_attention_inside_the_looped_core_is_flagged():
+    """The mistake that actually shipped.
+
+    ``configs/prophet_500m_probe.json`` omitted ``core_pattern``, so the global attention
+    pattern applied inside the loop and the only full-attention layer ended up there --
+    duplicating its KV cache per iteration, which is precisely the invariant decision D1
+    exists to protect. It validated, it trained, and it would have confounded every
+    ablation built on it.
+    """
+    cfg = ProphetConfig(
+        d_model=1024,
+        mixer=MixerConfig(pattern=["gdn", "gdn", "gdn", "full_attn"], n_heads=8, n_kv_heads=2),
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=2, core_layers=4, coda_layers=2, default_loop_k=4
+        ),
+    )
+    warnings = cfg.design_warnings()
+    assert any("inside the looped core" in w for w in warnings)
+    assert any("x4 at the default depth" in w for w in warnings)
+
+
+def test_a_correct_stack_trips_no_invariant():
+    cfg = ProphetConfig(
+        d_model=1024,
+        mixer=MixerConfig(
+            pattern=["swa", "full_attn"], n_heads=8, n_kv_heads=2,
+            nope_layers=(1,), linear_beta_max=2.0,
+        ),
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=2, core_layers=4, coda_layers=2,
+            core_pattern=["gdn"], default_loop_k=4,
+        ),
+    )
+    assert cfg.design_warnings() == []
+
+
+def test_a_stack_with_no_attention_outside_the_core_is_flagged():
+    cfg = ProphetConfig(
+        d_model=1024,
+        mixer=MixerConfig(pattern=["gdn"], n_heads=8, n_kv_heads=2, nope_layers=(1,)),
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=2, core_layers=2, coda_layers=2,
+            core_pattern=["gdn"],
+        ),
+    )
+    assert any("no attention in the prelude or coda" in w for w in cfg.design_warnings())
+
+
+def test_missing_nope_layers_is_flagged():
+    cfg = ProphetConfig(
+        d_model=1024,
+        mixer=MixerConfig(
+            pattern=["swa", "full_attn"], n_heads=8, n_kv_heads=2, nope_layers=(),
+            linear_beta_max=2.0,
+        ),
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=2, core_layers=2, coda_layers=2,
+            core_pattern=["gdn"],
+        ),
+    )
+    assert any("nope_layers is empty" in w for w in cfg.design_warnings())
+
+
+def test_a_parity_blind_write_strength_is_flagged():
+    """With beta bounded by 1, every state-transition eigenvalue stays positive and no
+    product of them can flip sign -- so parity is out of reach. It costs one
+    multiplication to fix, and nothing in a loss curve would reveal it."""
+    cfg = ProphetConfig(
+        d_model=1024,
+        mixer=MixerConfig(
+            pattern=["swa", "full_attn"], n_heads=8, n_kv_heads=2, nope_layers=(1,),
+            linear_beta_max=1.0,
+        ),
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=2, core_layers=2, coda_layers=2,
+            core_pattern=["gdn"],
+        ),
+    )
+    assert any("cannot express parity" in w for w in cfg.design_warnings())
+
+
+def test_shipped_configs_satisfy_every_invariant():
+    """The generated configurations are the ones ablations will run on."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "configs"
+    shipped = sorted(root.glob("prophet_*.json"))
+    assert shipped, "no shipped configurations found"
+
+    for path in shipped:
+        cfg = ProphetConfig.from_json(path)
+        cfg.validate()
+        assert cfg.design_warnings() == [], f"{path.name}: {cfg.design_warnings()}"
+
+
+def test_shipped_configs_keep_attention_cache_independent_of_depth():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "configs"
+    for path in sorted(root.glob("prophet_*.json")):
+        cfg = ProphetConfig.from_json(path)
+        counts = {}
+        for k in (1, 8):
+            counts[k] = sum(
+                1 for *_, kind in cfg.cache_slots(loop_k=k)
+                if kind in ("full_attn", "swa")
+            )
+        assert counts[1] == counts[8], f"{path.name}: attention slots scale with k"

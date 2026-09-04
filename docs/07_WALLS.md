@@ -132,12 +132,40 @@ pas un changement de classe. Pour que la boucle achète réellement de la profon
 de la complexité, il faut que *k* dépende de l'entrée — donc un mécanisme de halte
 entraîné, pas un cadran fixé par l'appelant.
 
-**Ce que nous avons peut-être surestimé.** Notre pile est majoritairement à état borné
-(delta gated). Ces mélangeurs ont leurs propres limites d'expressivité, différentes de
-celles de l'attention. Le pari de la conception est qu'une minorité de couches d'attention
-complète suffit à les compenser. C'est un pari, pas un théorème — le track W2 est chargé
-de le contredire s'il est faux, et le rapport R02 signalait déjà l'effondrement du rappel
-multi-clés comme le point de rupture le plus probable.
+**Ce que nous avions surestimé — et un bug d'un caractère.** Notre pile est
+majoritairement à état borné. W2 a trouvé que notre implémentation était *strictement plus
+faible que la famille qu'elle prétend implémenter*, pour une raison d'une ligne.
+
+La transition d'état d'une couche à règle delta est `α(I − β k kᵀ)`. Avec
+**β ∈ (0,1)**, toutes ses valeurs propres restent strictement positives : aucun produit de
+telles transitions ne peut changer de signe, et la parité est exactement un problème de
+changement de signe. Avec **β ∈ (0,2)**, la transition peut réfléchir, et la parité
+redevient atteignable.
+
+Nous avions écrit `beta = sigmoid(...)`. Mesuré sur notre propre implémentation, parité
+apprise à longueur 32 et évaluée à 128 :
+
+| Plage de β | Couches | Exactitude @32 | Exactitude @128 |
+|---|---:|---:|---:|
+| (0, 1) | 1 | 0.531 | **0.508** |
+| (0, 1) | 1 | 0.530 | **0.510** |
+| (0, 1) | 2 | 0.521 | **0.504** |
+| (0, 1) | 2 | 0.615 | **0.532** |
+| **(0, 2)** | **1** | **1.000** | **0.996** |
+
+Le hasard contre la résolution parfaite avec généralisation en longueur, pour une
+multiplication. `linear_beta_max` est désormais un champ de configuration valant 2.0 par
+défaut, et une vérification d'invariant refuse silencieusement 1.0.
+
+Ce qu'il faut en retenir dépasse la parité : **une limite d'expressivité ne se voit pas
+dans une courbe de perte.** Le modèle à β ∈ (0,1) s'entraînait normalement. Rien n'aurait
+signalé qu'il lui manquait une classe entière de fonctions.
+
+**Ce qui reste un pari.** Le rapport R02 signalait l'effondrement du rappel multi-clés
+comme point de rupture le plus probable ; W2 ajoute que **le cadran de profondeur et le
+budget de rappel sont le même cadran tirant en sens inverse** — le rapport effectif
+linéaire/attention passe de 1:1 à *k*=1 à 8:1 à *k*=8. Augmenter *k* aggrave précisément la
+faiblesse que les couches globales étaient censées compenser.
 
 ---
 
@@ -205,46 +233,74 @@ apprise aussi bien que les instances.
 
 ## Mur D — Le calcul d'inférence ne se cumule pas
 
-C'est le mur que personne ne nomme, et celui que notre architecture est le mieux placée
-pour attaquer.
-
 > Un modèle qui passe dix minutes de calcul à résoudre un problème difficile aujourd'hui
 > n'en sait **rien de plus** demain. Chaque requête repart des mêmes poids gelés. Un humain
 > devient meilleur sur une classe de problèmes en travaillant sur des instances ; un modèle
 > non. La réponse de l'industrie aux problèmes difficiles est « dépenser plus de calcul à
 > l'inférence » — et ce calcul est **jeté** à la fin de la réponse.
 
-Prophet possède les deux pièces manquantes : la profondeur de récurrence est un cadran
-réglable à l'exécution (donc on peut délibérément dépenser beaucoup sur un problème), et le
-registre accepte une écriture en forme close sans rétropropagation (donc on peut garder le
-résultat).
+### D.1 Correction : ce mur *est* nommé
 
-`consolidate_depth()` est le lien :
+J'avais présenté ceci comme « le mur que personne ne nomme ». C'est faux, et W4 le
+documente : *sleep-time compute* énonce l'observation mot pour mot, et la littérature
+adjacente la couvre sous d'autres noms — inférence amortie, distillation de contexte,
+distillation Système-2 vers Système-1, itération d'expert. Sur environ 27 systèmes qui
+stockent du raisonnement, **six seulement rendent l'inférence ultérieure réellement moins
+chère à qualité égale**.
 
-```
-h_profond  = f_{k=16}(x)          # la passe chère
-h_rapide   = f_{k=2}(x)           # la passe bon marché
-cible      = λ (h_profond − h_rapide)
-registre.write(h_rapide, cible)   # adressé par l'état de la passe rapide
-```
+Ce qui reste inédit est étroit et vaut la peine d'être énoncé avec précision : une
+**écriture sans rétropropagation** d'un delta de calcul dans un registre adressable. C'est
+une contribution de mécanisme, pas d'observation.
 
-Une passe bon marché ultérieure retrouve ce que la passe chère avait calculé.
-Structurellement, c'est la même opération que la consolidation de contexte — même écriture
-en forme close, autre axe.
+### D.2 Correction plus sévère : notre mécanisme vise le mauvais axe
 
-**Deux choses décident si cela vaut quelque chose, et aucune n'est tranchée ici :**
+`consolidate_depth()` distille l'écart entre une passe profonde et une passe rapide. W4
+remonte un chiffre de notre propre track R04 qui mine cette conception : **la profondeur
+latente rapporte environ 1.8 points sur GSM8K, là où le chain-of-thought en rapporte
+environ 33.** Si l'écart `h₁₆ − h₂` est petit, il n'y a presque rien à consolider.
 
-1. **La vérification.** Consolider une réponse fausse est pire que ne rien consolider,
-   parce que le modèle cesse de recalculer. `require_verified` refuse les épisodes non
-   vérifiés par défaut ; fournir le vérificateur est le travail de l'appelant, et c'est la
-   partie chère.
-2. **La généralisation.** Mémoriser la réponse à un problème n'aide que sur ce problème.
-   Le seul chiffre qui compte est le transfert vers des **instances voisines non
-   consolidées**. `depth_transfer_error` le mesure explicitement sur un lot tenu à l'écart.
-   Un registre qui ne fait que retrouver est un cache, pas une compétence — c'est le même
-   critère qu'en §C.2, et ce n'est pas un hasard.
+La variante à construire d'abord est donc celle sur l'**axe du contexte** — consolider ce
+qu'un long raisonnement verbalisé a apporté, en utilisant `consolidate()`, qui est déjà
+implémenté et testé. C'est le même mécanisme sur l'entrée privilégiée qui porte
+réellement le signal.
 
----
+**Porte 0, avant toute dépense :** un balayage exactitude-contre-*k*. Si l'exactitude ne
+monte pas avec la profondeur, la consolidation de profondeur n'a rien à stocker et le track
+s'arrête là. Quelques minutes de calcul.
+
+### D.3 L'adressage mémorise par construction
+
+W4 a sondé l'adressage de notre registre : l'indice de Jaccard des emplacements atteints
+par des instances de **même classe** contre des instances de **classe différente** vaut
+0.530 contre 0.493 — c'est-à-dire **le hasard**. Le registre, tel qu'adressé aujourd'hui,
+ne peut pas généraliser : il retrouve l'instance consolidée et rien d'autre.
+
+C'est exactement l'échec que `depth_transfer_error` a été écrit pour détecter, et il le
+détecte. La conception de l'adressage — W4 propose une clé à deux niveaux entraînée par
+contraste — est le travail qui reste.
+
+### D.4 L'économie, mesurée
+
+| Grandeur | Valeur |
+|---|---|
+| Surcoût d'une passe *k*=16 contre *k*=2 | **4.67×**, pas 8× |
+| Seuil de rentabilité, vérificateur gratuit | **≥ 4 requêtes** similaires |
+| Seuil de rentabilité, auto-cohérence | **≥ 33 requêtes** — la vérification est 93 % du coût |
+| Registre à 65 536 emplacements | 201 Mo, contre 158 Mo de poids |
+
+La vérification domine le coût. C'est le vrai obstacle, pas l'écriture.
+
+### D.5 Le risque, mesuré et sévère
+
+Consolider depuis des solutions **correctes** dégrade quand même l'exactitude : l'étude
+citée par W4 rapporte un modèle échouant sur 54 % de problèmes ARC-AGI qu'il avait
+précédemment résolus, avec une utilité de la mémoire qui monte puis **redescend sous le
+niveau sans mémoire**. C'est le même motif que W3 avait signalé sur la consolidation de
+contexte.
+
+Deux protections non négociables en découlent : une **quarantaine** avant admission dans
+le registre, et un chemin `λ = 0` toujours atteignable — c'est-à-dire la possibilité de
+désactiver la mémoire à l'exécution et de retrouver exactement le modèle sans mémoire.
 
 ## Mur E — Trois échelles de temps, et celle qui manque
 
@@ -275,7 +331,8 @@ C'est le mécanisme que le track W1 doit spécifier ou rejeter.
 | Le goulot du CoT | **Mesurable** avec `prophet.analysis.bandwidth`. Le mécanisme d'élargissement reste à spécifier. |
 | La profondeur fixe | **Attaqué** par la récurrence. Le pari sur les mélangeurs à état borné n'est pas prouvé. |
 | L'oubli catastrophique | **Atténué** par la sparsité (11 % contre 89 %). Non résolu : le troisième étage manque. |
-| Le calcul non cumulatif | **Mécanisme implémenté**, généralisation non démontrée. |
+| Le calcul non cumulatif | **Mécanisme implémenté, et mesuré comme mémorisant par construction.** L'observation est déjà nommée ailleurs ; l'axe choisi est probablement le mauvais. Porte 0 avant toute dépense. |
+| Expressivité des mélangeurs à état borné | **Un bug d'un caractère corrigé** (β), vérifié : hasard → 0.996 sur la parité généralisée en longueur. Le rappel multi-clés reste ouvert, et empire avec *k*. |
 | La couverture factuelle | Borne physique. Contournée, jamais franchie. |
 | La généralisation hors distribution | Aucune méthode connue. Hors périmètre, et nous le disons. |
 

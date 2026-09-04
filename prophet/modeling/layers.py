@@ -367,6 +367,14 @@ class GatedDeltaNet(nn.Module):
     handles associative recall far better than plain linear attention, where writes
     simply accumulate and interfere.
 
+    **The range of** :math:`\beta` **is load-bearing, and it is easy to get wrong.**
+    With :math:`\beta \in (0,1)` every eigenvalue of :math:`\alpha(I - \beta kk^\top)`
+    is strictly positive, so the transition matrix can never reflect — and a product of
+    non-negative-eigenvalue transitions cannot express parity or any other problem
+    requiring sign flips. Allowing :math:`\beta \in (0,2)` admits negative eigenvalues
+    and recovers those problems. The cost is one multiplication; the difference is
+    between chance and 0.9+ on length-generalised parity.
+
     Two properties matter for Prophet. The state is a fixed-size matrix, so memory is
     independent of context length. And because the update is a closed-form write rather
     than a gradient step, the same primitive serves as the persistent-memory mechanism
@@ -389,8 +397,10 @@ class GatedDeltaNet(nn.Module):
         norm_eps: float = 1e-5,
         bias: bool = False,
         allow_fused: bool = True,
+        beta_max: float = 2.0,
     ) -> None:
         super().__init__()
+        self.beta_max = beta_max
         self.n_heads = n_heads
         self.head_k = head_dim
         self.head_v = int(head_dim * expand)
@@ -459,7 +469,7 @@ class GatedDeltaNet(nn.Module):
         # without this the removal term can amplify rather than erase.
         k = F.normalize(k, dim=-1, eps=1e-6)
         alpha = torch.sigmoid(self.a_proj(x).float())  # (b, s, h)
-        beta = torch.sigmoid(self.b_proj(x).float())
+        beta = self.beta_max * torch.sigmoid(self.b_proj(x).float())
 
         if self.allow_fused and HAS_FLA and x.is_cuda:  # pragma: no cover
             out, new_state = _fla_gated_delta(
@@ -544,5 +554,6 @@ def build_mixer(kind: str, cfg, *, layer_index: int) -> nn.Module | None:
             expand=m.linear_expand,
             conv_kernel=m.conv_kernel,
             norm_eps=cfg.norm_eps,
+            beta_max=m.linear_beta_max,
         )
     raise ValueError(f"unknown mixer kind: {kind!r}")

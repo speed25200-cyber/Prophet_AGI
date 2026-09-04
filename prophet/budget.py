@@ -673,6 +673,8 @@ def allocation_warnings(cfg: ProphetConfig) -> list[str]:
             f"sparsity ratio is only {ratio:.1f}x — MoE adds routing complexity and "
             "training instability for little capacity gain below ~4x."
         )
+
+    out.extend(cfg.design_warnings())
     return out
 
 

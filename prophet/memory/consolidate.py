@@ -240,11 +240,37 @@ def consolidate_depth(
     :func:`consolidate`, which distils along the *context* axis; this one distils along the
     *depth* axis, using the same closed-form write.
 
+    .. warning::
+       **Three findings from track W4 that this function does not yet answer.** They are
+       recorded here rather than in a document because anyone reaching for this function
+       needs them before they spend compute on it.
+
+       1. **The addressing memorises by construction.** Probed on this implementation, the
+          Jaccard overlap of slots reached by same-class versus different-class instances
+          is 0.530 against 0.493 — chance. As addressed today the ledger retrieves the
+          consolidated instance and nothing near it. :func:`depth_transfer_error` exists
+          to detect exactly this, and it does. Fixing it needs a learned, contrastively
+          trained key, which is not built.
+       2. **The depth axis may have almost nothing to store.** Our own track R04 puts
+          latent depth at roughly 1.8 GSM8K points against roughly 33 for verbalised
+          chain-of-thought. If the gap between a deep and a shallow pass is small, so is
+          the thing being consolidated. **Run an accuracy-versus-k sweep before spending
+          anything here**; if accuracy does not rise with depth, this function has no
+          content. The context-axis variant, :func:`consolidate`, is the one to build
+          first, and it is already tested.
+       3. **Consolidating correct answers can still make the model worse.** The published
+          measurement is a model failing 54% of problems it had previously solved, with
+          memory utility rising and then falling *below* the no-memory baseline. A
+          quarantine before admission and an always-reachable memory-off path are not
+          optional.
+
     Two things decide whether it is worth anything, and neither is settled here:
 
     - **Verification.** Consolidating a wrong deep answer is worse than not consolidating,
       because the model stops recomputing it. ``require_verified`` refuses unchecked
-      episodes; supplying the verifier is the caller's job and is the expensive part.
+      episodes; supplying the verifier is the caller's job and, measured, is about 93% of
+      the total cost. Break-even is around four similar queries with a free verifier and
+      around thirty-three with self-consistency.
     - **Generalisation.** Storing the answer to one problem helps only with that problem.
       Whether the stored state transfers to *neighbouring* instances is what separates
       learning from memoisation, and it is measured by
