@@ -55,6 +55,20 @@ contredire là où elle a tort.
 | [W3 — Apprentissage continu](W3_continual_learning_wall.md) | Le troisième étage de mémoire — la distillation vers les poids — que nous n'avons pas construit. Et la mesure qui distingue une mémoire d'une compétence. |
 | [W4 — Le calcul ne se cumule pas](W4_compute_does_not_compound.md) | Le mur que personne ne nomme. Est-il déjà résolu ailleurs, et notre mécanisme généralise-t-il ou mémorise-t-il ? |
 
+### Ce que les tracks W ont trouvé dans le code, pas dans le plan
+
+Les quatre rapports ont corrigé l'analyse de départ sur quatre points de fond, et deux
+d'entre eux étaient des **défauts du code** :
+
+| # | Trouvaille | Conséquence |
+|---|---|---|
+| 1 | `beta = sigmoid(...)` bornait la force d'écriture à (0,1), donc toutes les valeurs propres de la transition d'état restaient positives — **la parité était hors d'atteinte**. | Vérifié sur notre implémentation : 0.51 (hasard) contre **0.996** à 4× la longueur d'entraînement. Un caractère. `linear_beta_max` est désormais un interrupteur, et un invariant refuse 1.0. |
+| 2 | `prophet_500m_probe.json` n'implémentait pas la pile documentée : la seule couche d'attention était **dans la boucle**, prélude et coda purement récurrents, `nope_layers` vide. | `design_warnings()` attrape cette classe d'erreur ; les configurations sont désormais générées et refusées si elles la déclenchent. |
+| 3 | « 99.95 % de l'état est jeté » est **faux** — le cache KV conserve tout. Le vrai mécanisme : le token émis est le seul chemin qui **rentre à la couche 0**. | Cadrage corrigé ; le rapport passe de 2 180:1 à 250–750:1. |
+| 4 | Notre décision D1 (« pas d'attention dans la boucle ») **est** la décision qui a supprimé le bloc-notes. Et un *k* constant n'achète **aucune classe de complexité**. | D1 documenté comme arbitrage et non comme élégance. La halte passe d'option à exigence, et elle est implémentée. |
+| 5 | L'adressage de `consolidate_depth` **mémorise par construction** : recouvrement de Jaccard 0.530 contre 0.493 entre instances de même et de différente classe — le hasard. | Avertissement inscrit dans le code. Porte 0 (exactitude contre profondeur) obligatoire avant toute dépense. |
+| 6 | Le « mur que personne ne nomme » **est nommé** (*sleep-time compute* et d'autres). | Revendication corrigée ; ce qui reste inédit est l'écriture sans rétropropagation, pas l'observation. |
+
 ---
 
 ## Verdicts par track

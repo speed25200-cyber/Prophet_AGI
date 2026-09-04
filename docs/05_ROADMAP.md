@@ -1,7 +1,7 @@
 # 05 — Plan d'exécution
 
 > Généré par `python -m prophet.plan`. Le budget est la contrainte structurante :
-> les douze tracks ont demandé **444 heures-A100** pour un budget de **300**.
+> les seize tracks ont demandé **470 heures-A100** pour un budget de **300**.
 > Ce document est l'arbitrage, y compris ce qui est coupé.
 
 ## La voie retenue : mixte
@@ -41,9 +41,11 @@ ablations.
 
 # Compute plan — 300 A100-hours
 
-Requested across all tracks: **444 h**. Available after a 10% reserve: **270 h**. Oversubscribed **1.6x**.
+Requested across all tracks: **470 h**. Available after a 10% reserve: **270 h**. Oversubscribed **1.7x**.
 
-Funded 11 of 19 requests, 270 h allocated, 0 h unspent, 30 h held in reserve for reruns and preemption losses.
+Funded 13 of 23 requests, 270 h allocated, 0 h unspent (added to the reserve), 30 h held for reruns and preemption losses.
+
+Allocation is in strict priority order with no backfill: an item that does not fit stops the line rather than being skipped so that cheaper work behind it can squeeze in.
 
 ## Funded
 
@@ -56,8 +58,10 @@ Funded 11 of 19 requests, 270 h allocated, 0 h unspent, 30 h held in reserve for
 | 1 | R11 | evaluation | production | 19 |
 | 1 | R07 | optimiser bake-off (trimmed) | gate | 14 |
 | 1 | R01 | byte-frontend MFU probe | gate | 2 |
-| 2 | R06 | data mixture ablations | ablation | 20 |
+| 1 | W4 | accuracy-versus-depth sweep | gate | 1 |
+| 1 | W2 | multi-key recall versus state and depth | gate | 1 |
 | 2 | R03 | two-tier memory | ablation | 20 |
+| 2 | R06 | data mixture ablations | ablation | 18 |
 | 2 | R02 | hybrid recall gate (MK-NIAH) | gate | 8 |
 | 2 | R09 | confidence-probe AUROC probe | gate | 3 |
 
@@ -65,22 +69,27 @@ Funded 11 of 19 requests, 270 h allocated, 0 h unspent, 30 h held in reserve for
 
 | Pri | Track | Work | Hours | Why it was cut |
 |---:|---|---|---:|---|
-| 3 | R04 | depth ablations | 24 | ranked below the funding line |
-| 3 | R08 | quantisation ladder | 20 | ranked below the funding line |
-| 3 | R02 | interleave and long-context ablations | 20 | ranked below the funding line |
-| 3 | R05 | MoE routing and upcycling | 16 | ranked below the funding line |
-| 3 | R02 | long-context extension | 12 | ranked below the funding line |
+| 3 | R04 | depth ablations | 24 | below the funding line |
+| 3 | R08 | quantisation ladder | 20 | below the funding line |
+| 3 | R02 | interleave and long-context ablations | 20 | below the funding line |
+| 3 | R05 | MoE routing and upcycling | 16 | below the funding line |
+| 3 | W1 | halting: input-dependent depth | 12 | below the funding line |
+| 3 | R02 | long-context extension | 12 | below the funding line |
 | 4 | R09 | confidence head training | 20 | optional; below the funding line |
+| 4 | W4 | depth consolidation | 14 | optional; below the funding line |
 | 5 | R01 | byte-frontend retrofit | 36 | optional; below the funding line |
 | 5 | R12 | vision adapter | 26 | optional; below the funding line |
 
 ## Gates run first
 
-51 hours of gate experiments (17% of the budget) decide whether the expensive work is worth doing at all:
+53 hours of gate experiments (18% of the budget) decide whether the expensive work is worth doing at all:
 
 - **R01 — byte-frontend MFU probe** (2 h). Measure realised MFU of patch gather/scatter kernels. Below 0.18 the entire byte-level track is dead, and 2 hours settles it.
   - Failure cancels: R01 byte-frontend retrofit
 - **R07 — optimiser bake-off (trimmed)** (14 h). Muon against a properly tuned AdamW. Break-even is a 1.058x speedup; below that the bake-off costs more than it saves and we keep AdamW.
+- **W4 — accuracy-versus-depth sweep** (1 h). Does accuracy actually rise with recurrence depth? One hour settles it. Our own R04 puts latent depth at ~1.8 GSM8K points against ~33 for verbalised CoT; if the sweep is flat there is nothing for depth consolidation to store and that track closes before it costs anything.
+  - Failure cancels: W4 depth consolidation
+- **W2 — multi-key recall versus state and depth** (1 h). The sharpest test of the bounded-state bet. R02 already measured 89.8% single-needle against 37.8% multi-needle; W2 adds that the effective linear-to-attention ratio degrades from 1:1 at k=1 to 8:1 at k=8, so raising the depth dial makes the known weakness worse. One hour shows whether the depth dial and the recall budget are the same dial pulling opposite ways.
 - **R04 — loop-vs-depth go/no-go** (24 h). Iso-FLOP comparison of looped depth against plain depth, plus depth generalisation, at >=350M parameters. If looping does not beat equal-FLOP depth, the central architectural bet is dead and everything downstream changes.
   - Failure cancels: R04 depth ablations, R03 two-tier memory
 - **R09 — confidence-probe AUROC probe** (3 h). Every published confidence-probe result is at 7B or above. If AUROC at 0.6B is below 0.70 the head is dropped. No training required.
@@ -121,6 +130,8 @@ déçoit, la voie B produit quand même un modèle.
 | R04 profondeur bouclée | Pas meilleur qu'une profondeur simple à iso-FLOP | **Le pari central tombe.** Repli sur une pile dense classique ; R03 est annulé en cascade. |
 | R09 sonde de confiance | AUROC < 0.70 à 0.6B | Tête de confiance abandonnée. |
 | R02 rappel multi-clés | Effondrement sur MK-NIAH | Augmenter le nombre de couches globales — **pas** élargir la fenêtre. |
+| W4 exactitude contre profondeur | Courbe plate | La consolidation de profondeur n'a rien à stocker ; le track ferme avant de coûter quoi que ce soit. |
+| W2 rappel multi-clés contre *k* | Le rappel se dégrade quand *k* monte | Le cadran de profondeur et le budget de rappel sont le même cadran en sens inverse ; plafonner *k* ou ajouter des couches globales. |
 | Conversion de donneur | Couverture paramétrique < 50 % | Refus automatique : c'est du pré-entraînement à départ chaud, à budgéter comme tel. |
 | Vérification des donneurs | Un champ ne correspond pas au Hub | Refus automatique de conversion. Un `head_dim` erroné ne casse pas bruyamment — il laisse des tenseurs en init fraîche et le modèle est simplement moins bon. |
 

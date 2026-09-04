@@ -65,6 +65,18 @@ ASKS: list[Ask] = [
     Ask("R07", "optimiser bake-off (trimmed)", 14.0, "gate", 1,
         "Muon against a properly tuned AdamW. Break-even is a 1.058x speedup; below "
         "that the bake-off costs more than it saves and we keep AdamW."),
+    Ask("W4", "accuracy-versus-depth sweep", 1.0, "gate", 1,
+        "Does accuracy actually rise with recurrence depth? One hour settles it. Our own "
+        "R04 puts latent depth at ~1.8 GSM8K points against ~33 for verbalised CoT; if the "
+        "sweep is flat there is nothing for depth consolidation to store and that track "
+        "closes before it costs anything.",
+        blocks=("W4 depth consolidation",)),
+    Ask("W2", "multi-key recall versus state and depth", 1.0, "gate", 1,
+        "The sharpest test of the bounded-state bet. R02 already measured 89.8% "
+        "single-needle against 37.8% multi-needle; W2 adds that the effective "
+        "linear-to-attention ratio degrades from 1:1 at k=1 to 8:1 at k=8, so raising the "
+        "depth dial makes the known weakness worse. One hour shows whether the depth dial "
+        "and the recall budget are the same dial pulling opposite ways."),
     Ask("R04", "loop-vs-depth go/no-go", 24.0, "gate", 1,
         "Iso-FLOP comparison of looped depth against plain depth, plus depth "
         "generalisation, at >=350M parameters. If looping does not beat equal-FLOP "
@@ -98,9 +110,11 @@ ASKS: list[Ask] = [
     Ask("R02", "hybrid recall gate (MK-NIAH)", 8.0, "gate", 2,
         "Multi-key retrieval is where linear mixers collapse. Gate the interleave "
         "ratio on it before committing to the stack."),
-    Ask("R06", "data mixture ablations", 20.0, "ablation", 2,
-        "Mixture weights are the highest-leverage decision at our budget and the "
-        "cheapest to test, at ~4 hours per arm on a 150M proxy."),
+    Ask("R06", "data mixture ablations", 18.0, "ablation", 2,
+        "Mixture weights are the highest-leverage decision at our budget and the cheapest "
+        "to test, at ~4 hours per arm on a 150M proxy. Trimmed from 20 hours by one arm: "
+        "persistent memory landed two hours short of the line, and one mixture arm is a "
+        "smaller loss than the project's most differentiating bet."),
     Ask("R03", "two-tier memory", 20.0, "ablation", 2,
         "Write, clear context, read -- against a retrieval baseline at equal context "
         "budget. Unproven at any scale, and promoted to priority 2 by an explicit "
@@ -108,6 +122,14 @@ ASKS: list[Ask] = [
         "conversion frees the hours that fund it."),
 
     # --- third tier: fund from the reserve or from a cancelled gate --------------------
+    Ask("W1", "halting: input-dependent depth", 12.0, "ablation", 3,
+        "A constant k changes no complexity class, so the loop earns no asymptotic credit "
+        "at all -- only input-dependent depth does. The mechanism is implemented and "
+        "tested; this trains it and measures whether learned depth beats a fixed dial at "
+        "equal average compute. Ranked below persistent memory by explicit project "
+        "decision: the loop's constant-factor benefit survives without halting, so this "
+        "buys the asymptotic argument rather than the working model. First in line if a "
+        "gate frees hours."),
     Ask("R04", "depth ablations", 24.0, "ablation", 3,
         "Recurrence depth schedule, injection, truncation depth. Must run at >=350M: "
         "recursion underperforms vanilla at 135M and only wins from ~360M, so a 130M "
@@ -124,6 +146,10 @@ ASKS: list[Ask] = [
         "NoPE and bounded-state layers have nothing positional to relearn."),
 
     # --- optional ---------------------------------------------------------------------
+    Ask("W4", "depth consolidation", 14.0, "optional", 4,
+        "Gated on the accuracy-versus-depth sweep. Also needs a learned addressing key: "
+        "probed as built, same-class and different-class slot overlap are at chance, so "
+        "the ledger memorises the consolidated instance and nothing near it."),
     Ask("R09", "confidence head training", 20.0, "optional", 4,
         "Gated on the AUROC probe."),
     Ask("R12", "vision adapter", 26.0, "optional", 5,
@@ -147,11 +173,17 @@ def allocate(total_hours: float, *, reserve_frac: float = 0.10) -> tuple[list[As
     ordered = sorted(enumerate(asks), key=lambda pair: (pair[1].priority, pair[0]))
     ordered = [ask for _, ask in ordered]
 
+    # Strict order, no backfill. Skipping an item that does not fit and funding a cheaper,
+    # lower-priority one behind it is the knapsack answer, not the planning answer: it
+    # trades the thing the plan depends on for two things it does not. The allocator
+    # therefore stops at the first item that does not fit and reports the remainder as
+    # slack, which joins the reserve.
     spent = 0.0
     for ask in ordered:
-        if spent + ask.hours <= available:
-            ask.granted = ask.hours
-            spent += ask.hours
+        if spent + ask.hours > available:
+            break
+        ask.granted = ask.hours
+        spent += ask.hours
 
     unfunded = [a for a in asks if not a.satisfied]
     summary = {
@@ -180,8 +212,12 @@ def plan_report(total_hours: float = 300.0, *, reserve_frac: float = 0.10) -> st
         "",
         f"Funded {s['funded']} of {s['total_asks']} requests, "
         f"{s['allocated_hours']:.0f} h allocated, "
-        f"{s['unallocated_hours']:.0f} h unspent, "
-        f"{s['reserve_hours']:.0f} h held in reserve for reruns and preemption losses.",
+        f"{s['unallocated_hours']:.0f} h unspent (added to the reserve), "
+        f"{s['reserve_hours']:.0f} h held for reruns and preemption losses.",
+        "",
+        "Allocation is in strict priority order with no backfill: an item that does not "
+        "fit stops the line rather than being skipped so that cheaper work behind it can "
+        "squeeze in.",
         "",
         "## Funded",
         "",
@@ -198,7 +234,7 @@ def plan_report(total_hours: float = 300.0, *, reserve_frac: float = 0.10) -> st
         for a in sorted(unfunded, key=lambda a: (a.priority, -a.hours)):
             lines.append(
                 f"| {a.priority} | {a.track} | {a.name} | {a.hours:.0f} | "
-                f"{'optional; below the funding line' if a.kind == 'optional' else 'ranked below the funding line'} |"
+                f"{'optional; below the funding line' if a.kind == 'optional' else 'below the funding line'} |"
             )
     else:
         lines.append("Everything requested is funded.")
