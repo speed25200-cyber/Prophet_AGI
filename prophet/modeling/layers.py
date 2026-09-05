@@ -343,6 +343,12 @@ class CausalSelfAttention(nn.Module):
         layer already holds."""
         self.last_keys: Tensor | None = None
         self.last_key_positions: Tensor | None = None
+        self.segment_ids: Tensor | None = None
+        """``(batch, seq)`` segment labels set by the model for one cache-free forward:
+        a query attends only to keys of its own segment. This is how a training row made
+        of several episodes is seen exactly as the loop sees them -- attention empty at
+        each episode start, the recurrent state carried through. Ignored with a cache,
+        where the cache reset is the boundary."""
 
     def forward(
         self,
@@ -388,10 +394,10 @@ class CausalSelfAttention(nn.Module):
         # window + 1 keys and the oldest is out of range for the new query. The old
         # "one token needs no mask" shortcut was only true when eviction came first.
         # A fresh cache-free full-attention pass keeps the fused causal kernel.
-        if cache is None and self.window is None:
+        if cache is None and self.window is None and self.segment_ids is None:
             attn_mask, is_causal = None, True
         else:
-            attn_mask, is_causal = self._position_mask(q_pos, k_pos), False
+            attn_mask, is_causal = self._attn_mask(q_pos, k_pos, cache), False
 
         out = F.scaled_dot_product_attention(
             q, k, v, attn_mask=attn_mask, is_causal=is_causal, scale=self.scale
@@ -416,6 +422,18 @@ class CausalSelfAttention(nn.Module):
                 in_window = in_window | (k < self.sink_tokens)
             mask = mask & in_window
         return mask.unsqueeze(0).unsqueeze(0)
+
+    def _attn_mask(self, q_pos: Tensor, k_pos: Tensor, cache: "AttentionCache | None") -> Tensor:
+        """The position mask, restricted to the query's own segment on a cache-free pass
+        when ``segment_ids`` is set (``(b, 1, s, s)`` then)."""
+        mask = self._position_mask(q_pos, k_pos)
+        if cache is None and self.segment_ids is not None:
+            seg = self.segment_ids
+            if tuple(seg.shape) != (seg.shape[0], q_pos.numel()):
+                raise ValueError(f"segment_ids must be (batch, {q_pos.numel()}), got {tuple(seg.shape)}")
+            same = seg.unsqueeze(1).unsqueeze(-1) == seg.unsqueeze(1).unsqueeze(2)  # (b,1,s,s)
+            mask = mask & same
+        return mask
 
 GATE_INIT = -4.0
 """Initial logit of the ledger recall gate: sigmoid(-4) = 0.018, almost closed."""
@@ -550,7 +568,7 @@ class LedgerAttention(CausalSelfAttention):
             keys = keys.repeat_interleave(self.n_rep, dim=1)
             values = values.repeat_interleave(self.n_rep, dim=1)
         out = F.scaled_dot_product_attention(
-            q, keys, values, attn_mask=self._position_mask(q_pos, k_pos), is_causal=False,
+            q, keys, values, attn_mask=self._attn_mask(q_pos, k_pos, cache), is_causal=False,
             scale=self.scale,
         )
 

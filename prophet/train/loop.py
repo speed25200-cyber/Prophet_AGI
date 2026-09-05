@@ -34,6 +34,12 @@ TOOL_ID = N_BYTES + SPECIAL_TOKENS.index("<|tool|>")
 __all__ = ["TrainConfig", "Trainer", "TrainMetrics"]
 
 
+def segment_ids_from_bos(batch: Tensor, bos_id: int) -> Tensor:
+    """``(b, s)`` segment labels: a new segment starts at every ``<|bos|>`` (tokens before
+    the first one, if any, are segment 0 with it)."""
+    return (batch == bos_id).long().cumsum(1)
+
+
 @dataclass
 class TrainConfig:
     total_steps: int = 1000
@@ -59,6 +65,11 @@ class TrainConfig:
     max_consecutive_nonfinite: int = 20
     """A non-finite loss or gradient norm skips the optimiser step (the batch is still
     consumed, so the stream stays deterministic); this many in a row aborts the run."""
+    segment_by_bos: bool = False
+    """Mask attention at every ``<|bos|>`` of a row (``ProphetModel.forward(segment_ids=)``):
+    a row of several episodes is then seen exactly as the loop sees a carried session --
+    attention empty at each episode's start, the recurrent state carried. Needs the
+    tokenizer for the id."""
     max_wall_seconds: float | None = None
     """Stop -- with a checkpoint -- once a step ends past this many seconds after
     ``train()`` started. A Colab session ends without warning; a run that knows its own
@@ -131,6 +142,8 @@ class Trainer:
         self.model_config = model_config
         self.tokenizer = tokenizer
         self._action = bool(model_config is not None and model_config.heads.action_head)
+        if cfg.segment_by_bos and tokenizer is None:
+            raise ValueError("segment_by_bos needs the tokenizer: Trainer(..., tokenizer=...)")
         if self._action and tokenizer is None:
             raise ValueError(
                 "heads.action_head derives its targets from the token stream and needs "
@@ -319,6 +332,8 @@ class Trainer:
                 if self._action:
                     action_targets = build_action_targets(batch, self.tokenizer)
                     forward_kw.update(action_targets.forward_kwargs())
+                if self.cfg.segment_by_bos:
+                    forward_kw["segment_ids"] = segment_ids_from_bos(batch, self.tokenizer.bos_id)
                 with torch.autocast(
                     device_type="cuda", dtype=self._autocast_dtype or torch.bfloat16,
                     enabled=use_autocast,

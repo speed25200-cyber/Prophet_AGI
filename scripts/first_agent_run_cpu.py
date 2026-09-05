@@ -240,6 +240,9 @@ def main() -> int:
                          "distribution a carried session state comes from")
     ap.add_argument("--carry-bench", action="store_true",
                     help="also bench with the session state carried from episode to episode")
+    ap.add_argument("--segment-attention", action="store_true",
+                    help="mask attention at every <|bos|> of a training row, so the rows of "
+                         "--episodes-per-row are seen exactly as the loop sees a carried session")
     ap.add_argument("--related", action="store_true",
                     help="train and bench on related lookup sequences (a file read by the previous "
                          "episode is answered without reading it again); rows hold --episodes-per-row "
@@ -284,7 +287,9 @@ def main() -> int:
             peak_lr_muon=0.01, peak_lr_adamw=2e-3, warmup_frac=0.05, decay_frac=0.3,
             checkpoint_dir=str(out_dir / "checkpoints"), checkpoint_every=100, log_every=25,
             device="cpu", max_wall_seconds=args.minutes * 60.0, mtp_weight=0.0,
+            segment_by_bos=args.segment_attention,
         )
+        report["segment_attention"] = args.segment_attention
         trainer = Trainer(model, loader, tc, model_config=cfg, tokenizer=tokenizer)
         started = time.time()
         history = trainer.train()

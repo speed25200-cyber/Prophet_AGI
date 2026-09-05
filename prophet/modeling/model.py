@@ -461,6 +461,44 @@ class ProphetModel(nn.Module):
         self,
         input_ids: Tensor,
         *,
+        segment_ids: Tensor | None = None,
+        **kw: Any,
+    ) -> ProphetOutput:
+        """Run the model (see ``_forward``).
+
+        ``segment_ids`` (``(batch, seq)`` long) splits a cache-free pass into segments:
+        every attention layer, the copy layer and the MTP heads included, lets a query
+        see only keys of its own segment, while the recurrent core's state flows across
+        the boundary. That is exactly what a session carried between episodes is at
+        inference -- attention empty at each episode's start, the bounded state kept --
+        so a training row of several episodes under this mask is the decode
+        distribution, not an approximation of it (tested to 1e-4). With a cache the
+        argument is refused: the cache reset is the boundary there.
+        """
+        if segment_ids is not None:
+            if kw.get("cache") is not None:
+                raise ValueError("segment_ids is for cache-free passes; a cache reset is the boundary")
+            if tuple(segment_ids.shape) != tuple(input_ids.shape):
+                raise ValueError(
+                    f"segment_ids must be shaped {tuple(input_ids.shape)}, got {tuple(segment_ids.shape)}"
+                )
+            segment_ids = segment_ids.to(input_ids.device)
+        for layer in self._attention_layers():
+            layer.segment_ids = segment_ids
+        try:
+            return self._forward(input_ids, **kw)
+        finally:
+            if segment_ids is not None:
+                for layer in self._attention_layers():
+                    layer.segment_ids = None
+
+    def _attention_layers(self) -> list[CausalSelfAttention]:
+        return [m for m in self.modules() if isinstance(m, CausalSelfAttention)]
+
+    def _forward(
+        self,
+        input_ids: Tensor,
+        *,
         positions: Tensor | None = None,
         modality_ids: Tensor | None = None,
         cache: ProphetCache | None = None,
