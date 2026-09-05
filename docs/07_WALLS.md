@@ -250,8 +250,11 @@ apprise aussi bien que les instances.
 *promu* — vérité terrain, ou consensus — est rendu dans le flux à ids de contrôle et
 devient une source ordinaire du corpus, dont les têtes d'action lisent leurs cibles.
 C'est la distillation de l'expérience vers les poids, mécaniquement ; ce n'est pas la
-preuve qu'elle apprend une compétence plutôt qu'une mémoire, ni la mesure de ce qu'elle
-efface. Ces deux-là restent le mur.
+preuve qu'elle apprend une compétence plutôt qu'une mémoire. Ce qu'elle efface, en
+revanche, est mesuré : à 7M paramètres, 500 pas de fine-tune agentique sans rejeu ont
+porté le succès de 0 % à 55 % et les bits/octet tenus à l'écart de 2.18 à **7.36**, pire
+qu'un modèle vierge ([`09_FIRST_RUN.md`](09_FIRST_RUN.md)). Le gradient seul, sur le flux
+d'expérience seul, efface tout le reste. Le mur tient ; il a maintenant une hauteur.
 
 ## Mur D — Le calcul d'inférence ne se cumule pas
 

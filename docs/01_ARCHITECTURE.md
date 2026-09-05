@@ -170,6 +170,52 @@ correctif en cas d'échec est **plus de couches globales, pas une fenêtre plus 
 
 ---
 
+## 4bis. Décision 3b — L'attention globale écrit ce qu'elle évince dans un registre borné
+
+D3 garde des couches d'attention globale (NoPE) pour le rappel exact que les mélangeurs à
+état borné n'offrent pas (R02 : 37.8 % en multi-aiguilles). Elles sont le seul endroit où
+la mémoire de la pile croît avec le contexte, et « contexte infini » se lit sur cette
+courbe :
+
+| Contexte | Cache, Prophet-main (Go) | Avec registre (Go) |
+|---:|---:|---:|
+| 32 768 | 0.146 | 0.062 |
+| 131 072 | 0.548 | 0.062 |
+| 1 048 576 | 4.307 | 0.062 |
+| 8 388 608 | 34.371 | **0.062** |
+
+(`prophet.budget`, bf16, fenêtre 4 096, 16 384 emplacements par couche globale, 48 paramètres
+ajoutés en tout — une porte par tête de requête.)
+
+**Le mécanisme** (`prophet.modeling.layers.LedgerAttention`, `mixer.global_memory="ledger"`) :
+la couche globale attend exactement dans une fenêtre et, au lieu de jeter ce qui en sort,
+écrit chaque paire (clé, valeur) évincée dans un registre à clés-produit adressé par la clé
+— l'écriture en forme close de `prophet.memory.ledger` (adressage gelé, région de confiance,
+EWC-lite), montée sur l'attention. Chaque requête lit le registre à sa propre adresse et
+ajoute la valeur rappelée par une porte par tête :
+
+```
+sortie_h = attention_dans_la_fenêtre_h + σ(g_h) · registre(q_h)
+```
+
+Un registre vide lit zéro : tant que rien n'est évincé, la couche *est* une couche à
+fenêtre glissante (testé à 1e-6). À l'entraînement, sans cache, la couche tient une
+mémoire transitoire par séquence et parcourt la séquence par blocs, lisant avant d'écrire,
+de sorte qu'à l'inférence elle rencontre *au moins* autant de mémoire qu'à
+l'entraînement, jamais moins. NoPE est requis : une clé tournée à sa position ne serait
+retrouvée que par une requête tournée à la même, et un registre n'a pas de positions. Les
+registres d'attention sont persistés avec la session : le contexte survit au cache KV.
+
+**Ce que cela coûte, dit avant la mesure.** Au-delà de la fenêtre, le rappel devient
+associatif — un nombre borné d'emplacements, adressés doucement — et non exact. C'est le
+prix de la borne. Ce qu'il vaut est une expérience, pas un argument :
+`scripts/needle_cpu.py` entraîne deux modèles identiques, avec et sans registre, sur un
+rappel clé→valeur et mesure l'exactitude *par distance*, dans et au-delà de la fenêtre ;
+l'ablation sur texte réel est dans `prophet.plan` avec son critère d'échec. Tant qu'elle
+n'a pas tourné, D3b est un interrupteur à `"none"` dans toutes les configurations livrées.
+
+---
+
 ## 5. Décision 4 — La profondeur comme cadran d'exécution
 
 Le pari central (R04). Un cœur à poids partagés appliqué *k* fois.
@@ -281,6 +327,7 @@ main assurent la spéculation sans modèle externe.
 | D1 | Cœur bouclé récurrent uniquement, attention hors boucle | R02, R04 | **Acquis** (test) |
 | D2 | ≤ 4B total / ~370M actifs | R07, planificateur | **Acquis** (mémoire) |
 | D3 | Hybride GDN 3:1 avec SWA + globale NoPE | R02 | **Acquis** |
+| D3b | Attention globale à fenêtre + registre borné des KV évincés (mémoire constante en contexte) | interne, R02/R03 | **[ABLATION] — mécanique testée, rappel au-delà de la fenêtre mesuré sur synthétique (§4bis), hors des configs livrées** |
 | D4 | Profondeur réglable à l'exécution | R04 | **[ABLATION A1] à ≥ 350M** |
 | D4b | Halte entraînée, pour une profondeur dépendant de l'entrée | W1 | **Requis** — sans elle, la boucle n'achète qu'un facteur constant (§2ter) |
 | D1b | Bloc-notes latent persistant, pour réparer ce que D1 a coûté | W1 | **Candidat** — non implémenté (§2bis) |

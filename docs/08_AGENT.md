@@ -198,8 +198,15 @@ un résumé ne se dé-résume pas. Rien ici n'élargit ce que la promotion a per
 trajectoire rendue ne porte aucune provenance propre.
 
 Ce qui n'est **pas** résolu par ce chemin : la mesure qui distingue une compétence d'une
-mémoire (W3), et le coût en oubli d'un tel flux à 250M — les deux sont dans la recette A2,
-non financée.
+mémoire (W3), et le coût en oubli d'un tel flux — et ce coût est maintenant mesuré, à 7M
+paramètres, et il est total. Le fine-tune agentique de [`09_FIRST_RUN.md`](09_FIRST_RUN.md)
+(500 pas sur 600 épisodes rendus, aucune donnée de langage mélangée) a porté le succès
+agentique de 0 % à 55 % et les bits/octet tenus à l'écart de **2.18 à 7.36** — pire que
+le modèle non entraîné (4.35). Le modèle de langage a été effacé pendant que la compétence
+s'apprenait. C'est le mur C en un nombre, et la raison pour laquelle le chemin
+quarantaine → corpus n'est qu'une *source parmi d'autres* du chargeur (`--quarantine`,
+poids 0.05 dans le recuit) et jamais un flux à part : le rejeu est la première parade,
+mesurée au même endroit.
 
 ## 5. Où un petit agent peut réellement gagner
 

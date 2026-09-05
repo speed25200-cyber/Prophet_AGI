@@ -89,6 +89,39 @@ Three-phase WSD mixture from track R06, proportions preserved and token counts s
 
 Total budget: **40.0B tokens**
 
+## Préparer les jeux : trois scripts, un générateur
+
+| Étape | Script | Ce qu'il produit | Sans réseau |
+|---|---|---|---|
+| Corpus | `scripts/prepare_corpus.py` | chaque source du mélange en `<source>/part-NNNNN.jsonl`, filtres déclaratifs appliqués, plafonds par source (`--max-docs`, `--max-bytes`), `manifest.json` de provenance (id, config, filtres, licence déclarée, documents, octets, commit), reprise par shard (un shard interrompu ne compte jamais) | `--dry-run` imprime le plan |
+| Benchmarks | `scripts/fetch_benchmarks.py` | `benchmarks/<nom>.jsonl` pour les suites de niveau 1 et 2 et les cibles du tableau de bord — question **et** options jointes, puisque l'un ou l'autre est la fuite ; un jeu vide est refusé | `--dry-run` liste les ids, chacun marqué **à vérifier** |
+| Agentique | `scripts/build_agent_dataset.py` | `<famille>.jsonl` de trajectoires parfaites rendues dans le flux à ids de contrôle, plus un manifeste | oui : tout est généré |
+
+Les identifiants de datasets sont des affirmations tant que `scripts/verify_datasets.py`
+ne les a pas confrontés au Hub ; les scripts le disent en clair. Le corpus local suit le
+schéma que le chargeur attend (`--data-root`), la décontamination se fait dans le flux
+contre `benchmarks/`, et rien de tout cela n'entre dans git.
+
+### Les familles de tâches agentiques
+
+`prophet/agent/tasks.py` : cinq familles générées depuis une graine, chacune avec ses
+outils, un **vérificateur exécutable** et une trajectoire parfaite. La graine est la
+partition : entraînement et évaluation ne partagent aucune tâche par construction, et
+aucun benchmark n'entre dans la génération, donc rien ne peut fuir.
+
+| Famille | L'agent doit | Ce qu'elle exerce |
+|---|---|---|
+| `files` | trouver le fichier qui contient un mot, noter son nom | choix d'outil, copie depuis l'observation |
+| `calc` | évaluer une expression avec la calculatrice, noter le résultat | copie depuis le but, pas de calcul en tokens |
+| `lookup` | lire un JSON, noter la valeur d'un champ | copie depuis une sortie structurée |
+| `count` | compter un mot dans les fichiers, noter le nombre | l'outil plutôt que le raisonnement |
+| `replace` | réécrire un fichier avec un mot remplacé | une **valeur longue générée**, non copiable |
+
+`replace` est la famille difficile à dessein : son argument n'est nulle part en contexte,
+le pointeur de copie ne peut pas le remplir. Le benchmark (`prophet/eval/agent_bench.py`)
+accepte n'importe quelle famille ; les quatre familles à copie ont 100 % de valeurs
+copiables dans leurs trajectoires rendues, `replace` en a moins (test).
+
 ## Phase A-stable — 28.0B tokens (70%), context 4096, LR warmup_then_constant
 
 Build the world model. Broadest mixture, highest token volume, constant peak learning rate. No instruction data at all — it is deliberately saved for the phases where recency makes it count.

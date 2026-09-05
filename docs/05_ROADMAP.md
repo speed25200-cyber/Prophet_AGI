@@ -41,9 +41,9 @@ ablations.
 
 # Compute plan — 300 A100-hours
 
-Requested across all tracks: **542 h**. Available after a 10% reserve: **270 h**. Oversubscribed **2.0x**.
+Requested across all tracks: **548 h**. Available after a 10% reserve: **270 h**. Oversubscribed **2.0x**.
 
-Funded 13 of 26 requests, 270 h allocated, 0 h unspent (added to the reserve), 30 h held for reruns and preemption losses.
+Funded 13 of 27 requests, 270 h allocated, 0 h unspent (added to the reserve), 30 h held for reruns and preemption losses.
 
 Allocation is in strict priority order with no backfill: an item that does not fit stops the line rather than being skipped so that cheaper work behind it can squeeze in.
 
@@ -76,6 +76,7 @@ Allocation is in strict priority order with no backfill: an item that does not f
 | 3 | R05 | MoE routing and upcycling | 16 | below the funding line |
 | 3 | W1 | halting: input-dependent depth | 12 | below the funding line |
 | 3 | R02 | long-context extension | 12 | below the funding line |
+| 3 | D3b | ledger attention versus exact global attention on real text | 6 | below the funding line |
 | 3 | A2 | per-token depth ceilings versus one depth per sequence | 4 | below the funding line |
 | 3 | A4 | depth-disagreement AUROC probe | 1 | below the funding line |
 | 4 | R09 | confidence head training | 20 | optional; below the funding line |
@@ -137,6 +138,7 @@ déçoit, la voie B produit quand même un modèle.
 | W2 rappel multi-clés contre *k* | Le rappel se dégrade quand *k* monte | Le cadran de profondeur et le budget de rappel sont le même cadran en sens inverse ; plafonner *k* ou ajouter des couches globales. |
 | A2 plafonds de profondeur par token | BPB dégradé de plus de 1 % contre une profondeur par séquence | `recurrent.token_depth` reste hors des configs livrées ; la boucle agentique tourne en régime `fixed` (une profondeur par épisode, la halte ne peut que la baisser). |
 | A4 désaccord de profondeur | AUROC < 0.65 sur la suite Tier-1 | Le signal sort du vecteur de caractéristiques du vérificateur ; le second passage profond n'est plus déclenché. |
+| D3b attention à registre | BPB dégradé de plus de 0.5 % à fenêtre 4k, ou rappel au-delà de la fenêtre au hasard | Le registre reste à `"none"` ; le contexte long reste linéaire en mémoire et l'extension R02 reprend la main. |
 | Conversion de donneur | Couverture paramétrique < 50 % | Refus automatique : c'est du pré-entraînement à départ chaud, à budgéter comme tel. |
 | Vérification des donneurs | Un champ ne correspond pas au Hub | Refus automatique de conversion. Un `head_dim` erroné ne casse pas bruyamment — il laisse des tenseurs en init fraîche et le modèle est simplement moins bon. |
 

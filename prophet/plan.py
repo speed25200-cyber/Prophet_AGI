@@ -155,6 +155,13 @@ ASKS: list[Ask] = [
         "Does disagreement between a shallow and a deep pass predict error? Inference "
         "only, on the mini checkpoint, over the tier-1 suite. Below 0.65 the signal is "
         "dropped from the verifier's feature vector."),
+    Ask("D3b", "ledger attention versus exact global attention on real text", 6.0, "ablation", 3,
+        "The global layers write what they evict into a bounded product-key ledger, so "
+        "cache memory is constant in context (34 GB -> 62 MB at 8M tokens on the main "
+        "config). Synthetic recall says whether the mechanism works at all; this says what "
+        "it costs on text: two matched 100M runs at 4k window, scored on held-out BPB and "
+        "on multi-key recall at 32k. If BPB degrades by more than 0.5% or recall beyond the "
+        "window is at chance, the ledger stays off and long context stays linear."),
     Ask("A2", "agentic training recipe", 67.0, "production", 3,
         "Tool-use SFT with omission and null-action negatives, then on-policy "
         "distillation on executable tasks with the quarantine's promoted episodes as a "
