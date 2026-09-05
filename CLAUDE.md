@@ -63,7 +63,7 @@ tests/          ~460 tests ; les plus importants sont des tests d'équivalence
 
 ## Ce que ce dépôt a appris à ses dépens
 
-Quatorze défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+Quinze défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
 normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
 et faux :
 
@@ -83,6 +83,7 @@ et faux :
 | Porte de rappel du registre d'attention ouverte à ½ dès le pas zéro : les lectures d'une mémoire vide noyaient l'attention, la couche n'apprenait rien, même dans la fenêtre | l'expérience de rappel avec bras de contrôle ; porte initialisée quasi fermée, ordre des blocs corrigé |
 | État de session porté entre épisodes : mécanique exacte, 57.5 % → 0 % — le modèle n'a jamais vu un état porté à l'entraînement | le benchmark agentique, poids gelés, seule variable l'état ; recette « séquences d'épisodes » à construire avant tout usage |
 | Position de requête du pointeur de copie : entraînée au token du guillemet ouvrant, interrogée un token plus tôt (après `"clé":`) au décodage — un checkpoint survivait par marge (55 %), le suivant tombait à 0 % avec des pointeurs exacts en forçage | sonde forçage contre décodage incrémental sur le même checkpoint ; cible déplacée là où la grammaire tire, test d'accord train/décodage |
+| Span de réflexion jamais rendu dans les trajectoires parfaites, ouvert par la boucle à chaque pas : un token de contrôle inconnu au décodage, rempli de fragments d'appel — **100 % → 0 %** sur les mêmes poids selon que la boucle l'ouvre ou non | banc avec et sans span sur le même checkpoint ; le rendu émet le span (vide) à chaque pas |
 
 **Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
 réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par
