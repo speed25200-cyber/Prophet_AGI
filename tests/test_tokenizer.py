@@ -239,3 +239,18 @@ def test_a_32k_vocabulary_is_a_fraction_of_a_128k_one():
                               frontend=FrontendConfig(vocab_size=32768))
     recovered = count_parameters(cfg).embedding - count_parameters(small_cfg).embedding
     assert recovered > 90e6, f"only {recovered / 1e6:.0f}M recovered"
+
+
+def test_trainer_is_deterministic_and_orders_merges_by_frequency():
+    corpus = ["the cat sat on the mat", "the cat ate the rat", "a cat is a cat"] * 5
+    a = BPETrainer(N_BYTES + N_RESERVED + 20).train(corpus)
+    b = BPETrainer(N_BYTES + N_RESERVED + 20).train(corpus)
+    assert a == b and 15 <= len(a) <= 20 and len(set(a)) == len(a)
+    # The most frequent pair in this corpus is "at" (cat, sat, mat, ate, rat): it merges first.
+    assert a[0] == (b"a", b"t")
+
+
+def test_trainer_stops_at_min_frequency():
+    corpus = ["ab ab ab", "cd"]
+    merges = BPETrainer(N_BYTES + N_RESERVED + 50, min_frequency=2).train(corpus)
+    assert (b"a", b"b") in merges and (b"c", b"d") not in merges

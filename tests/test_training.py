@@ -503,3 +503,28 @@ def test_wall_clock_deadline_stops_the_run_cleanly(tmp_path):
     )
     trainer.train()
     assert trainer.step <= 1 and trainer.stop_requested
+
+
+def test_non_finite_steps_are_skipped_and_a_run_stuck_on_them_aborts(tmp_path):
+    """A NaN loss must not reach the optimiser; twenty in a row must not look alive."""
+    cfg = ProphetConfig.from_json("configs/prophet_tiny_smoke.json")
+    model = ProphetModel(cfg)
+    rows = [[int(x) for x in torch.randint(0, 2048, (32,))] for _ in range(8)]
+    loader = StreamingLoader(sources_from_iterables({"a": (1.0, rows)}), seq_len=32, batch_size=1)
+    trainer = Trainer(
+        model, loader,
+        TrainConfig(total_steps=50, seq_len=32, checkpoint_dir=str(tmp_path), device="cpu",
+                    max_consecutive_nonfinite=3),
+        model_config=cfg, on_log=lambda m: None,
+    )
+    before = {n: p.detach().clone() for n, p in model.named_parameters()}
+    # Poison the logits: every loss is NaN from here on.
+    handle = model.lm_head.register_forward_hook(lambda m, i, o: o * float("nan"))
+    with pytest.raises(RuntimeError, match="consecutive non-finite"):
+        trainer.train()
+    handle.remove()
+    # The abort fires inside the third skipped step, before its step count is taken.
+    assert trainer.skipped_nonfinite == 3 and trainer.step == 2
+    for n, p in model.named_parameters():
+        assert torch.equal(p, before[n]), n  # nothing moved
+    assert trainer.history[-1].extra["train/skipped_nonfinite"] == 2.0

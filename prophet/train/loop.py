@@ -9,6 +9,7 @@ uninterrupted one, and :mod:`tests.test_training` asserts exactly that.
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -55,6 +56,9 @@ class TrainConfig:
     """Same rule, from ``heads.confidence_loss_weight``."""
     z_loss_weight: float = 1e-4
     ponder_weight: float = 0.0
+    max_consecutive_nonfinite: int = 20
+    """A non-finite loss or gradient norm skips the optimiser step (the batch is still
+    consumed, so the stream stays deterministic); this many in a row aborts the run."""
     max_wall_seconds: float | None = None
     """Stop -- with a checkpoint -- once a step ends past this many seconds after
     ``train()`` started. A Colab session ends without warning; a run that knows its own
@@ -152,6 +156,8 @@ class Trainer:
         }.get(cfg.dtype)
         self.stop_requested = False
         """Set by a signal handler; checked once per step so a polite stop checkpoints."""
+        self.skipped_nonfinite = 0
+        self._consecutive_skips = 0
 
         self.optimizers, self.param_counts = build_optimizers(
             model,
@@ -343,10 +349,33 @@ class Trainer:
                 }
                 self.tokens_seen += batch.numel()
 
-            if self.cfg.grad_clip:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip)
-            for opt in self.optimizers:
-                opt.step()
+            # Measure the gradient norm always (clip only when asked): a non-finite
+            # loss or gradient must never reach the optimiser. One bad step turned a
+            # run's every weight to NaN through the clip's scale factor, and the run
+            # then spent 900 steps training nothing while looking alive.
+            total_norm = float(torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.cfg.grad_clip or float("inf")
+            ))
+            finite = math.isfinite(total_norm) and math.isfinite(accumulated)
+            if finite:
+                for opt in self.optimizers:
+                    opt.step()
+                self._consecutive_skips = 0
+            else:
+                for opt in self.optimizers:
+                    opt.zero_grad(set_to_none=True)
+                self.skipped_nonfinite += 1
+                self._consecutive_skips += 1
+                if self._consecutive_skips >= self.cfg.max_consecutive_nonfinite:
+                    raise RuntimeError(
+                        f"{self._consecutive_skips} consecutive non-finite steps (loss "
+                        f"{accumulated}, grad norm {total_norm}) at step {self.step + 1}: "
+                        "the run has diverged. Lower the learning rate or inspect the "
+                        "last checkpoint; continuing would train nothing."
+                    )
+            extra["train/grad_norm"] = total_norm
+            if self.skipped_nonfinite:
+                extra["train/skipped_nonfinite"] = float(self.skipped_nonfinite)
 
             self.step += 1
             metrics = TrainMetrics(

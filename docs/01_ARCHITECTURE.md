@@ -178,6 +178,13 @@ Le pari central (R04). Un cœur à poids partagés appliqué *k* fois.
 |---|---:|---:|---:|
 | `k` par défaut | 2 | 4 | 4–8 |
 | Profondeur effective (main) | 16 | 24 | 24–40 |
+| Noyau de la règle delta | balayage par blocs | balayage par blocs | `fla` fusionné |
+
+Le balayage par blocs (`mixer.linear_chunk_size`, 64 par défaut) est la même récurrence
+que le noyau fusionné, à la précision flottante près, exécutée en une résolution
+triangulaire et quelques produits matriciels par bloc ; c'est le chemin des appareils
+sans `fla`, vérifié contre le balayage de référence sur sorties, état et gradients
+([`03_TRAINING.md`](03_TRAINING.md) §5).
 
 **Mécanismes retenus :**
 

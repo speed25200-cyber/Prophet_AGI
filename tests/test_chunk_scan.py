@@ -92,3 +92,18 @@ def test_model_is_identical_under_either_scan():
             layer.chunk_size = None
         reference = model(ids, cache=ProphetCache(), loop_k=3).logits
     assert torch.allclose(chunked, reference, atol=1e-4)
+
+
+@pytest.mark.parametrize("bias", [-20.0, -40.0, -90.0])
+def test_gradients_stay_finite_when_the_forget_gate_closes(bias):
+    """alpha.log() has gradient 1/alpha; a closed gate made the chunked path's
+    gradients NaN while the reference's were finite. logsigmoid of the gate logit has
+    gradient 1 - alpha and cannot overflow."""
+    torch.manual_seed(0)
+    layer = GatedDeltaNet(64, n_heads=4, head_dim=16, allow_fused=False, chunk_size=64)
+    with torch.no_grad():
+        layer.a_proj.bias.fill_(bias)
+    x = torch.randn(2, 128, 64, requires_grad=True)
+    (layer(x).square().mean() * 1e6).backward()
+    assert torch.isfinite(x.grad).all()
+    assert all(torch.isfinite(p.grad).all() for p in layer.parameters() if p.grad is not None)

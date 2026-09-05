@@ -7,10 +7,9 @@
 Reads every ``*.jsonl`` / ``*.txt`` under ``--data-root`` (the same layout the training
 loader uses), samples up to ``--max-docs`` documents round-robin across sources so no
 single corpus dominates the merges, and trains with :class:`prophet.data.tokenizer.
-BPETrainer` -- the *reference* trainer: correct, inspectable, and slow (it re-counts
-pairs after every merge). Budget roughly a minute per thousand merges on a few hundred
-thousand short documents; for a full 32k vocabulary on a large sample, run it once on a
-CPU box and commit nothing but the resulting JSON somewhere outside git.
+BPETrainer`, which keeps pair counts incrementally: a 4k vocabulary on twenty megabytes
+takes seconds, a 32k one on a few hundred megabytes minutes. Commit nothing but the
+resulting JSON, somewhere outside git.
 
 The artifact records the pre-tokenisation pattern; :meth:`ProphetTokenizer.load` refuses
 a vocabulary built with a different one, and ``check_invariants`` is run here so a

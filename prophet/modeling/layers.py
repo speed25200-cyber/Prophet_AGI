@@ -16,7 +16,7 @@ Design constraints that shape every module here:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
@@ -539,7 +539,13 @@ class GatedDeltaNet(nn.Module):
         # L2-normalised keys keep the delta-rule update a well-conditioned projection;
         # without this the removal term can amplify rather than erase.
         k = F.normalize(k, dim=-1, eps=1e-6)
-        alpha = torch.sigmoid(self.a_proj(x).float())  # (b, s, h)
+        a_logits = self.a_proj(x).float()
+        alpha = torch.sigmoid(a_logits)  # (b, s, h)
+        # The chunked and fused paths work in log space. log(sigmoid(a)) is taken as
+        # logsigmoid(a), whose gradient is 1 - alpha: taking alpha.log() instead has
+        # gradient 1/alpha, which is 1e30 once a forget gate closes, and the run's first
+        # NaN came from exactly that after 260 steps of falling loss.
+        log_alpha = F.logsigmoid(a_logits)
         beta = self.beta_max * torch.sigmoid(self.b_proj(x).float())
 
         if self.allow_fused and HAS_FLA and x.is_cuda:  # pragma: no cover
@@ -552,12 +558,12 @@ class GatedDeltaNet(nn.Module):
             # ``_scan`` (output *and* final state) is required before it carries a run.
             init = None if state is None or state.state is None else state.state.transpose(-1, -2).contiguous()
             out, fla_state = _fla_gated_delta(
-                q=q, k=k, v=v, g=alpha.log().to(q.dtype), beta=beta.to(q.dtype), scale=1.0,
+                q=q, k=k, v=v, g=log_alpha.to(q.dtype), beta=beta.to(q.dtype), scale=1.0,
                 initial_state=init, output_final_state=state is not None,
             )
             new_state = None if fla_state is None else fla_state.transpose(-1, -2).contiguous()
         elif self.chunk_size is not None and s > 1:
-            out, new_state = self._chunk_scan(q, k, v, alpha, beta, state, self.chunk_size)
+            out, new_state = self._chunk_scan(q, k, v, log_alpha, beta, state, self.chunk_size)
         else:
             out, new_state = self._scan(q, k, v, alpha, beta, state)
 
@@ -609,12 +615,15 @@ class GatedDeltaNet(nn.Module):
         q: Tensor,
         k: Tensor,
         v: Tensor,
-        alpha: Tensor,
+        log_alpha: Tensor,
         beta: Tensor,
         state: RecurrentState | None,
         chunk: int,
     ) -> tuple[Tensor, Tensor]:
         """Blockwise form of the same recurrence; exact, and a matmul per chunk.
+
+        Takes ``log_alpha`` rather than ``alpha`` so that no gradient ever passes
+        through ``1/alpha`` (see ``forward``).
 
         Within a chunk starting from state ``S0``, with cumulative decays
         ``G_t = prod_{i<=t} alpha_i``, the state unrolls to
@@ -636,7 +645,7 @@ class GatedDeltaNet(nn.Module):
         q32 = q.float().transpose(1, 2)      # (b, h, s, dk)
         k32 = k.float().transpose(1, 2)
         v32 = v.float().transpose(1, 2)      # (b, h, s, dv)
-        log_a = alpha.float().clamp_min(1e-30).log().transpose(1, 2)  # (b, h, s)
+        log_a = log_alpha.float().transpose(1, 2)                      # (b, h, s)
         beta32 = beta.float().transpose(1, 2)
         outputs = []
         for start in range(0, s, chunk):
@@ -646,17 +655,23 @@ class GatedDeltaNet(nn.Module):
             bc = beta32[:, :, start:end].unsqueeze(-1)              # (b, h, c, 1)
             L = log_a[:, :, start:end].cumsum(-1)                    # (b, h, c)
             G = L.exp().unsqueeze(-1)                                # (b, h, c, 1)
-            ratio = (L.unsqueeze(-1) - L.unsqueeze(-2)).exp()        # (b, h, c, c): G_t / G_i
             idx = torch.arange(c, device=k.device)
             strict = idx.unsqueeze(1) > idx.unsqueeze(0)             # i < t
             incl = idx.unsqueeze(1) >= idx.unsqueeze(0)              # i <= t
+            # Mask in log space, before the exponential: above the diagonal the
+            # differences are large and positive, their exp is inf, and a zero
+            # gradient times inf is NaN in the backward even though the forward masks
+            # the value away. With -inf here the masked entries and their gradients
+            # are exactly zero.
+            diff = L.unsqueeze(-1) - L.unsqueeze(-2)                 # (b, h, c, c): log G_t/G_i
+            ratio = torch.where(incl, diff, diff.new_full((), float("-inf"))).exp()
             KK = kc @ kc.transpose(-1, -2)                            # (b, h, c, c): k_t . k_i
             T = (bc * ratio * KK).masked_fill(~strict, 0.0)
             S0k = (S @ kc.transpose(-1, -2)).transpose(-1, -2)       # (b, h, c, dv): S0 k_t
             B = bc * vc - bc * G * S0k
             eye = torch.eye(c, device=k.device, dtype=dtype)
             W = torch.linalg.solve_triangular(eye + T, B, upper=False, unitriangular=True)
-            A = (ratio * (qc @ kc.transpose(-1, -2))).masked_fill(~incl, 0.0)
+            A = ratio * (qc @ kc.transpose(-1, -2))                  # already zero above the diagonal
             out_c = G * (qc @ S.transpose(-1, -2)) + A @ W           # (b, h, c, dv)
             outputs.append(out_c)
             decay_all = (L[:, :, -1:] - L).exp().unsqueeze(-1)       # (b, h, c, 1): G_c / G_i
