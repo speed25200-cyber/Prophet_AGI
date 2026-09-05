@@ -102,7 +102,9 @@ class ActionTargets:
     selection: Tensor
     """(b, c) target index into ``[none, anchor_1..anchor_n]``."""
     copy_positions: Tensor
-    """(b, m) value-start positions: the token *before* a value's first token."""
+    """(b, m) value-start positions: the token before a string value's opening quote
+    (before the first token of a number or boolean) -- where the prefix grammar reports
+    ``value_start`` and the loop asks the pointer."""
     copy_start: Tensor
     """(b, m) context position of the value's first token, or -100."""
     copy_end: Tensor
@@ -267,9 +269,20 @@ def build_action_targets(ids: Tensor, tokenizer) -> ActionTargets:
                 last = _token_at(spans, span[1], end=True)
                 if first is None or last is None or first < 1:
                     continue
+                # The query position is where the loop asks: a prefix that ends exactly
+                # after ``"key":`` (``PrefixState.value_start``), so the token *before*
+                # a string value's opening quote, before its first character otherwise.
+                # Training the heads at the quote itself and asking them one token
+                # earlier was a silent mismatch: one checkpoint survived it on margin,
+                # the next one's end pointer collapsed at decode while teacher-forced
+                # it was exact.
+                lead = span[0] - 1 if isinstance(value, str) else span[0]
+                head = _token_at(spans, lead)
+                if head is None or head < 1:
+                    continue
                 counts["values"] += 1
                 jumped[r, first : last + 1] = False
-                value_start = first - 1  # the position whose state emits <|copy|> or not
+                value_start = head - 1  # the position whose state emits <|copy|> or not
                 literal = text[span[0] : span[1]]
                 # Last token-aligned verbatim occurrence strictly before the call. A
                 # word in prose is usually one token *with its leading space* (" anchor")

@@ -63,7 +63,7 @@ tests/          ~460 tests ; les plus importants sont des tests d'équivalence
 
 ## Ce que ce dépôt a appris à ses dépens
 
-Treize défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+Quatorze défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
 normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
 et faux :
 
@@ -82,6 +82,7 @@ et faux :
 | Cibles de copie jamais alignées : un mot en prose est un token *avec son espace*, nu en JSON — zéro cible sur 40 valeurs, têtes apprises à 100 % et 5 % de transfert | le premier run agentique ; occurrence acceptée au token porteur d'espace, espace retiré à l'épissage : 0 → 40 cibles, 5 % → 55 % de succès |
 | Porte de rappel du registre d'attention ouverte à ½ dès le pas zéro : les lectures d'une mémoire vide noyaient l'attention, la couche n'apprenait rien, même dans la fenêtre | l'expérience de rappel avec bras de contrôle ; porte initialisée quasi fermée, ordre des blocs corrigé |
 | État de session porté entre épisodes : mécanique exacte, 57.5 % → 0 % — le modèle n'a jamais vu un état porté à l'entraînement | le benchmark agentique, poids gelés, seule variable l'état ; recette « séquences d'épisodes » à construire avant tout usage |
+| Position de requête du pointeur de copie : entraînée au token du guillemet ouvrant, interrogée un token plus tôt (après `"clé":`) au décodage — un checkpoint survivait par marge (55 %), le suivant tombait à 0 % avec des pointeurs exacts en forçage | sonde forçage contre décodage incrémental sur le même checkpoint ; cible déplacée là où la grammaire tire, test d'accord train/décodage |
 
 **Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
 réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par

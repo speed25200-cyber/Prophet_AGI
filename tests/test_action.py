@@ -108,12 +108,22 @@ def test_targets_are_read_off_the_token_stream():
     start, end = int(t.copy_start[0, 0]), int(t.copy_end[0, 0])
     assert TOK.decode(row[start : end + 1]) == "notes.txt"
     assert end < call_pos
-    # The copy position is the token before the value inside the call.
+    # The copy position is the token before the value's opening quote inside the call:
+    # the prefix up to it ends after '"path":', where the grammar reports a value start
+    # and the loop asks the pointer (train and decode must agree on this token).
     cp = int(t.copy_positions[0, 0])
-    assert TOK.decode(row[cp + 1 : cp + 10]) == "notes.txt"
-    # Syntax and names are jumped; values are not; nothing outside the call is.
+    assert TOK.decode(row[cp + 1 : cp + 12]) == '"notes.txt"'
+    assert TOK.decode(row[call_pos + 1 : cp + 1]).endswith('"path":')
+    # Train and decode agree on the query token: the call prefix up to the copy
+    # position is exactly where the grammar reports a value start.
+    from prophet.agent.actions import ActionGrammar
+
+    assert ActionGrammar(_registry()).check(TOK.decode(row[call_pos + 1 : cp + 1])).value_start
+    # Syntax and names are jumped (the value's quotes included); the value's own
+    # tokens are not; nothing outside the call is.
     jumped = t.jumped[0]
-    assert bool(jumped[call_pos + 1]) and not bool(jumped[cp + 1]) and not bool(jumped[call_pos - 1])
+    assert bool(jumped[call_pos + 1]) and bool(jumped[cp + 1]) and not bool(jumped[cp + 2])
+    assert not bool(jumped[call_pos - 1])
     assert not bool(jumped[nocall_pos])
 
 
