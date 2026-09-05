@@ -90,12 +90,14 @@ def batch(rng: random.Random, *, n: int, ops: int, cot: bool):
     return torch.tensor(rows), torch.tensor(targets), torch.tensor(positions)
 
 
-def config(k: int, *, length: int) -> ProphetConfig:
+def config(k: int, *, length: int, qk_norm: bool = False) -> ProphetConfig:
+    """``qk_norm`` off by default: at head_dim 16 it caps the attention logit at 4 (see
+    ``scripts/needle_cpu.py`` and ``ProphetConfig.design_warnings``)."""
     return ProphetConfig(
         name=f"depth-k{k}", d_model=64, n_layers=4, max_seq_len=256,
         frontend=FrontendConfig(vocab_size=VOCAB, tie_word_embeddings=True),
         mixer=MixerConfig(
-            pattern=["swa", "full_attn"], n_heads=4, n_kv_heads=2, sliding_window=length,
+            pattern=["swa", "full_attn"], n_heads=4, n_kv_heads=2, sliding_window=length, qk_norm=qk_norm,
             attention_sink_tokens=1, nope_layers=(1,), linear_heads=2, linear_head_dim=16,
         ),
         ffn=FeedForwardConfig(kind="dense", hidden_mult=2.0),
@@ -115,9 +117,9 @@ def lr_at(step: int, *, steps: int, peak: float, warmup: int) -> float:
 
 
 def train(k: int, *, cot: bool, ops: int, steps: int, minutes: float, seed: int, lr: float, warmup: int,
-          log) -> tuple[ProphetModel, dict]:
+          log, qk_norm: bool = False) -> tuple[ProphetModel, dict]:
     torch.manual_seed(seed)
-    cfg = config(k, length=2 * ops + 2 + ops)
+    cfg = config(k, length=2 * ops + 2 + ops, qk_norm=qk_norm)
     cfg.validate()
     model = ProphetModel(cfg).train()
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
@@ -171,7 +173,8 @@ def accuracy(model, k: int, rng: random.Random, *, cot: bool, ops: int, n: int) 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--ops", type=int, default=6)
+    ap.add_argument("--ops", default="6", help="operations per expression; a comma-separated list sweeps")
+    ap.add_argument("--qk-norm", action="store_true", help="normalise queries and keys (bounds the logit)")
     ap.add_argument("--steps", type=int, default=3000)
     ap.add_argument("--arms", default="k1,k2,k4,k1-cot")
     ap.add_argument("--minutes", type=float, default=10.0, help="per model")
@@ -186,21 +189,25 @@ def main() -> int:
     def log(msg: str) -> None:
         print(msg, flush=True)
 
-    report: dict = {"ops": args.ops, "steps": args.steps, "lr": args.lr, "chance": 0.1}
+    ops_list = [int(o) for o in args.ops.split(",") if o]
+    report: dict = {"ops": ops_list, "steps": args.steps, "lr": args.lr, "chance": 0.1, "qk_norm": args.qk_norm}
     arms = [a for a in args.arms.split(",") if a]
-    for arm in arms:
-        k = int(arm.split("-")[0][1:])
-        cot = arm.endswith("-cot")
-        model, stats = train(k, cot=cot, ops=args.ops, steps=args.steps, minutes=args.minutes, seed=args.seed,
-                             lr=args.lr, warmup=args.warmup, log=log)
-        acc = accuracy(model, k, random.Random(args.seed + 100), cot=cot, ops=args.ops, n=args.eval_n)
-        report[arm] = {"train": stats, **acc}
-        log(f"[{arm}] {stats} {acc}")
-    (out / "report.json").write_text(json.dumps(report, indent=2))
-    print("\n| Bras | passes du cœur / token | tokens émis / réponse | exactitude |\n|---|---:|---:|---:|")
-    for arm in arms:
-        r = report[arm]
-        print(f"| {arm} | {r['core_passes_per_token']} | {r['tokens_per_answer']} | {r['accuracy']:.1%} |")
+    for ops in ops_list:
+        report[str(ops)] = {}
+        for arm in arms:
+            k = int(arm.split("-")[0][1:])
+            cot = arm.endswith("-cot")
+            model, stats = train(k, cot=cot, ops=ops, steps=args.steps, minutes=args.minutes, seed=args.seed,
+                                 lr=args.lr, warmup=args.warmup, log=log, qk_norm=args.qk_norm)
+            acc = accuracy(model, k, random.Random(args.seed + 100), cot=cot, ops=ops, n=args.eval_n)
+            report[str(ops)][arm] = {"train": stats, **acc}
+            log(f"[ops={ops} {arm}] {stats} {acc}")
+        (out / "report.json").write_text(json.dumps(report, indent=2))
+    print("\n(tokens émis par réponse : 1 pour les bras directs, un par opération pour la chaîne)")
+    print("| Opérations | " + " | ".join(arms) + " |\n|---:|" + "---:|" * len(arms))
+    for ops in ops_list:
+        cells = [f"{report[str(ops)][a]['accuracy']:.1%}" for a in arms]
+        print(f"| {ops} | " + " | ".join(cells) + " |")
     return 0
 
 
