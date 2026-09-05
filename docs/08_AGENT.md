@@ -103,11 +103,32 @@ de référence qui masque la tête LM aux tokens gardant le préfixe viable). Si
 de contrôle réservés dans le tokenizer : `<|tool_def|>`, `<|/tool_def|>`, `<|call|>`,
 `<|/call|>`, `<|copy|>`, `<|nocall|>`.
 
-**Non construit :** les têtes d'A3 — sélection par **pointeur sur les ancres de schéma**
-(ensemble ouvert : tout outil dont le schéma est dans le prompt est appelable sans
-entraînement), copie de span pour les valeurs (réutilise le cache K de la couche NoPE du
-coda, zéro cache supplémentaire), gate copie/génération. C'est un changement de modèle +
-de perte, derrière `heads.action_head=False` par défaut, conditionné à l'ablation A3-1.
+**Construit — les têtes d'A3** (`heads.action_head`, `prophet/modeling/action.py`) :
+
+| Tête | Lit | Décide | Paramètres (d=1536) |
+|---|---|---|---|
+| Sélection | l'état à `<|call|>` contre les états aux ancres `<|/tool_def|>` du prompt, plus une clé nulle apprise | *quel* outil, ou « aucun » (les actions réservées) — un seul argmax sur *n*+1 options, pas une chaîne de tokens | 2·d·d_k + d_k = 0.39M |
+| Copie | l'état au début d'une valeur contre les **clés existantes** de la couche d'attention globale NoPE du coda | *où* dans le contexte commence et finit la valeur — zéro octet de cache en plus | 2·d·head_dim = 0.39M |
+| Porte | l'état au début d'une valeur | copier ou générer | d + 1 |
+
+Les cibles se lisent **dans le flux de tokens** lui-même (`build_action_targets`) : un
+exemple SFT rendu avec les ids de contrôle dit déjà quel outil a été appelé (index de son
+schéma parmi les ancres, 0 si aucun ou réservé) et quelles valeurs d'arguments étaient
+verbatim dans le contexte (dernière occurrence alignée sur les tokens ; sinon la porte
+apprend « non copiable »). Aucun second format de données à laisser dériver. La perte
+ajoute sélection, pointeurs et porte, et abaisse à 0.1 le poids LM des tokens qu'un
+runtime typé émet à la place du modèle (syntaxe, nom d'outil, noms de paramètres).
+L'apprenabilité est vérifiée sur un exemple : sélection exacte, pointeurs exacts.
+
+Au décodage, la boucle lit la sélection à `<|call|>` et **restreint la grammaire** à l'outil
+choisi (ou aux seules actions réservées) ; la marge top-1 − top-2 est enregistrée par pas
+comme signal d'ambiguïté. Le trainer refuse `action_head` sans tokenizer, puisque les
+cibles en dépendent.
+
+**Non construit :** le chemin de copie au décodage. Il exige que la grammaire expose un
+état « début de valeur » et le type attendu pour valider le span copié ; aujourd'hui
+`ActionGrammar.check` ne rend que viable/complet. Le chemin par slots fermés
+(`<|slot_i|>`, contexte −95 %) reste non construit : A3-4 décide s'il survit.
 
 ---
 
@@ -178,5 +199,6 @@ Pas sur SWE-bench ou GAIA en ensemble ouvert. Sur deux terrains :
 | Règle de décision (exécution ≫ appris ≫ rien) | testée |
 | **Compétence** de l'agent | **non mesurée** — le modèle n'est pas entraîné |
 | AUROC du désaccord de profondeur comme prédicteur d'erreur | **non mesurée** — A4-0 |
-| Têtes d'action typées, scoreur entraîné, recette d'entraînement agentique (~67 h-A100, A2 §8) | **non construits** |
+| Têtes d'action typées : sélection, copie, porte, cibles depuis le flux, sélection au décodage | **construites, non entraînées** |
+| Copie au décodage, scoreur entraîné, recette d'entraînement agentique (~67 h-A100, A2 §8) | **non construits** |
 | Plafonds de profondeur par token (`recurrent.token_depth`) : mécanique exacte, entraînement câblé | **construit, non ablaté** |

@@ -14,10 +14,8 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from prophet.config import ProphetConfig
 
@@ -274,6 +272,11 @@ def count_parameters(cfg: ProphetConfig, loop_k: int | None = None) -> ParamBrea
         heads += 2 * d + 1  # RMSNorm gain + Linear(d, 1)
     if cfg.recurrent.enabled and cfg.recurrent.halting == "ponder":
         heads += 2 * d + 1  # the halting head has the same shape
+    if cfg.heads.action_head:
+        # Track A3: a shared norm, two selection projections plus the null key, two copy
+        # queries against an existing attention layer's keys, and the gate.
+        dk, hd = cfg.heads.action_dk, cfg.head_dim
+        heads += d + 2 * d * dk + dk + 2 * d * hd + (d + 1)
     if heads:
         out.add("aux_heads", heads)
 

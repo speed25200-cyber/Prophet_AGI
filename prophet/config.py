@@ -331,6 +331,23 @@ class HeadsConfig:
     retrieval triggering rather than letting the model guess confidently."""
     confidence_loss_weight: float = 0.1
 
+    action_head: bool = False
+    """Typed tool emission (track A3): a selection pointer over the ``<|/tool_def|>``
+    anchors in context, a span-copy pointer for argument values over the coda NoPE
+    layer's existing keys, and a copy gate. Off, the model is byte-identical to one
+    without them. Targets are derived from the token stream by
+    ``prophet.modeling.action.build_action_targets``."""
+    action_dk: int = 128
+    """Width of the selection pointer's query/key projections."""
+    action_kv_head: int = 0
+    """Which KV head of the coda's NoPE global-attention layer the copy pointer reads."""
+    sel_loss_weight: float = 0.5
+    ptr_loss_weight: float = 0.5
+    gate_loss_weight: float = 0.1
+    jumped_token_lm_weight: float = 0.1
+    """LM-loss weight on tokens a typed runtime emits for the model (call syntax, tool
+    name, parameter names). Small, not zero, so the text-JSON fallback stays alive."""
+
 
 # --------------------------------------------------------------------------------------
 # 7. Modality hooks (track R12)
@@ -579,6 +596,22 @@ class ProphetConfig:
                 if not self.memory.layers:
                     errors.append("memory.mount='coda' needs at least one index in layers")
 
+        if self.heads.action_head:
+            if not 0 <= self.heads.action_kv_head < self.mixer.n_kv_heads:
+                errors.append(
+                    f"heads.action_kv_head ({self.heads.action_kv_head}) must index one of "
+                    f"the {self.mixer.n_kv_heads} KV heads"
+                )
+            if self.copy_pointer_layer() is None:
+                errors.append(
+                    "heads.action_head needs a NoPE full-attention layer after the loop "
+                    "(in the coda, or the trunk when the core is not recurrent) for the "
+                    "copy pointer to score its keys"
+                )
+            for name in ("action_dk",):
+                if getattr(self.heads, name) < 1:
+                    errors.append(f"heads.{name} must be >= 1")
+
         # frontend.mode other than "bpe" is *costed* here (prophet.budget sizes the R01
         # retrofit from it) and *refused* at model build (ProphetModel raises
         # NotImplementedError), so validation stays permissive on purpose.
@@ -587,6 +620,18 @@ class ProphetConfig:
             raise ValueError(
                 "Invalid ProphetConfig:\n" + "\n".join(f"  - {e}" for e in errors)
             )
+
+    def copy_pointer_layer(self) -> tuple[str, int] | None:
+        """``(section, index)`` of the layer whose keys the copy pointer scores: the last
+        NoPE full-attention block after the loop, so it sees the whole context with no
+        positional signal to fight the pointer."""
+        best: tuple[str, int] | None = None
+        for section, index, kind in self.section_layout():
+            if section == "core":
+                continue
+            if kind == "full_attn" and not self.layer_uses_rope(index, section):
+                best = (section, index)
+        return best
 
     def design_warnings(self) -> list[str]:
         """Flag configurations that contradict the architecture's own invariants.

@@ -323,6 +323,14 @@ class CausalSelfAttention(nn.Module):
         self.q_norm = RMSNorm(self.head_dim, norm_eps) if qk_norm else None
         self.k_norm = RMSNorm(self.head_dim, norm_eps) if qk_norm else None
 
+        self.record_keys = False
+        """When set, the layer keeps the keys attention saw on its last call (all KV
+        heads, every retained position) and their absolute positions, for the copy
+        pointer of the action heads to score. No extra cache: these are the tensors the
+        layer already holds."""
+        self.last_keys: Tensor | None = None
+        self.last_key_positions: Tensor | None = None
+
     def forward(
         self,
         x: Tensor,
@@ -353,6 +361,9 @@ class CausalSelfAttention(nn.Module):
         else:
             q_pos = torch.arange(s, device=x.device)
             k_pos = q_pos
+
+        if self.record_keys:
+            self.last_keys, self.last_key_positions = k, k_pos
 
         if self.n_rep > 1:
             k = k.repeat_interleave(self.n_rep, dim=1)

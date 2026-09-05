@@ -25,6 +25,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+from prophet.modeling.action import ActionTargets
 from prophet.modeling.model import ProphetOutput
 
 __all__ = ["LossTerms", "compute_loss"]
@@ -39,6 +40,7 @@ class LossTerms:
     router: Tensor | None = None
     confidence: Tensor | None = None
     ponder: Tensor | None = None
+    action: Tensor | None = None
     metrics: dict[str, float] = field(default_factory=dict)
 
 
@@ -86,14 +88,32 @@ def compute_loss(
     ponder_weight: float = 0.0,
     ponder_target_steps: float = 4.0,
     project: "Callable[[Tensor], Tensor] | None" = None,
+    action_targets: ActionTargets | None = None,
+    sel_weight: float = 0.0,
+    ptr_weight: float = 0.0,
+    gate_weight: float = 0.0,
+    jumped_lm_weight: float = 1.0,
 ) -> LossTerms:
     """Combine every training objective into one scalar.
 
     ``targets`` is the token sequence; shifting is handled here so callers cannot get the
     off-by-one wrong — a mistake that produces a plausible-looking loss curve for a model
     that has learned to copy its input.
+
+    ``action_targets`` (track A3) adds the selection, pointer and gate terms and
+    down-weights the LM loss on *jumped* tokens -- call syntax and names a typed runtime
+    emits for the model -- to ``jumped_lm_weight``.
     """
-    lm = _shifted_cross_entropy(output.logits, targets, 1)
+    if action_targets is not None and jumped_lm_weight != 1.0:
+        ce = _shifted_cross_entropy(output.logits, targets, 1, per_token=True)
+        # The loss at position t predicts t+1, so a jumped *target* token is what gets
+        # the small weight.
+        jumped = action_targets.jumped[:, 1:].to(ce.dtype)
+        weight = torch.where(jumped > 0, torch.full_like(ce, jumped_lm_weight), torch.ones_like(ce))
+        weight = weight * (targets[:, 1:] != -100).to(ce.dtype)
+        lm = (ce * weight).sum() / weight.sum().clamp_min(1.0)
+    else:
+        lm = _shifted_cross_entropy(output.logits, targets, 1)
     total = lm
     metrics: dict[str, float] = {"loss/lm": lm.item()}
 
@@ -162,9 +182,51 @@ def compute_loss(
         if depth is not None:
             metrics["ponder/expected_depth"] = depth
 
+    action: Tensor | None = None
+    if action_targets is not None and output.sel_logits is not None:
+        action = lm.new_zeros(())
+        # Selection: one cross-entropy over [none, anchor_1..anchor_n] per decision.
+        n_opt = output.sel_logits.shape[-1]
+        sel_target = action_targets.selection
+        sel_ok = (sel_target >= 0) & (sel_target < n_opt)
+        sel_target = torch.where(sel_ok, sel_target, torch.full_like(sel_target, -100))
+        if sel_ok.any():
+            sel = F.cross_entropy(
+                output.sel_logits.float().reshape(-1, n_opt), sel_target.reshape(-1),
+                ignore_index=-100,
+            )
+            action = action + sel_weight * sel
+            metrics["loss/sel"] = sel.item()
+            correct = output.sel_logits.argmax(-1) == action_targets.selection
+            metrics["action/sel_accuracy"] = float(correct[sel_ok].float().mean().item())
+        # Pointers: start and end over the copy layer's keys. In a cache-free pass the
+        # key index is the absolute position, which is what the targets hold.
+        if output.copy_start is not None and (action_targets.copy_start >= 0).any():
+            n_keys = output.copy_start.shape[-1]
+            start_t = action_targets.copy_start.reshape(-1)
+            end_t = action_targets.copy_end.reshape(-1)
+            ptr = (
+                F.cross_entropy(output.copy_start.float().reshape(-1, n_keys), start_t, ignore_index=-100)
+                + F.cross_entropy(output.copy_end.float().reshape(-1, n_keys), end_t, ignore_index=-100)
+            )
+            action = action + ptr_weight * ptr
+            metrics["loss/ptr"] = ptr.item()
+        # Gate: is the value starting here verbatim in context?
+        if output.copy_gate is not None and (action_targets.gate_target >= 0).any():
+            pos = action_targets.gate_positions.clamp_min(0)
+            logit = output.copy_gate.float().gather(1, pos)
+            mask = action_targets.gate_target >= 0
+            gate = F.binary_cross_entropy_with_logits(
+                logit[mask], action_targets.gate_target[mask].float()
+            )
+            action = action + gate_weight * gate
+            metrics["loss/gate"] = gate.item()
+        total = total + action
+        metrics["loss/action"] = float(action.item())
+
     metrics["loss/total"] = total.item()
     metrics["ppl"] = float(torch.exp(lm.detach().clamp(max=20)).item())
     return LossTerms(
         total=total, lm=lm, mtp=mtp_loss, z=z, router=router, confidence=conf,
-        ponder=ponder, metrics=metrics,
+        ponder=ponder, action=action, metrics=metrics,
     )

@@ -69,13 +69,18 @@ class ToolSchema:
     """A JSON-schema object: ``{"type": "object", "properties": {...}, "required": [...]}``."""
     irreversible: bool = False
 
-    def render(self) -> str:
-        """The text form the model reads, one block per tool, closed by the anchor."""
-        body = json.dumps(
+    def body(self) -> str:
+        """The schema as compact JSON -- what sits between the two control tokens."""
+        return json.dumps(
             {"name": self.name, "description": self.description, "parameters": self.parameters},
             separators=(",", ":"),
         )
-        return f"<|tool_def|>{body}<|/tool_def|>"
+
+    def render(self) -> str:
+        """The text form the model reads, one block per tool, closed by the anchor. A
+        prompt builder splices the control ids explicitly (see ``AgentLoop``); this text
+        form is for datasets and for ``parse_special=True`` encoding."""
+        return f"<|tool_def|>{self.body()}<|/tool_def|>"
 
     @property
     def required(self) -> tuple[str, ...]:
@@ -150,6 +155,10 @@ class ToolRegistry:
         """Every non-reserved schema, in registration order, for the pinned prefix."""
         return "".join(s.render() for n, s in self._schemas.items() if n not in RESERVED_ACTIONS)
 
+    def schemas(self) -> list[ToolSchema]:
+        """Non-reserved schemas in registration order -- the anchors' order."""
+        return [s for n, s in self._schemas.items() if n not in RESERVED_ACTIONS]
+
     def run(self, action: Action) -> Any:
         if action.name in RESERVED_ACTIONS:
             raise ValueError(f"reserved action {action.name!r} is handled by the loop, not a tool")
@@ -220,6 +229,17 @@ class ActionGrammar:
     def __init__(self, registry: ToolRegistry) -> None:
         self.registry = registry
         self.names = registry.names
+        self._all_names = tuple(registry.names)
+
+    def restrict(self, names: "set[str] | None") -> None:
+        """Limit the tool names the grammar accepts -- what the selection head decided --
+        or ``None`` to accept every registered name again. Reserved actions are never
+        cut: the head's "none" option is exactly "one of those"."""
+        if names is None:
+            self.names = self._all_names
+        else:
+            keep = set(names) | set(RESERVED_ACTIONS)
+            self.names = tuple(n for n in self._all_names if n in keep)
 
     # -- public ------------------------------------------------------------------------
 
@@ -393,10 +413,13 @@ def _scan_string(s: str, i: int) -> tuple[_Str | None, int]:
         if c == "\\":
             if j + 1 >= len(s):
                 return _Str("".join(out), False), j
-            out.append(s[j + 1]); j += 2; continue
+            out.append(s[j + 1])
+            j += 2
+            continue
         if c == '"':
             return _Str("".join(out), True), j + 1
-        out.append(c); j += 1
+        out.append(c)
+        j += 1
     return _Str("".join(out), False), j
 
 
@@ -452,7 +475,8 @@ def _scan_container(s: str, i: int, open_ch: str, close_ch: str) -> tuple[bool, 
         c = s[j]
         if in_str:
             if c == "\\":
-                j += 2; continue
+                j += 2
+                continue
             if c == '"':
                 in_str = False
         elif c == '"':

@@ -200,13 +200,17 @@ def main() -> int:
     torch.manual_seed(args.seed)
     model = ProphetModel(cfg)
 
+    tokenizer = None
     if args.smoke:
         sources = synthetic_sources(cfg.frontend.vocab_size)
         loader = StreamingLoader(
             sources, seq_len=args.seq_len, batch_size=args.batch_size, seed=args.seed
         )
+        if cfg.heads.action_head:
+            tokenizer = ProphetTokenizer(merges=[])  # byte-level: enough to parse targets
     else:
         loader, args.steps = build_real_loader(args, cfg)
+        tokenizer = ProphetTokenizer.load(args.tokenizer)
         print(f"\ndata\n{loader.describe()}")
     train_cfg = TrainConfig(
         total_steps=args.steps,
@@ -221,7 +225,7 @@ def main() -> int:
         seed=args.seed,
         device=args.device,
     )
-    trainer = Trainer(model, loader, train_cfg, model_config=cfg)
+    trainer = Trainer(model, loader, train_cfg, model_config=cfg, tokenizer=tokenizer)
     global _TRAINER
     _TRAINER = trainer
 

@@ -32,16 +32,16 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 from prophet.config import ProphetConfig
+from prophet.modeling.action import ActionHeads
 from prophet.modeling.layers import (
-    make_norm,
     AttentionCache,
     CausalSelfAttention,
     GatedDeltaNet,
     RecurrentState,
-    RMSNorm,
     RotaryEmbedding,
     SwiGLU,
     build_mixer,
+    make_norm,
 )
 from prophet.modeling.moe import SparseMoE, apply_router_updates
 
@@ -73,6 +73,10 @@ class ProphetCache:
     position: int = 0
     """Number of tokens consumed, which is what positional encoding must use — the
     retained buffer length is not the position once window eviction starts."""
+    anchors: Tensor | None = None
+    """Hidden states at the ``<|/tool_def|>`` anchors of the prompt, kept for the
+    selection head so a later ``<|call|>`` can be scored against them."""
+    anchor_mask: Tensor | None = None
     loop_k: int | None = None
     """Depth ceiling of this cache.
 
@@ -106,6 +110,12 @@ class ProphetCache:
             "recurrent_bytes": rec,
             "total_bytes": attn + rec,
         }
+
+
+def _gather_positions(x: Tensor, positions: Tensor) -> Tensor:
+    """``x[b, positions[b, i]]`` with ``-1`` pads clamped to 0 (masked by the caller)."""
+    index = positions.clamp_min(0).unsqueeze(-1).expand(-1, -1, x.shape[-1])
+    return x.gather(1, index)
 
 
 # --------------------------------------------------------------------------------------
@@ -166,6 +176,10 @@ class ProphetBlock(nn.Module):
             and cache is None
             and torch.is_grad_enabled()
             and x.requires_grad
+            # A layer whose keys escape to the copy pointer keeps its graph: a tensor
+            # saved from inside a checkpointed region and read outside it is not
+            # something the recompute machinery promises to serve.
+            and not getattr(self.mixer, "record_keys", False)
         ):
             return torch.utils.checkpoint.checkpoint(
                 self._forward, x, cos, sin, use_reentrant=False
@@ -218,6 +232,17 @@ class ProphetOutput:
     ``hidden`` -- so the ponder loss can project it straight through the LM head. The
     first version stored the pre-norm coda output (rms 0.1 against 1.0 after norm) and
     scored every stopping point on near-uniform logits."""
+
+    sel_logits: Tensor | None = None
+    """(batch, decisions, n_anchors + 1) selection-pointer logits; index 0 = none."""
+    copy_start: Tensor | None = None
+    """(batch, copies, keys) start-pointer logits over the copy layer's retained keys."""
+    copy_end: Tensor | None = None
+    copy_key_positions: Tensor | None = None
+    """(keys,) absolute positions of those keys -- equal to the index when nothing has
+    been evicted, which is always the case for the full-attention copy layer."""
+    copy_gate: Tensor | None = None
+    """(batch, seq) logit of "the value starting after this token is verbatim in context"."""
 
     def expected_depth(self) -> float | None:
         """Mean number of iterations actually used, weighted by the halting distribution."""
@@ -337,6 +362,24 @@ class ProphetModel(nn.Module):
             else None
         )
 
+        # Typed action heads (A3). They read the coda output like the confidence head
+        # and score the copy pointer against the keys of one existing attention layer,
+        # which is told to keep them.
+        self.action = None
+        self._copy_layer: CausalSelfAttention | None = None
+        if cfg.heads.action_head:
+            where = cfg.copy_pointer_layer()
+            if where is None:
+                raise ValueError("heads.action_head needs a NoPE full-attention layer after the loop")
+            section, index = where
+            layer = self.sections[section][index].mixer
+            assert isinstance(layer, CausalSelfAttention)
+            layer.record_keys = True
+            self._copy_layer = layer
+            self.action = ActionHeads(
+                d, cfg.heads.action_dk, layer.head_dim, cfg.norm_eps, norm_kind=cfg.norm_kind
+            )
+
         self.apply(self._init_weights)
 
         if cfg.residual_scaling:
@@ -423,8 +466,17 @@ class ProphetModel(nn.Module):
         halt_threshold: float | None = None,
         generator: torch.Generator | None = None,
         token_depth: Tensor | None = None,
+        anchor_positions: Tensor | None = None,
+        decision_positions: Tensor | None = None,
+        copy_positions: Tensor | None = None,
     ) -> ProphetOutput:
         """Run the model.
+
+        The three ``*_positions`` arguments (long, ``-1`` padded, local to this chunk)
+        drive the action heads: ``anchor_positions`` gathers the ``<|/tool_def|>`` states
+        (kept on the cache for later chunks), ``decision_positions`` scores ``<|call|>`` /
+        ``<|nocall|>`` positions against them, ``copy_positions`` scores value-start
+        positions against the copy layer's keys.
 
         ``token_depth`` (``(batch, seq)`` long) gives each token its own recurrence
         ceiling; it requires ``recurrent.token_depth`` and is what the trainer passes
@@ -626,6 +678,34 @@ class ProphetModel(nn.Module):
         if self.confidence_head is not None:
             confidence = self.confidence_head(x).squeeze(-1)
 
+        sel_logits = copy_start = copy_end = copy_gate = copy_key_positions = None
+        if self.action is not None:
+            copy_gate = self.action.copy_gate(x)
+            anchors = anchor_mask = None
+            if anchor_positions is not None:
+                anchors = _gather_positions(x, anchor_positions)
+                anchor_mask = anchor_positions >= 0
+                if cache is not None:
+                    cache.anchors, cache.anchor_mask = anchors.detach(), anchor_mask
+            elif cache is not None and cache.anchors is not None:
+                anchors, anchor_mask = cache.anchors, cache.anchor_mask
+            if decision_positions is not None and anchors is not None:
+                sel_logits = self.action.select(
+                    _gather_positions(x, decision_positions), anchors, anchor_mask
+                )
+            if copy_positions is not None:
+                assert self._copy_layer is not None and self._copy_layer.last_keys is not None
+                keys = self._copy_layer.last_keys[:, cfg.heads.action_kv_head]  # (b, L, hd)
+                copy_key_positions = self._copy_layer.last_key_positions
+                absolute = copy_positions + offset
+                valid = copy_key_positions.view(1, 1, -1) <= absolute.unsqueeze(-1)
+                valid = valid & (copy_positions >= 0).unsqueeze(-1)
+                # A padded row keeps its first key so no softmax row is all -inf.
+                valid[..., 0] = True
+                copy_start, copy_end = self.action.copy(
+                    _gather_positions(x, copy_positions), keys, valid
+                )
+
         if cache is not None:
             cache.position = offset + s
 
@@ -652,6 +732,11 @@ class ProphetModel(nn.Module):
             router_stats=router_stats,
             halt_probs=halt_probs,
             hidden_per_step=hidden_per_step or None,
+            sel_logits=sel_logits,
+            copy_start=copy_start,
+            copy_end=copy_end,
+            copy_key_positions=copy_key_positions,
+            copy_gate=copy_gate,
         )
 
     @staticmethod

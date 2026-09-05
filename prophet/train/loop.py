@@ -20,6 +20,7 @@ from torch import Tensor, nn
 from prophet.config import ProphetConfig
 from prophet.data.streaming import StreamingLoader
 from prophet.data.tokenizer import N_BYTES, SPECIAL_TOKENS
+from prophet.modeling.action import build_action_targets
 from prophet.modeling.moe import apply_router_updates
 from prophet.train.checkpoint import CheckpointManager
 from prophet.train.loss import compute_loss
@@ -54,6 +55,11 @@ class TrainConfig:
     """Same rule, from ``heads.confidence_loss_weight``."""
     z_loss_weight: float = 1e-4
     ponder_weight: float = 0.0
+    sel_weight: float | None = None
+    ptr_weight: float | None = None
+    gate_weight: float | None = None
+    jumped_lm_weight: float | None = None
+    """Action-head terms (A3); ``None`` takes the model config's ``heads`` weights."""
     """Weight on the halting objective. Zero disables it; the model config's
     ``recurrent.halting_loss_weight`` is the value to mirror here when halting is on."""
     ponder_target_steps: float = 4.0
@@ -109,11 +115,19 @@ class Trainer:
         *,
         model_config: ProphetConfig | None = None,
         on_log: Callable[[TrainMetrics], None] | None = None,
+        tokenizer: Any | None = None,
     ) -> None:
         self.model = model
         self.loader = loader
         self.cfg = cfg
         self.model_config = model_config
+        self.tokenizer = tokenizer
+        self._action = bool(model_config is not None and model_config.heads.action_head)
+        if self._action and tokenizer is None:
+            raise ValueError(
+                "heads.action_head derives its targets from the token stream and needs "
+                "the tokenizer: Trainer(..., tokenizer=ProphetTokenizer.load(...))"
+            )
         self.on_log = on_log or (lambda m: print(m.format()))
 
         actual_seq_len = int(getattr(loader, "seq_len", cfg.seq_len))
@@ -170,6 +184,15 @@ class Trainer:
             cfg.confidence_weight = (
                 model_config.heads.confidence_loss_weight if model_config else 0.0
             )
+        heads = model_config.heads if model_config else None
+        if cfg.sel_weight is None:
+            cfg.sel_weight = heads.sel_loss_weight if heads else 0.0
+        if cfg.ptr_weight is None:
+            cfg.ptr_weight = heads.ptr_loss_weight if heads else 0.0
+        if cfg.gate_weight is None:
+            cfg.gate_weight = heads.gate_loss_weight if heads else 0.0
+        if cfg.jumped_lm_weight is None:
+            cfg.jumped_lm_weight = heads.jumped_token_lm_weight if heads else 1.0
 
         self.ckpt = CheckpointManager(cfg.checkpoint_dir, keep_milestones=cfg.keep_milestones)
         self.step = 0
@@ -281,6 +304,10 @@ class Trainer:
                 if self.model_config is not None and self.model_config.recurrent.token_depth:
                     k = self.model.sample_loop_k()
                     forward_kw = dict(loop_k=k, token_depth=self.token_depth(batch, k))
+                action_targets = None
+                if self._action:
+                    action_targets = build_action_targets(batch, self.tokenizer)
+                    forward_kw.update(action_targets.forward_kwargs())
                 with torch.autocast(
                     device_type="cuda", dtype=self._autocast_dtype or torch.bfloat16,
                     enabled=use_autocast,
@@ -294,6 +321,11 @@ class Trainer:
                     ponder_weight=self.cfg.ponder_weight,
                     ponder_target_steps=self.cfg.ponder_target_steps,
                     project=getattr(self.model, "_project", None),
+                    action_targets=action_targets,
+                    sel_weight=self.cfg.sel_weight or 0.0,
+                    ptr_weight=self.cfg.ptr_weight or 0.0,
+                    gate_weight=self.cfg.gate_weight or 0.0,
+                    jumped_lm_weight=1.0 if self.cfg.jumped_lm_weight is None else self.cfg.jumped_lm_weight,
                 )
                 (terms.total / self.cfg.grad_accum_steps).backward()
                 # Loss-free MoE balancing moves the router biases *after* backward, so
@@ -302,7 +334,7 @@ class Trainer:
                 accumulated += terms.lm.item() / self.cfg.grad_accum_steps
                 extra = {
                     k: v for k, v in terms.metrics.items()
-                    if k.startswith(("router/", "ponder/")) or k == "loss/mtp"
+                    if k.startswith(("router/", "ponder/", "action/")) or k in ("loss/mtp", "loss/action")
                 }
                 self.tokens_seen += batch.numel()
 

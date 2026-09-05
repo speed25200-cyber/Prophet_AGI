@@ -41,7 +41,12 @@ from typing import Any, Literal, Protocol
 
 import torch
 
-from prophet.agent.actions import Action, ActionGrammar, ConstrainedDecoder, ToolRegistry
+from prophet.agent.actions import (
+    Action,
+    ActionGrammar,
+    ConstrainedDecoder,
+    ToolRegistry,
+)
 from prophet.agent.quarantine import Entry, Provenance, Quarantine
 from prophet.agent.state import AgentState, Observation
 from prophet.agent.verify import (
@@ -87,6 +92,10 @@ class AgentConfig:
     config and picks ``token`` when the switch is on."""
     halt_threshold: float | None = 0.9
     """Passed to the model for the think span when learned halting is on."""
+    use_selection_head: bool = True
+    """When the model has action heads, let the selection pointer at ``<|call|>`` decide
+    the tool (or "none", which leaves only the reserved actions) and restrict the
+    grammar to it; the LM then only fills arguments. Its margin is recorded per step."""
     tau_act: float = 0.6
     """Confidence below which an irreversible action is verified first."""
     tau_done: float = 0.7
@@ -110,6 +119,11 @@ class StepRecord:
     observation: str
     gated: str = ""
     """What the gate did, if anything: 'verify_first', 'refused_done', 'ask', 'reflect'."""
+    selected: str | None = None
+    """What the selection head chose at ``<|call|>``: a tool name, 'none', or None when
+    the model has no action heads."""
+    sel_margin: float | None = None
+    """Top-1 minus top-2 selection probability -- A3's ambiguity signal."""
 
 
 @dataclass
@@ -167,13 +181,17 @@ class AgentLoop:
 
     @torch.no_grad()
     def _feed(self, ids: list[int], cache: ProphetCache, *, loop_k: int | None,
-              halt_threshold: float | None = None, modality: int | None = None):
+              halt_threshold: float | None = None, modality: int | None = None,
+              positions: dict[str, list[int]] | None = None):
         if not ids:
             return None
         t = torch.tensor([ids], dtype=torch.long, device=next(self.model.parameters()).device)
         kw: dict[str, Any] = dict(cache=cache, loop_k=loop_k, return_mtp=True)
         if halt_threshold is not None:
             kw["halt_threshold"] = halt_threshold
+        if positions and getattr(self.model, "action", None) is not None:
+            for name, values in positions.items():
+                kw[name] = torch.tensor([values], dtype=torch.long, device=t.device)
         if modality is not None and getattr(self.model, "modality_embed", None) is not None:
             kw["modality_ids"] = torch.full_like(t, modality)
         return self.model(t, **kw)
@@ -233,7 +251,14 @@ class AgentLoop:
         # reasons over. Under a fixed depth policy this call also pins the cache, and
         # every later span passes ``loop_k=None`` to follow that pin (halting may only
         # lower it). Under per-token depth each span names its own ceiling.
-        self._last_output = self._feed(self._pinned_ids(goal, notes), cache, loop_k=self.cfg.k_decide)
+        pinned_ids = self._pinned_ids(goal, notes)
+        anchor_id = self._sid("<|/tool_def|>")
+        anchors = [i for i, tid in enumerate(pinned_ids) if tid == anchor_id]
+        tool_names = [s.name for s in self.tools.schemas()]  # the anchors' order
+        self._last_output = self._feed(
+            pinned_ids, cache, loop_k=self.cfg.k_decide,
+            positions={"anchor_positions": anchors} if anchors else None,
+        )
         k_think = self.k_think if self.variable_depth else None
         k_act = self.cfg.k_decide if self.variable_depth else None
         k_ingest = self.cfg.k_ingest if self.variable_depth else None
@@ -258,17 +283,28 @@ class AgentLoop:
                     stop_ids={think_close} if think_close is not None else set(),
                 )
 
-            # 2. act: grammar-constrained, greedy, at the deciding depth.
-            self._last_output = self._feed([call_open], cache, loop_k=k_act)
-            text, out = self._decode(
-                cache, budget=self.cfg.action_budget, loop_k=k_act,
-                halt_threshold=None, greedy=True,
-                stop_ids={call_close} if call_close is not None else set(), constrained=True,
+            # 2. act: grammar-constrained, greedy, at the deciding depth. With action
+            # heads, the selection pointer decides the tool at <|call|> and the grammar
+            # is narrowed to it; the LM fills arguments.
+            self._last_output = self._feed(
+                [call_open], cache, loop_k=k_act, positions={"decision_positions": [0]},
             )
+            selected, sel_margin = self._selection(self._last_output, tool_names)
+            if selected is not None and self.cfg.use_selection_head:
+                self.grammar.restrict(set() if selected == "none" else {selected})
+            try:
+                text, out = self._decode(
+                    cache, budget=self.cfg.action_budget, loop_k=k_act,
+                    halt_threshold=None, greedy=True,
+                    stop_ids={call_close} if call_close is not None else set(), constrained=True,
+                )
+            finally:
+                self.grammar.restrict(None)
             action = self.grammar.complete(text)
             if action is None:
                 # The grammar guarantees viability, not completion within budget.
-                records.append(StepRecord(step, think, None, None, "", gated="malformed"))
+                records.append(StepRecord(step, think, None, None, "", gated="malformed",
+                                          selected=selected, sel_margin=sel_margin))
                 state.trajectory.append({"step": step, "action": None, "gated": "malformed"})
                 state.step += 1
                 continue
@@ -290,14 +326,16 @@ class AgentLoop:
                     gated = "refused_done"
                     action = Action("verify", {"what": f"confidence {p:.2f} below tau_done"})
                 if action.name == "done":
-                    records.append(StepRecord(step, think, action, verdict, "", gated))
+                    records.append(StepRecord(step, think, action, verdict, "", gated,
+                                              selected=selected, sel_margin=sel_margin))
                     state.trajectory.append(self._traj(step, action, verdict, ""))
                     self._close(state, passed=True, verified=verified_before_done)
                     return EpisodeResult(True, "done", records, state.notes, verified_before_done)
 
             elif action.name == "ask" or (p < self.cfg.tau_ask and self._needs_user(action)):
                 q = action.args.get("question", "clarification needed")
-                records.append(StepRecord(step, think, action, verdict, "", "ask"))
+                records.append(StepRecord(step, think, action, verdict, "", "ask",
+                                          selected=selected, sel_margin=sel_margin))
                 state.trajectory.append(self._traj(step, action, verdict, ""))
                 self._close(state, passed=False, verified=False)
                 return EpisodeResult(False, "ask", records, state.notes, False, asked_user=q)
@@ -324,7 +362,8 @@ class AgentLoop:
                 for old in state.push_observation(obs):
                     state.evict_from_attention(cache, old)
 
-            records.append(StepRecord(step, think, action, verdict, observation, gated))
+            records.append(StepRecord(step, think, action, verdict, observation, gated,
+                                      selected=selected, sel_margin=sel_margin))
             state.trajectory.append(self._traj(step, action, verdict, observation))
             state.step += 1
 
@@ -333,12 +372,33 @@ class AgentLoop:
 
     # -- helpers -------------------------------------------------------------------------
 
+    @staticmethod
+    def _selection(out, tool_names: list[str]) -> tuple[str | None, float | None]:
+        """Read the selection head at the <|call|> just fed: (choice, margin)."""
+        logits = getattr(out, "sel_logits", None)
+        if logits is None:
+            return None, None
+        probs = torch.softmax(logits[0, -1].float(), dim=-1)
+        top = probs.topk(min(2, probs.numel()))
+        margin = float(top.values[0] - (top.values[1] if probs.numel() > 1 else 0.0))
+        index = int(top.indices[0])
+        if index == 0 or index - 1 >= len(tool_names):
+            return "none", margin
+        return tool_names[index - 1], margin
+
     def _pinned_ids(self, goal: str, notes: str) -> list[int]:
         """Control ids are spliced in explicitly; the goal, the tool schemas and the
         notes are encoded as plain text, so none of them can mint a control token."""
         ids = [self.tok.bos_id]
         ids += self._with_control("<|system|>")
-        ids += self.tok.encode(f"Goal: {goal}\n{self.tools.render()}\nNotes:\n{notes}\n")
+        ids += self.tok.encode(f"Goal: {goal}\n")
+        for schema in self.tools.schemas():
+            # Real control ids around each schema: the closing one is the anchor the
+            # selection head reads. Encoded as text they would be bytes, and no anchor.
+            ids += self._with_control("<|tool_def|>")
+            ids += self.tok.encode(schema.body())
+            ids += self._with_control("<|/tool_def|>")
+        ids += self.tok.encode(f"\nNotes:\n{notes}\n")
         ids += self._with_control("<|assistant|>")
         return ids
 
