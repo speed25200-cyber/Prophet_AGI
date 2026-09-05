@@ -37,7 +37,22 @@ identiques (attention complète comme contrôle d'apprenabilité, fenêtre seule
 registre) entraînés sur un rappel clé→valeur, exactitude par distance dans et au-delà de
 la fenêtre. Premier lancement **[CPU]** : inconclusif — 64 clés, 1 500 pas, aucun bras
 n'apprend même dans la fenêtre (≈ 2 %, le hasard à 1/64), donc rien n'est séparé. Second
-lancement (16 clés, 3 000 pas, bras de contrôle) : **en cours**. L'ablation sur texte réel
+lancement (16 clés, 3 000 pas, 165k paramètres, hasard à 6.25 %) :
+
+| Distance de la paire à la question | attention complète | fenêtre seule | fenêtre + registre (tel que construit) |
+|---|---:|---:|---:|
+| ≤ fenêtre | 24.3 % | 13.6 % | **4.9 %** |
+| 1 à 2 fenêtres | 19.9 % | 10.2 % | 5.6 % |
+| > 2 fenêtres | 17.8 % | 7.5 % | 6.2 % |
+
+Le contrôle apprend ; la fenêtre seule apprend dedans et décroît dehors ; le registre tel
+que construit **n'a rien appris, même dans la fenêtre** où il devrait être une couche à
+fenêtre. Deux causes, dans mon implémentation : la porte s'ouvrait à ½ dès le pas zéro,
+donc les lectures d'une mémoire non entraînée noyaient le signal d'attention ; et l'ordre
+des blocs à l'entraînement faisait lire au bloc *j* ce que les blocs ≤ *j*−2 seulement
+avaient écrit. Corrigés (porte initialisée quasi fermée, σ(−4) = 0.018, testée ; écriture
+du bloc *j*−1 avant la lecture du bloc *j*) ; le bras « registre » est relancé, et son
+nombre remplacera cette colonne — ou la confirmera. L'ablation sur texte réel
 (deux runs de 100M, BPB et rappel multi-clés à 32k) est dans `prophet.plan` avec son
 critère d'échec : BPB dégradé de plus de 0.5 % ou rappel au hasard au-delà de la fenêtre,
 et le registre reste à `"none"`.

@@ -45,9 +45,20 @@ def test_beyond_the_window_the_ledger_contributes():
     ledger, plain = _pair(window=8)
     x = torch.randn(1, 40, 32)
     with torch.no_grad():
+        ledger.gate.fill_(0.0)  # half open, so the contribution is visible
         a, b = ledger(x), plain(x)
-    assert torch.allclose(a[:, :16], b[:, :16], atol=1e-5)  # first two blocks: nothing written yet
-    assert not torch.allclose(a[:, 16:], b[:, 16:], atol=1e-3)
+    assert torch.allclose(a[:, :8], b[:, :8], atol=1e-5)  # first block: nothing written yet
+    assert not torch.allclose(a[:, 8:], b[:, 8:], atol=1e-3)
+
+
+def test_the_gate_starts_almost_closed():
+    ledger, plain = _pair(window=8)
+    assert torch.sigmoid(ledger.gate).max() < 0.02
+    x = torch.randn(1, 40, 32)
+    with torch.no_grad():
+        a, b = ledger(x), plain(x)
+    # Near-identical to the windowed layer at initialisation, past the window included.
+    assert (a - b).abs().max() < 0.05 * b.abs().max()
 
 
 def test_rows_of_a_batch_have_separate_memories():

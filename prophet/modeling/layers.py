@@ -417,6 +417,10 @@ class CausalSelfAttention(nn.Module):
             mask = mask & in_window
         return mask.unsqueeze(0).unsqueeze(0)
 
+GATE_INIT = -4.0
+"""Initial logit of the ledger recall gate: sigmoid(-4) = 0.018, almost closed."""
+
+
 class LedgerAttention(CausalSelfAttention):
     """Windowed attention whose evicted keys and values live on in a bounded ledger.
 
@@ -435,12 +439,12 @@ class LedgerAttention(CausalSelfAttention):
     softly addressed), which is the price of the bound and what the ablation measures.
 
     Training has no cache, so the layer keeps one transient memory per sequence: the
-    sequence is walked in blocks of ``window``; block ``j`` reads what blocks ``<= j-1``
-    wrote, and blocks are written after they are read. That is a slightly smaller
-    memory than decode sees (where every key older than the window has been written),
-    so a trained layer meets at least as much memory at inference as it was trained
-    with, never less. The written tensors carry no gradient; the read does, through the
-    addressing softmax, which is how the query projection learns to ask.
+    sequence is walked in blocks of ``window``; block ``j-1`` is written before block
+    ``j`` is read, so block ``j`` reads what blocks ``<= j-1`` wrote. Early tokens of a
+    block also see the tail of the previous block through the window, so a little of
+    the memory overlaps the exact path in training; at decode the two are the exact
+    complement of each other. The written tensors carry no gradient; the read does,
+    through the addressing softmax, which is how the query projection learns to ask.
 
     Requires NoPE: a key rotated to its position could only be found by a query rotated
     to the same position, and a ledger has no positions.
@@ -476,9 +480,12 @@ class LedgerAttention(CausalSelfAttention):
             dim=kv_dim, memory_dim=memory_dim, n_slots=ledger_slots, top_k=ledger_top_k,
             n_heads=ledger_heads,
         ))
-        self.gate = nn.Parameter(torch.zeros(n_heads))
-        """Per query head: how much of the recalled value enters. Zero logit = half; the
-        empty ledger makes the initial value irrelevant."""
+        self.gate = nn.Parameter(torch.full((n_heads,), GATE_INIT))
+        """Per query head: how much of the recalled value enters. Starts almost closed
+        (sigmoid(-4) = 0.018): with a half-open gate the reads of an untrained memory
+        swamped the attention signal and the layer learned nothing, not even inside the
+        window, where it should have been a plain windowed layer. The model opens the
+        gate once the memory is worth reading; the empty ledger still reads as zero."""
 
     # -- helpers -----------------------------------------------------------------------
 
@@ -574,10 +581,10 @@ class LedgerAttention(CausalSelfAttention):
         previous: tuple[int, int] | None = None
         for start in range(0, s, w):
             end = min(start + w, s)
-            reads.append(self.ledger.read(q_kv[:, start:end], values=values))
             if previous is not None:
                 a, e = previous
                 self.ledger.write_state(values, counts, k_flat[:, a:e], v_flat[:, a:e])
+            reads.append(self.ledger.read(q_kv[:, start:end], values=values))
             previous = (start, end)
         return torch.cat(reads, dim=1)
 
