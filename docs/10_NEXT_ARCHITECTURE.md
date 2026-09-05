@@ -67,13 +67,18 @@ d'action. Il a été exercé sur de vrais poids. Ce qu'il coûte est maintenant 
 |---|---:|---:|
 | Avant | 0 % | 2.18 |
 | Après, sans rejeu | 55 % / 32.5 % (deux graines) | **7.36** (un modèle vierge : 4.35) |
-| Après, avec 50 % de rejeu du corpus de base | **en cours** | **en cours** |
+| Après, avec 50 % de rejeu du corpus de base (mêmes 600 épisodes, même graine) | **en cours** | **en cours** |
+| Après, cinq familles (800 épisodes, 600 pas) **avec** 50 % de rejeu | voir §3 (b) | **2.74** |
 
 Le gradient seul, sur le flux d'expérience seul, efface tout le reste : le mur C tel que
 `07_WALLS.md` le décrit, en un nombre. Le rejeu est la première parade et elle se mesure au
-même endroit ; la consolidation sans gradient (registre de sortie, écriture sur surprise)
-et l'état de session porté entre épisodes sont les suivantes, et le benchmark rapporte la
-courbe par bloc pour les voir plier — ou pas.
+même endroit : avec une ligne d'entraînement sur deux tirée du corpus de base, l'effacement
+passe de +5.2 à **+0.55 bits/octet** sur un run qui a appris cinq familles de tâches en
+même temps (la comparaison contrôlée, mêmes épisodes et même graine que le run sans rejeu,
+est en cours). Ce n'est pas zéro : le rejeu est un pansement à coût linéaire — la moitié
+des tokens de l'entraînement agentique servent à ne pas oublier — et c'est précisément la
+place des mécanismes sans gradient (registre de sortie, écriture sur surprise, état de
+session porté) que le benchmark mesure par la courbe par bloc, pour la voir plier — ou pas.
 
 ## 3. Économie de tokens
 
@@ -95,8 +100,26 @@ testerait en dessous de l'échelle où il peut gagner produirait exactement ce f
 
 **(b) À l'inférence.** Un agent qui *copie* un argument le paie un pas au lieu de douze,
 et un agent qui appelle un outil au lieu de raisonner en tokens paie l'appel. Le benchmark
-compte désormais chaque token traité par épisode et rapporte **tokens par succès** ; les
-runs en cours le remplissent pour les cinq familles de tâches (`prophet/agent/tasks.py`).
+compte chaque token traité par épisode et rapporte **tokens par succès**. Un modèle de 7M
+paramètres, 600 pas sur 160 épisodes par famille, 30 tâches inédites par famille et par
+graine **[CPU, 7M]** :
+
+| Famille | Ce qu'il faut pour réussir | Succès (deux graines) | Tokens par succès | Malformés |
+|---|---|---:|---:|---:|
+| `calc` | copier l'expression du but, noter le résultat de l'outil | **60 % / 80 %** | 504 / 378 | 0 % |
+| `lookup` | lire un JSON, copier la valeur d'un champ | 47 % / 27 % | 537 / 971 | 11–16 % |
+| `files` | choisir `grep`, copier le mot, copier le nom de fichier | 7 % / 7 % | 4 732 / 4 643 | 12–21 % |
+| `count` | choisir `count`, copier le mot, copier le nombre | 3 % / 0 % | 9 353 / ∞ | 48 % |
+| `replace` | **générer** un fichier entier modifié | 0 % / 0 % | ∞ | 38 % |
+
+Deux lectures. La première est celle de la conception : les familles où chaque valeur se
+*copie* réussissent, celle où la valeur se *génère* est à zéro, et `count`, dont la sortie
+d'outil est un seul token, échoue sur le choix d'outil (48 % de malformés) — à 160
+épisodes par famille, un modèle de 7M n'a pas appris à distinguer cinq schémas. La seconde
+est celle des tokens : un succès `calc` coûte 378 à 504 tokens, appel d'outil et copie
+compris, contre un coût infini là où il faut générer ; à cette échelle, l'économie de
+tokens d'un agent est d'abord la différence entre copier et générer. `files` à 7 % contre
+55 % dans le run à une seule famille dit ce que 160 épisodes valent contre 600.
 
 ## 4. Les datasets, prêts
 

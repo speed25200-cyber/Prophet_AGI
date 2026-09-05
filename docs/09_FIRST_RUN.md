@@ -160,3 +160,24 @@ La boucle n'a rien acheté à 7M paramètres et 2.4M tokens, pour 2.1× le calcu
 Ce n'est pas la réfutation du pari central — R04 prédit ce résultat en dessous de ~360M —
 c'est la démonstration qu'il ne se teste pas ici, et que la porte du plan (≥ 350M) est au
 bon endroit. Un faux négatif pas cher vaut mieux qu'un faux négatif à 24 heures d'A100.
+
+---
+
+## Quatrième mesure : cinq familles, du rejeu, et l'oubli qui recule
+
+Le même poids, 600 pas sur 800 épisodes des cinq familles vérifiables de
+`prophet/agent/tasks.py` (160 chacune), une ligne d'entraînement sur deux tirée du corpus
+de base (`--replay-fraction 0.5`), bits/octet mesurés avant et après dans le même run.
+
+| | Bits/octet tenus à l'écart |
+|---|---:|
+| Avant | 2.18 |
+| Après, sans rejeu (run à une famille, §précédent) | 7.36 |
+| Après, cinq familles **avec** rejeu | **2.74** |
+
+L'effacement passe de +5.2 à +0.55 bits/octet. Par famille, 30 tâches inédites, deux
+graines : `calc` 60 % / 80 % (378–504 tokens par succès), `lookup` 47 % / 27 %, `files`
+7 % / 7 %, `count` 3 % / 0 %, `replace` 0 % / 0 %. Les familles où chaque valeur se copie
+réussissent ; celle où il faut générer un fichier est à zéro ; `count` échoue au choix
+d'outil (48 % d'appels malformés). Le détail et l'arithmétique sont dans
+[`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §2–3.
