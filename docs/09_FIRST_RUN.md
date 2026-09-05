@@ -184,3 +184,23 @@ graines : `calc` 60 % / 80 % (378–504 tokens par succès), `lookup` 47 % / 27 
 réussissent ; celle où il faut générer un fichier est à zéro ; `count` échoue au choix
 d'outil (48 % d'appels malformés). Le détail et l'arithmétique sont dans
 [`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §2–3.
+
+## Cinquième mesure : deux défauts trouvés en relançant la recette, puis l'état porté
+
+Relancer la recette du deuxième chiffre (mêmes 600 épisodes, 500 pas, un `<|bos|>` en
+tête de ligne comme la boucle le fournit) a donné **0 %** sur 40 tâches inédites, contre
+55 % au premier run. Le diagnostic a tenu en deux sondes sur les mêmes poids, et chacune
+a trouvé un décalage entre ce que le flux d'entraînement montre et ce que la boucle fait :
+
+| Sonde | Ce qu'elle a montré | Défaut |
+|---|---|---|
+| Forçage contre décodage incrémental, même checkpoint, même tâche | pointeurs de copie exacts en forçage (marges 15 à 33 logits) ; au décodage, le pointeur de fin réduit à du bruit (5.9 contre 5.5 et 5.0) et un span faux (`umber? Use the tools, note the`) | la cible de la requête de copie était le token du **guillemet ouvrant** ; la grammaire tire un token plus tôt, après `"clé":`. Le premier checkpoint survivait par marge (17 à 44 logits), le second non |
+| Banc avec et sans span de réflexion, même checkpoint corrigé | sans span : **8/8 tâches inédites, 269 tokens par épisode, 0 malformé** ; avec : 0/8, 75 % de malformés, le span rempli de `{"name":"` | les trajectoires parfaites n'avaient **aucun** `<|think|>` ; la boucle en ouvre un à chaque pas. Un token de contrôle inconnu au décodage, et la tête de sélection derrière lui répond « aucun » avec une marge de 1.0 |
+
+Les deux sont corrigés là où ils naissent — la cible de copie est lue là où la grammaire
+tire, avec un test d'accord train/décodage ; le rendu émet le span (vide) à chaque pas —
+et inscrits dans `CLAUDE.md`. Ce qu'ils disent tient en une phrase : les 55 % du premier
+run étaient un modèle qui tolérait deux décalages par chance, et le chiffre qui compte
+est celui d'une recette où le flux d'entraînement est *exactement* le flux de la boucle.
+Les nombres de la recette corrigée (état vierge, état porté, séquences d'épisodes,
+suites liées) sont dans [`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §2.
