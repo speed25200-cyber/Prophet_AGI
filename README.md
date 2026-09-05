@@ -102,6 +102,7 @@ modèle de 408M.
 | [`docs/07_WALLS.md`](docs/07_WALLS.md) | **Les murs** : mécanisme des verrous profonds, y compris ceux qu'on ne franchit pas |
 | [`docs/08_AGENT.md`](docs/08_AGENT.md) | **Le pilier agentique** : la boucle, les têtes d'action, la vérification, ce qui est construit et ce qui ne l'est pas |
 | [`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md) | **Les premiers runs** : 7M paramètres sur CPU, chaque étage exercé, un nombre de langage, un nombre agentique, et les deux défauts qu'ils ont trouvés |
+| [`docs/10_NEXT_ARCHITECTURE.md`](docs/10_NEXT_ARCHITECTURE.md) | **L'architecture suivante** : contexte borné-infini, apprentissage continu, économie de tokens — chaque propriété comme une quantité, son mécanisme, et sa mesure |
 
 ## Outils
 

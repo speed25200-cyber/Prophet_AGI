@@ -34,7 +34,8 @@ Lire `docs/00_PROBLEM_LANDSCAPE.md` avant toute contribution.
 
 ```
 docs/           Spécifications, registre de décisions, rapports de recherche
-                (R01–R12 verrous, W1–W4 murs, A1–A4 revue et agentique)
+                (R01–R12 verrous, W1–W4 murs, A1–A4 revue et agentique),
+                premiers runs (09) et architecture suivante (10)
 prophet/
   config.py     Schéma de configuration — tout pari est un interrupteur explicite,
                 validate() refuse l'impossible, design_warnings() refuse l'incohérent
