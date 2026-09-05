@@ -10,7 +10,10 @@ it, both with a global window of ``window`` tokens:
 
 - ``full``   -- the global layer sees the whole sequence: the learnability control. If
                this arm does not learn within the budget, the experiment says nothing.
-- ``none``   -- the global layer is exactly windowed: past the window the pair is gone.
+- ``none``   -- the global layer is replaced by a RoPE sliding-window layer: a bounded
+               stack without the mechanism, but not the same host layer.
+- ``closed`` -- the ledger layer itself with its recall gate pinned shut and frozen: the
+               clean control, since it differs from ``ledger`` by the read term only.
 - ``ledger`` -- the global layer writes evicted keys and values into a bounded ledger
                and reads it back (``mixer.global_memory``).
 
@@ -91,7 +94,7 @@ def batch(rng: random.Random, *, n: int, n_pairs: int, max_gap: int, length: int
 def config(arm: str, *, window: int, slots: int, length: int) -> ProphetConfig:
     """``full``: exact global attention (window = the whole sequence); ``none``: the
     global layer windowed; ``ledger``: windowed plus the ledger."""
-    memory = "ledger" if arm == "ledger" else "none"
+    memory = "ledger" if arm in ("ledger", "closed") else "none"
     global_window = length if arm == "full" else window
     # "none": the global layer becomes a plain sliding-window layer (same window as the
     # ledger arm, no ledger), which is what a bounded stack without the mechanism is.
@@ -133,7 +136,15 @@ def train(memory: str, *, window: int, slots: int, steps: int, minutes: float, s
     cfg = config(memory, window=window, slots=slots, length=length)
     cfg.validate()
     model = ProphetModel(cfg).train()
-    opt = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=0.01)
+    if memory == "closed":
+        from prophet.modeling.layers import LedgerAttention
+
+        for layer in model.modules():
+            if isinstance(layer, LedgerAttention):
+                with torch.no_grad():
+                    layer.gate.fill_(-1e4)  # sigmoid = 0: the read never enters
+                layer.gate.requires_grad_(False)
+    opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=3e-3, weight_decay=0.01)
     rng = random.Random(seed)
     started = time.time()
     losses = []
@@ -165,7 +176,7 @@ def main() -> int:
     ap.add_argument("--max-gap", type=int, default=96)
     ap.add_argument("--length", type=int, default=160)
     ap.add_argument("--steps", type=int, default=3000)
-    ap.add_argument("--arms", default="full,none,ledger")
+    ap.add_argument("--arms", default="full,none,closed,ledger")
     ap.add_argument("--minutes", type=float, default=12.0, help="per model")
     ap.add_argument("--eval-n", type=int, default=640)
     ap.add_argument("--seed", type=int, default=0)

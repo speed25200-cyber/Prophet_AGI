@@ -498,3 +498,13 @@ def test_session_state_carries_across_episodes():
     assert any(isinstance(s, RecurrentState) for s in ProphetCache().slots.values()) is False
     assert set(saved) <= set(second.session.states)
     assert not all(torch.equal(saved[k], second.session.states[k]) for k in saved)
+
+
+def test_episode_tokens_exclude_the_carried_prefix():
+    cfg = ProphetConfig.from_json("configs/prophet_tiny_smoke.json")
+    model = ProphetModel(cfg).eval()
+    loop = AgentLoop(model, TOK, registry(),
+                     AgentConfig(max_steps=1, think_budget=3, action_budget=12, halt_threshold=None))
+    first = loop.run("one")
+    second = loop.run("two", session=first.session)
+    assert 0 < second.tokens < 2 * first.tokens

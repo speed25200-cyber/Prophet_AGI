@@ -51,8 +51,15 @@ fenêtre. Deux causes, dans mon implémentation : la porte s'ouvrait à ½ dès 
 donc les lectures d'une mémoire non entraînée noyaient le signal d'attention ; et l'ordre
 des blocs à l'entraînement faisait lire au bloc *j* ce que les blocs ≤ *j*−2 seulement
 avaient écrit. Corrigés (porte initialisée quasi fermée, σ(−4) = 0.018, testée ; écriture
-du bloc *j*−1 avant la lecture du bloc *j*) ; le bras « registre » est relancé, et son
-nombre remplacera cette colonne — ou la confirmera. L'ablation sur texte réel
+du bloc *j*−1 avant la lecture du bloc *j*), le bras « registre » relancé donne 4.9 % /
+9.3 % / 8.1 % : toujours le hasard dans la fenêtre. Mais le bras « fenêtre seule » n'était
+pas le bon témoin — une couche SWA à RoPE, là où l'hôte du registre est une couche NoPE à
+fenêtre — donc ce que ces 4.9 % disent, c'est qu'une couche NoPE à fenêtre n'apprend pas
+ce rappel dans ce budget, registre ou pas. Le témoin propre — la couche à registre avec
+sa porte clouée fermée, qui ne diffère du bras « registre » que par le terme de lecture —
+tourne ; c'est lui qui dira si le registre nuit, aide ou ne fait rien à son hôte. Tant
+qu'il n'a pas parlé, le nombre honnête pour D3b est : **mémoire constante prouvée,
+rappel au-delà de la fenêtre non démontré**. L'ablation sur texte réel
 (deux runs de 100M, BPB et rappel multi-clés à 32k) est dans `prophet.plan` avec son
 critère d'échec : BPB dégradé de plus de 0.5 % ou rappel au hasard au-delà de la fenêtre,
 et le registre reste à `"none"`.
@@ -81,6 +88,27 @@ il échange la compétence contre la mémoire à coût linéaire — la moitié 
 l'entraînement agentique servent à ne pas oublier — et c'est précisément la place des
 mécanismes sans gradient (registre de sortie, écriture sur surprise, état de session porté)
 que le benchmark mesure par la courbe par bloc, pour la voir plier — ou pas.
+
+**L'état de session porté entre épisodes, mesuré.** Le mécanisme existe (R03 appliqué à
+l'agent : l'état récurrent borné de l'épisode précédent restauré au début du suivant). Sur
+le checkpoint agentique à 57.5 %, 40 tâches inédites, poids gelés, seule variable l'état
+porté **[CPU, 7M]** :
+
+| État au début de chaque épisode | Succès | Malformés |
+|---|---:|---:|
+| vierge | **57.5 %** | 4.7 % |
+| porté de l'épisode précédent (tâche sans rapport) | **0 %** | 1.9 % |
+
+Les appels sont bien formés et faux : l'état récurrent porte le contenu d'une autre tâche,
+et le modèle n'a jamais vu un état porté à l'entraînement — chaque séquence y démarre d'un
+état vierge. Même classe de trouvaille que les plafonds de profondeur par token : ce qui
+n'est pas dans la distribution d'entraînement est indéfini à l'inférence, et le mécanisme
+le plus correct du monde ne le sauve pas. La recette qui rendrait l'état porté utile est
+un entraînement sur des *séquences d'épisodes* (l'état d'un épisode devient l'init du
+suivant, avec des tâches liées et d'autres non) ; elle n'est pas construite. La
+consolidation dans le registre de sortie entre blocs d'épisodes n'a pas été mesurée non
+plus : la config CPU n'a pas de registre. Ces deux-là sont les prochaines lignes de la
+courbe, pas des résultats.
 
 ## 3. Économie de tokens
 

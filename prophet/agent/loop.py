@@ -336,6 +336,7 @@ class AgentLoop:
             restore_session(session, cache, fingerprint=fingerprint)
             # Positions continue from the carried count; the id log must line up.
             self._ids = [self.tok.pad_id] * cache.position
+        carried = len(self._ids)  # placeholders are not tokens this episode processed
         state = AgentState(goal=goal, notes=notes, window_steps=self.cfg.window_steps)
 
         # The pinned prompt is read at the deciding depth: it is what every later span
@@ -424,7 +425,7 @@ class AgentLoop:
                     state.trajectory.append(self._traj(step, action, verdict, "", think))
                     self._close(state, passed=True, verified=verified_before_done)
                     return EpisodeResult(True, "done", records, state.notes, verified_before_done,
-                                         session=self._session(cache, fingerprint), tokens=len(self._ids))
+                                         session=self._session(cache, fingerprint), tokens=len(self._ids) - carried)
 
             elif action.name == "ask" or (p < self.cfg.tau_ask and self._needs_user(action)):
                 q = action.args.get("question", "clarification needed")
@@ -434,7 +435,7 @@ class AgentLoop:
                 state.trajectory.append(self._traj(step, action, verdict, "", think))
                 self._close(state, passed=False, verified=False)
                 return EpisodeResult(False, "ask", records, state.notes, False, asked_user=q,
-                                     session=self._session(cache, fingerprint), tokens=len(self._ids))
+                                     session=self._session(cache, fingerprint), tokens=len(self._ids) - carried)
 
             elif self.tools.is_irreversible(action.name) and p < self.cfg.tau_act:
                 gated = "verify_first"
@@ -466,7 +467,7 @@ class AgentLoop:
 
         self._close(state, passed=False, verified=False)
         return EpisodeResult(False, "max_steps", records, state.notes, False,
-                             session=self._session(cache, fingerprint), tokens=len(self._ids))
+                             session=self._session(cache, fingerprint), tokens=len(self._ids) - carried)
 
     # -- helpers -------------------------------------------------------------------------
 
