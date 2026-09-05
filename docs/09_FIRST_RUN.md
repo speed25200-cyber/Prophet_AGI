@@ -174,8 +174,11 @@ de base (`--replay-fraction 0.5`), bits/octet mesurés avant et après dans le m
 | Avant | 2.18 |
 | Après, sans rejeu (run à une famille, §précédent) | 7.36 |
 | Après, cinq familles **avec** rejeu | **2.74** |
+| Après, mêmes 600 épisodes et graine que le run sans rejeu, **avec** rejeu | **2.61** (succès 15 % / 25 % contre 55 % / 32.5 %) |
 
-L'effacement passe de +5.2 à +0.55 bits/octet. Par famille, 30 tâches inédites, deux
+L'effacement passe de +5.2 à +0.43 bits/octet à épisodes et graine égaux, et la compétence
+recule d'autant que les pas ne portent plus d'épisode : le rejeu est un cadran entre les
+deux, pas une solution. Par famille, 30 tâches inédites, deux
 graines : `calc` 60 % / 80 % (378–504 tokens par succès), `lookup` 47 % / 27 %, `files`
 7 % / 7 %, `count` 3 % / 0 %, `replace` 0 % / 0 %. Les familles où chaque valeur se copie
 réussissent ; celle où il faut générer un fichier est à zéro ; `count` échoue au choix

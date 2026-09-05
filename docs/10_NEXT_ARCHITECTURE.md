@@ -67,18 +67,20 @@ d'action. Il a été exercé sur de vrais poids. Ce qu'il coûte est maintenant 
 |---|---:|---:|
 | Avant | 0 % | 2.18 |
 | Après, sans rejeu | 55 % / 32.5 % (deux graines) | **7.36** (un modèle vierge : 4.35) |
-| Après, avec 50 % de rejeu du corpus de base (mêmes 600 épisodes, même graine) | **en cours** | **en cours** |
+| Après, avec 50 % de rejeu du corpus de base (mêmes 600 épisodes, même graine, 500 pas) | 15 % / 25 % | **2.61** |
 | Après, cinq familles (800 épisodes, 600 pas) **avec** 50 % de rejeu | voir §3 (b) | **2.74** |
 
 Le gradient seul, sur le flux d'expérience seul, efface tout le reste : le mur C tel que
 `07_WALLS.md` le décrit, en un nombre. Le rejeu est la première parade et elle se mesure au
-même endroit : avec une ligne d'entraînement sur deux tirée du corpus de base, l'effacement
-passe de +5.2 à **+0.55 bits/octet** sur un run qui a appris cinq familles de tâches en
-même temps (la comparaison contrôlée, mêmes épisodes et même graine que le run sans rejeu,
-est en cours). Ce n'est pas zéro : le rejeu est un pansement à coût linéaire — la moitié
-des tokens de l'entraînement agentique servent à ne pas oublier — et c'est précisément la
-place des mécanismes sans gradient (registre de sortie, écriture sur surprise, état de
-session porté) que le benchmark mesure par la courbe par bloc, pour la voir plier — ou pas.
+même endroit. Comparaison contrôlée — mêmes 600 épisodes, même graine, mêmes 500 pas, une
+ligne sur deux tirée du corpus de base : l'effacement passe de +5.2 à **+0.43 bits/octet**,
+et le succès sur tâches inédites de 55 % / 32.5 % à **15 % / 25 %**, parce que la moitié
+des pas ne portent plus d'épisode (27 valeurs copiées contre 78). Sur les cinq familles à
+la fois, même dose de rejeu : +0.55. Le rejeu est donc un **cadran**, pas une solution :
+il échange la compétence contre la mémoire à coût linéaire — la moitié des tokens de
+l'entraînement agentique servent à ne pas oublier — et c'est précisément la place des
+mécanismes sans gradient (registre de sortie, écriture sur surprise, état de session porté)
+que le benchmark mesure par la courbe par bloc, pour la voir plier — ou pas.
 
 ## 3. Économie de tokens
 
