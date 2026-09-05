@@ -47,7 +47,7 @@ class CheckpointMeta:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "CheckpointMeta":
+    def from_dict(cls, d: dict[str, Any]) -> CheckpointMeta:
         return cls(
             step=int(d["step"]),
             slot=int(d["slot"]),
@@ -182,7 +182,10 @@ class CheckpointManager:
                     "almost certainly a write interrupted by preemption"
                 )
                 continue
-            return torch.load(path, map_location=map_location, weights_only=False), meta
+            # Trainer checkpoints contain tensors and primitive containers only. Keeping
+            # the restricted unpickler explicit prevents a validly checksummed but
+            # untrusted checkpoint from executing arbitrary pickle payloads.
+            return torch.load(path, map_location=map_location, weights_only=True), meta
 
         raise CheckpointError(
             "no intact checkpoint found in "

@@ -20,7 +20,7 @@ by a deliberate consolidation step and never directly from a live conversation.
 from __future__ import annotations
 
 import hashlib
-import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -78,19 +78,41 @@ class SessionMemory:
         )
 
     @classmethod
-    def load(cls, path: str | Path) -> "SessionMemory":
-        data = torch.load(path, map_location="cpu", weights_only=False)
+    def load(cls, path: str | Path) -> SessionMemory:
+        # The format contains tensors and primitive metadata only.  ``weights_only``
+        # avoids executing arbitrary pickle globals from a supplied session file.
+        data = torch.load(path, map_location="cpu", weights_only=True)
+        if not isinstance(data, Mapping):
+            raise TypeError("session memory must contain a mapping")
         version = int(data.get("version", 0))
         if version != FORMAT_VERSION:
             raise ValueError(
                 f"session memory format v{version}, expected v{FORMAT_VERSION}; "
                 "the state layout changed and loading it would be meaningless"
             )
+        def tensor_map(name: str) -> dict[str, Tensor]:
+            value = data.get(name, {})
+            if not isinstance(value, Mapping):
+                raise TypeError(f"session memory {name} must be a mapping")
+            result: dict[str, Tensor] = {}
+            for key, tensor in value.items():
+                if not isinstance(key, str) or not isinstance(tensor, Tensor):
+                    raise TypeError(f"session memory {name} must map strings to tensors")
+                result[key] = tensor
+            return result
+
+        tokens_seen = data.get("tokens_seen", 0)
+        if not isinstance(tokens_seen, int) or isinstance(tokens_seen, bool) or tokens_seen < 0:
+            raise ValueError("session memory tokens_seen must be a non-negative integer")
+        fingerprint = data.get("model_fingerprint", "")
+        if not isinstance(fingerprint, str):
+            raise TypeError("session memory model_fingerprint must be a string")
+
         return cls(
-            states=data["states"],
-            conv_states=data.get("conv_states", {}),
-            tokens_seen=int(data.get("tokens_seen", 0)),
-            model_fingerprint=str(data.get("model_fingerprint", "")),
+            states=tensor_map("states"),
+            conv_states=tensor_map("conv_states"),
+            tokens_seen=tokens_seen,
+            model_fingerprint=fingerprint,
             version=version,
         )
 
@@ -99,16 +121,29 @@ def model_fingerprint(model: torch.nn.Module, *, n_sampled: int = 8) -> str:
     """A cheap identity for a set of weights.
 
     Hashes shapes plus a few sampled values, which is enough to notice a different
-    checkpoint without walking gigabytes of parameters.
+    checkpoint without walking gigabytes of parameters. Mutable ledger values and write
+    counts are excluded: a memory write must not make otherwise compatible recurrent
+    state impossible to restore. Immutable addressing keys remain part of the identity.
     """
+    if not isinstance(n_sampled, int) or isinstance(n_sampled, bool) or n_sampled < 1:
+        raise ValueError("n_sampled must be a positive integer")
+
     hasher = hashlib.blake2b(digest_size=16)
+    hasher.update(f"session-format:{FORMAT_VERSION}".encode())
+    mutable_ledger_suffixes = (".values", ".write_counts")
     for name, param in sorted(model.state_dict().items()):
+        if name.startswith("ledgers.") and name.endswith(mutable_ledger_suffixes):
+            continue
         hasher.update(name.encode())
         hasher.update(str(tuple(param.shape)).encode())
-        flat = param.detach().reshape(-1).float()
+        hasher.update(str(param.dtype).encode())
+        flat = param.detach().reshape(-1)
         if flat.numel():
             step = max(flat.numel() // n_sampled, 1)
-            hasher.update(flat[::step][:n_sampled].numpy().tobytes())
+            # Sample first, then transfer/cast. Casting the complete parameter to FP32 on
+            # device can transiently allocate gigabytes for a large checkpoint.
+            sample = flat[::step][:n_sampled].to(device="cpu", dtype=torch.float32)
+            hasher.update(sample.numpy().tobytes())
     return hasher.hexdigest()
 
 
@@ -143,13 +178,17 @@ def restore_session(
     strict: bool = True,
 ) -> int:
     """Write a saved session back into a cache. Returns the number of slots restored."""
-    if strict and fingerprint and memory.model_fingerprint:
-        if fingerprint != memory.model_fingerprint:
-            raise ValueError(
-                "this session memory was produced by different weights; restoring it "
-                "would leave the model subtly and silently wrong. Pass strict=False only "
-                "if the mismatch is understood."
-            )
+    if (
+        strict
+        and fingerprint
+        and memory.model_fingerprint
+        and fingerprint != memory.model_fingerprint
+    ):
+        raise ValueError(
+            "this session memory was produced by different weights; restoring it "
+            "would leave the model subtly and silently wrong. Pass strict=False only "
+            "if the mismatch is understood."
+        )
 
     restored = 0
     for key, state in memory.states.items():

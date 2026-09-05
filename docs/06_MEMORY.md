@@ -1,11 +1,11 @@
 # 06 — Mémoire persistante
 
-> Track R03, implémenté dans `prophet/memory/`. C'est le pari le plus spéculatif du
-> projet et celui qu'aucun concurrent ne propose : un modèle qui continue d'apprendre
-> après son déploiement.
+> Track R03, prototypé dans `prophet/memory/`. C'est le pari le plus spéculatif du
+> projet : une mémoire modifiable après déploiement.
 >
-> Statut : **mécanisme implémenté et mesuré à l'échelle jouet.** L'ablation qui décide de
-> son intégration est financée en priorité 2 ([`05_ROADMAP.md`](05_ROADMAP.md)).
+> Statut : **mécanique locale mesurée à l'échelle jouet ; apprentissage continu non
+> démontré.** L'ablation qui décide de son intégration est financée en priorité 2
+> ([`05_ROADMAP.md`](05_ROADMAP.md)).
 
 ---
 
@@ -21,10 +21,12 @@ Le résultat sur lequel repose toute la conception, rapporté par R03 :
 |---|---:|
 | Fine-tuning complet | **89 %** |
 | LoRA | 71 % |
-| **Mise à jour mémoire creuse** | **11 %** |
+| **Sparse Memory Finetuning (SMF)** | **11 %** |
 
-Écrire dans quelques emplacements n'est pas seulement moins cher que d'ajuster tous les
-poids — c'est la seule variante qui ne détruit pas ce qui était déjà là.
+SMF sélectionne des rangées d'une couche mémoire préentraînée par contraste avec un corpus
+de fond, puis les ajuste par gradient. Le registre Prophet emploie des clés aléatoires
+gelées et une écriture fermée : le 11 % motive l'hypothèse de support creux mais **ne
+mesure pas ce prototype**.
 
 ---
 
@@ -67,7 +69,9 @@ moment. C'est ce qui rend l'opération exécutable sur un téléphone.
 > sous-corrige d'un facteur `top_k`. Il apprend visiblement quelque chose — juste
 > beaucoup trop lentement, sans que rien ne le signale.
 >
-> Vérifié par test : un token isolé atteint sa cible à **1e-7 près en une seule écriture**.
+> Vérifié par test dans le cas sans collision : un token isolé atteint sa cible à **1e-7
+> près en une seule écriture**. Des tokens/têtes visant le même slot rendent le pas
+> approximatif et doivent faire l'objet d'un test séparé.
 
 ### Clés gelées
 
@@ -127,13 +131,15 @@ C'est la seule qui distingue une mémoire d'un prompt plus long.
 
 ## 6. Honnêteté sur la portée
 
-Ce qui est démontré : le mécanisme fonctionne, l'écriture est exacte, la consolidation
-transfère bien l'effet du contexte, le replay réduit l'oubli de façon mesurable, et rien
-de tout cela ne touche aux poids du tronc.
+Ce qui est démontré à l'échelle jouet : une écriture isolée sans collision atteint sa
+cible, un ledger externe peut reproduire l'effet résiduel du contexte sur les épisodes
+écrits, le replay réduit une partie de l'interférence, et les poids du tronc ne bougent
+pas. Ce chemin externe n'est pas encore aligné avec les points d'injection du modèle.
 
-Ce qui **n'est pas** démontré : que le chiffre de 11 % de R03 se reproduise à notre
-échelle, que la mémoire améliore un benchmark réel, ou qu'elle résiste à un usage
-prolongé. Ce sont les questions de l'ablation E2, financée en priorité 2 :
+Ce qui **n'est pas** démontré : transfert vers des instances inédites, avantage face à un
+retriever, reproduction du chiffre SMF de 11 %, amélioration d'un benchmark réel,
+correction/suppression ciblée ou résistance à un usage prolongé. Ce sont les questions de
+l'ablation E2, financée en priorité 2 :
 
 > écrire → **effacer le contexte** → lire, comparé à une ligne de base de récupération
 > d'information à budget de contexte égal.
@@ -146,11 +152,11 @@ existants.
 
 ## 7. Risques
 
-| Risque | Atténuation implémentée |
+| Risque | État du prototype |
 |---|---|
-| Un exemple aberrant écrase un emplacement consensuel | **Région de confiance** par emplacement, plafonnant la norme de chaque mise à jour |
+| Un exemple aberrant écrase un emplacement consensuel | Les contributions sont bornées avant agrégation ; la borne par slot après collision reste à implémenter |
 | Les emplacements les plus utiles sont brassés à chaque session | **EWC allégé** : le pas décroît avec le nombre d'écritures |
-| Dérive lente sur un déploiement long | Facteur de **décroissance** optionnel sur les valeurs |
+| Dérive lente sur un déploiement long | La décroissance actuelle balaie toute la table ; TTL/tombstones ciblés sont requis |
 | Effondrement sur quelques emplacements | `occupancy()` rapporte l'entropie d'écriture — un effondrement ne se voit **pas** dans la courbe de perte |
 | Restauration d'un état produit par d'autres poids | **Empreinte du modèle** vérifiée au chargement ; refus par défaut |
-| Empoisonnement de la mémoire | Le registre n'est jamais écrit depuis une conversation en cours, seulement par consolidation délibérée |
+| Empoisonnement de la mémoire | Aucun journal de provenance ni vérificateur attesté ; `verified=False` est seulement un défaut fail-closed minimal |

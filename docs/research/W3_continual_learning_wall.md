@@ -149,7 +149,7 @@ and are both right:
 
 | Evidence | Says |
 |---|---|
-| Sparse memory finetuning: NQ drops **89%** (full FT) / **71%** (LoRA) / **11%** (sparse memory) *at equal new knowledge learned* (arXiv:2510.15103 [S]) | Interference, not capacity. The same knowledge fits; the update's **support** decides whether it destroys anything. |
+| Sparse memory finetuning: NQ drops **89%** (full FT) / **71%** (LoRA) / **11%** (sparse memory) *at equal new knowledge learned* (arXiv:2510.15103 [S]) | Interference, not capacity, **for SMF's pretrained memory layer and gradient-selected rows**. This is not a measurement of Prophet's random-key, closed-form ledger. |
 | Knowledge capacity is 2 bits/param, int8 included (arXiv:2404.05405 [S]) | Capacity, eventually. At 229M there is no room for a life's worth of facts, however sparse the update. |
 
 For Prophet the resolution is: **interference binds over a session, capacity binds over a
@@ -349,9 +349,12 @@ solved, and we have no data point between 0% and 25%. **W3-E3 fills that in.**
 | LoRA | same | **71%** |
 | **Sparse memory finetuning** (top-T slots by session-vs-background usage) | same | **11%** |
 
-arXiv:2510.15103 [S]. **Sparsity of the update's support, not its magnitude or rank,** is
-what buys retention. This is why Prophet's Tier 2 is what it is, and it is the empirical
-anchor of the whole memory design.
+arXiv:2510.15103 [S]. In that system, **sparsity of the update's support, not its magnitude
+or rank,** buys retention. SMF selects rows that are strongly activated by new knowledge
+relative to background data, then updates a pretrained memory layer by gradient. Prophet's
+Tier 2 instead addresses frozen random product keys and applies a closed-form value write.
+The result therefore motivates the sparse-support hypothesis but **cannot be transferred
+as evidence for the current ledger**; W3-E0/E2 must compare them at matched acquisition.
 
 ### 3.3 Schedules and recipes
 

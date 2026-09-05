@@ -127,6 +127,20 @@ def test_every_byte_value_is_representable(tokenizer):
     assert tokenizer.decode(tokenizer.encode(raw)) == raw
 
 
+def test_decode_is_total_for_model_generated_byte_ids(tokenizer):
+    assert isinstance(tokenizer.decode(range(N_BYTES)), str)
+    assert tokenizer.decode([0xFF]) == "\N{REPLACEMENT CHARACTER}"
+
+
+def test_unused_in_range_ids_are_safe_but_exposed_for_logit_masking(tokenizer):
+    unused = next(token_id for token_id in range(len(tokenizer))
+                  if token_id not in tokenizer.valid_token_ids)
+    assert tokenizer.decode([unused]) == ""
+    assert tokenizer.decode([unused], skip_special=False) == f"<|unused_{unused}|>"
+    with pytest.raises(ValueError, match="unknown or unused"):
+        tokenizer.decode([len(tokenizer)])
+
+
 def test_unknown_token_is_never_emitted(tokenizer):
     unk = tokenizer.special_id("<|unk|>")
     for text in ("\x00\x01\x02", "🜁🜂🜃", "日本"):

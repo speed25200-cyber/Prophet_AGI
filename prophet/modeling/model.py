@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,7 +34,6 @@ from torch import Tensor, nn
 from prophet.config import ProphetConfig
 from prophet.modeling.layers import (
     AttentionCache,
-    CausalSelfAttention,
     GatedDeltaNet,
     RecurrentState,
     RMSNorm,
@@ -178,13 +178,17 @@ class ProphetOutput:
     halt_probs: Tensor | None = None
     """``(batch, seq, steps)`` probability that reasoning stopped at each iteration.
 
-    Present only when halting is enabled. Looping a constant number of times leaves the
-    model's depth bounded by a constant and therefore changes no complexity class; only
-    depth that *depends on the input* buys anything asymptotically, and this distribution
-    is what makes it depend on the input."""
+    Present only when halting is enabled. With a fixed maximum loop count this adapts
+    average compute to the input but still changes no asymptotic complexity class. A
+    class-level claim would additionally require the maximum depth to grow with input
+    size and training in that regime.
+    """
     hidden_per_step: list[Tensor] | None = None
-    """Coda-applied hidden state after each iteration, needed to compute the ponder loss
-    as an expectation over stopping times."""
+    """Coda-applied, output-normalised state after each iteration.
+
+    These candidates use the same representation space as ``hidden`` so projecting them
+    through the LM head is comparable to the real final output.
+    """
 
     def expected_depth(self) -> float | None:
         """Mean number of iterations actually used, weighted by the halting distribution."""
@@ -232,6 +236,10 @@ class ProphetModel(nn.Module):
         )
 
         layout = cfg.section_layout()
+        self._global_layer_indices = {
+            (section, index): self._global_index(layout, section, index)
+            for section, index, _ in layout
+        }
         # 1/sqrt(2 * depth) keeps residual-stream variance bounded. The depth that
         # matters is the *effective* one: a heavily looped core adds just as much
         # variance as distinct layers would.
@@ -357,6 +365,15 @@ class ProphetModel(nn.Module):
         halt_threshold: float | None = None,
     ) -> ProphetOutput:
         cfg = self.cfg
+        if halt_threshold is not None and not 0.0 <= halt_threshold <= 1.0:
+            raise ValueError("halt_threshold must lie in [0, 1]")
+        if halt_threshold is not None and cache is not None:
+            raise ValueError(
+                "adaptive halting with an incremental cache is not causally valid yet; "
+                "deeper recurrent states would miss tokens processed at a shallower depth"
+            )
+        if loop_k is not None and loop_k < 1:
+            raise ValueError("loop_k must be >= 1")
         b, s = input_ids.shape
         offset = cache.position if cache is not None else 0
 
@@ -388,14 +405,18 @@ class ProphetModel(nn.Module):
                 if isinstance(block.ffn, SparseMoE) and block.ffn.last_stats is not None:
                     router_stats.append(block.ffn.last_stats)
                     aux_terms.append(block.ffn.last_stats.aux_loss)
-                key = str(idx)
-                if section in ("trunk", "coda") and key in self.ledgers:
+                # MemoryConfig.layers uses global parameterised-layer indices.  Using
+                # the section-local ``idx`` here silently attached a recurrent model's
+                # ledger to the wrong coda block (or never read it at all).
+                key = str(self._global_layer_indices[(section, idx)])
+                if key in self.ledgers:
                     # Residual read: the ledger contributes nothing until written.
                     h = h + self.ledgers[key](h)
             return h
 
         if not cfg.recurrent.enabled:
             k = 1
+            actual_k = 1
             x = run("trunk", 0, x)
         else:
             r = cfg.recurrent
@@ -419,7 +440,9 @@ class ProphetModel(nn.Module):
             # Backprop only through the trailing iterations: this is what keeps the
             # activation memory of a k=8 loop equal to that of a shallow stack.
             first_grad_iter = max(0, k - r.truncated_backprop_steps)
+            actual_k = 0
             for i in range(k):
+                actual_k = i + 1
                 grad_on = i >= first_grad_iter
                 ctx = contextlib.nullcontext() if grad_on else torch.no_grad()
                 with ctx:
@@ -435,14 +458,21 @@ class ProphetModel(nn.Module):
                     # writing to it would append the same positions k times and silently
                     # corrupt incremental decoding. The real, cached coda runs once below.
                     step_out = run("coda", 0, h, use_cache=False)
-                    hidden_per_step.append(step_out)
+                    # The real output passes through norm_out before lm_head.  Ponder
+                    # candidates must be scored in that same representation space.
+                    hidden_per_step.append(self.norm_out(step_out))
                     halt_logits.append(self.halt_head(step_out).squeeze(-1))
 
                     if not self.training and halt_threshold is not None:
                         survived = torch.stack(
-                            [1 - torch.sigmoid(l) for l in halt_logits]
+                            [1 - torch.sigmoid(logit) for logit in halt_logits]
                         ).prod(dim=0)
-                        if float((1.0 - survived).mean().item()) >= halt_threshold:
+                        # Generation is decided by the final prompt position. Averaging
+                        # over prefixes diluted that signal, while averaging over the
+                        # batch let easy neighbours stop a hard request. The batch still
+                        # shares a loop, so wait for every request's final position.
+                        halted = (1.0 - survived)[:, -1]
+                        if bool((halted >= halt_threshold).all().item()):
                             break
 
             x = run("coda", 0, h)
@@ -454,7 +484,9 @@ class ProphetModel(nn.Module):
         if return_mtp and len(self.mtp_heads):
             for j, head in enumerate(self.mtp_heads):
                 slot = cache.get("mtp", j, 0, head.kind) if cache is not None else None
-                mtp_logits.append(self._project(self.norm_out(head(x, cos=cos, sin=sin, cache=slot))))
+                mtp_logits.append(
+                    self._project(self.norm_out(head(x, cos=cos, sin=sin, cache=slot)))
+                )
 
         confidence = None
         if self.confidence_head is not None:
@@ -479,7 +511,7 @@ class ProphetModel(nn.Module):
         return ProphetOutput(
             logits=logits,
             hidden=hidden,
-            loop_k=k,
+            loop_k=actual_k,
             mtp_logits=mtp_logits,
             confidence=confidence,
             aux_loss=aux,
@@ -511,15 +543,45 @@ class ProphetModel(nn.Module):
         loop_k: int | None = None,
         temperature: float = 1.0,
         top_k: int | None = None,
+        valid_token_ids: Iterable[int] | Tensor | None = None,
     ) -> Tensor:
         """Greedy or sampled decoding. Deliberately minimal — a correctness reference,
-        not a serving path."""
+        not a serving path.
+
+        ``valid_token_ids`` should be ``ProphetTokenizer.valid_token_ids``. Tokenizer
+        files reserve capacity for future controls and may train fewer merges than their
+        configured vocabulary width; masking prevents the LM head from emitting those
+        deliberately unassigned rows.
+        """
         self.eval()
+        valid_mask: Tensor | None = None
+        if valid_token_ids is not None:
+            raw_ids = (
+                valid_token_ids.detach().reshape(-1).tolist()
+                if isinstance(valid_token_ids, Tensor)
+                else list(valid_token_ids)
+            )
+            if not raw_ids:
+                raise ValueError("valid_token_ids must contain at least one id")
+            if any(
+                not isinstance(token_id, int)
+                or isinstance(token_id, bool)
+                or not 0 <= token_id < self.cfg.frontend.vocab_size
+                for token_id in raw_ids
+            ):
+                raise ValueError("valid_token_ids contains an id outside the model vocabulary")
+            valid_mask = torch.zeros(
+                self.cfg.frontend.vocab_size, dtype=torch.bool, device=input_ids.device
+            )
+            valid_mask[raw_ids] = True
+
         cache = ProphetCache()
         out = self.forward(input_ids, cache=cache, loop_k=loop_k, return_mtp=False)
         generated = input_ids
         for _ in range(max_new_tokens):
             logits = out.logits[:, -1, :]
+            if valid_mask is not None:
+                logits = logits.masked_fill(~valid_mask, float("-inf"))
             if temperature <= 0:
                 nxt = logits.argmax(-1, keepdim=True)
             else:

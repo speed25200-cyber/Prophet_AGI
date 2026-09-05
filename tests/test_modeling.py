@@ -16,6 +16,7 @@ from prophet.config import (
     FeedForwardConfig,
     FrontendConfig,
     HeadsConfig,
+    MemoryConfig,
     MixerConfig,
     ProphetConfig,
     RecurrentCoreConfig,
@@ -232,6 +233,25 @@ def test_gated_delta_state_is_independent_of_sequence_length():
             gdn(torch.randn(1, length, 64), state=state)
         sizes.append(state.n_bytes())
     assert len(set(sizes)) == 1, f"state grew with context: {sizes}"
+
+
+def test_gated_delta_migrates_a_restored_state_to_the_activation_device_and_dtype():
+    gdn = GatedDeltaNet(
+        64, n_heads=2, head_dim=16, expand=2.0, conv_kernel=4, allow_fused=False
+    ).eval()
+    state = RecurrentState(
+        state=torch.zeros(1, 2, 32, 16, dtype=torch.float64),
+        conv_state=torch.zeros(1, gdn.conv.in_channels, 3, dtype=torch.float64),
+    )
+    x = torch.randn(1, 2, 64, dtype=torch.float32)
+
+    with torch.no_grad():
+        gdn(x, state=state)
+
+    assert state.state.device == x.device
+    assert state.state.dtype == torch.float32
+    assert state.conv_state.device == x.device
+    assert state.conv_state.dtype == x.dtype
 
 
 def test_gated_delta_erases_before_writing():
@@ -478,6 +498,22 @@ def test_generate_extends_the_sequence():
     assert torch.equal(out[:, :5], ids)
 
 
+def test_generate_masks_tokenizer_capacity_that_has_no_token():
+    model = ProphetModel(tiny_config()).eval()
+    ids = torch.randint(0, 256, (2, 5))
+    out = model.generate(ids, max_new_tokens=3, temperature=0.0, valid_token_ids={7})
+    assert torch.equal(out[:, -3:], torch.full((2, 3), 7))
+
+
+def test_generate_rejects_an_empty_or_out_of_range_token_mask():
+    model = ProphetModel(tiny_config()).eval()
+    ids = torch.randint(0, 256, (1, 4))
+    with pytest.raises(ValueError, match="at least one"):
+        model.generate(ids, max_new_tokens=1, valid_token_ids=set())
+    with pytest.raises(ValueError, match="outside"):
+        model.generate(ids, max_new_tokens=1, valid_token_ids={256})
+
+
 def test_budget_estimate_tracks_the_real_parameter_count():
     """The budget calculator gates every expensive decision, so it must not drift from
     the model it claims to describe.
@@ -550,6 +586,37 @@ def test_budget_counts_recurrent_core_as_bounded_state_not_attention():
     assert c - a > 100.0, "attention in the core should cost real KV bytes per token"
 
 
+def test_recurrent_memory_layers_use_global_not_section_local_indices():
+    """A coda ledger at global layer 3 must not be confused with local coda layer 0."""
+
+    class CountingLedger(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def forward(self, hidden):
+            self.calls += 1
+            return torch.zeros_like(hidden)
+
+    cfg = tiny_config(
+        memory=MemoryConfig(
+            enabled=True,
+            kind="product_key",
+            layers=(3,),
+            memory_dim=8,
+            n_slots=64,
+        )
+    )
+    model = ProphetModel(cfg).eval()
+    spy = CountingLedger()
+    model.ledgers["3"] = spy
+
+    with torch.no_grad():
+        model(torch.randint(0, 256, (1, 8)), loop_k=4)
+
+    assert spy.calls == 1
+
+
 def test_unimplemented_frontend_fails_loudly():
     cfg = tiny_config(frontend=FrontendConfig(mode="byte_patch"))
     with pytest.raises(NotImplementedError, match="not yet implemented"):
@@ -572,9 +639,7 @@ def halting_config(**kw) -> ProphetConfig:
 
 
 def test_halting_produces_a_proper_distribution_over_stopping_times():
-    """Looping a constant number of times leaves depth bounded by a constant and changes
-    no complexity class. Only depth that depends on the input buys anything, and this
-    distribution is what makes it depend on the input."""
+    """The distribution enables input-adaptive average compute under a fixed ceiling."""
     torch.manual_seed(0)
     model = ProphetModel(halting_config()).eval()
     with torch.no_grad():
@@ -622,6 +687,39 @@ def test_halting_never_exceeds_the_loop_budget():
     with torch.no_grad():
         out = model(torch.randint(0, 256, (1, 6)), loop_k=4, halt_threshold=0.999)
     assert out.halt_probs.shape[-1] <= 4
+
+
+def test_halting_reports_the_iterations_actually_executed():
+    model = ProphetModel(halting_config()).eval()
+    with torch.no_grad():
+        model.halt_head[1].weight.zero_()
+        model.halt_head[1].bias.fill_(20.0)
+        out = model(
+            torch.randint(0, 256, (2, 6)), loop_k=8, halt_threshold=0.9
+        )
+
+    assert out.loop_k == 1
+    assert out.halt_probs.shape[-1] == 1
+
+
+def test_invalid_runtime_loop_and_halt_limits_are_rejected():
+    model = ProphetModel(halting_config()).eval()
+    ids = torch.randint(0, 256, (1, 4))
+    with pytest.raises(ValueError, match="loop_k"):
+        model(ids, loop_k=0)
+    with pytest.raises(ValueError, match="halt_threshold"):
+        model(ids, halt_threshold=1.1)
+
+
+def test_adaptive_halting_refuses_an_incremental_cache_until_backfill_exists():
+    model = ProphetModel(halting_config()).eval()
+    with pytest.raises(ValueError, match="incremental cache"):
+        model(
+            torch.randint(0, 256, (1, 4)),
+            cache=ProphetCache(),
+            loop_k=4,
+            halt_threshold=0.9,
+        )
 
 
 def test_per_step_hidden_states_are_returned_for_the_ponder_loss():

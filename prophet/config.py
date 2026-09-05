@@ -10,6 +10,7 @@ transformer — so that every ablation measures a delta against something known.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any, Literal, get_origin, get_type_hints
@@ -249,10 +250,9 @@ class FeedForwardConfig:
 class MemoryConfig:
     """Test-time-updatable memory: the anti-'frozen brain' bet.
 
-    Tier 1 (``fast_weight``) is an in-layer associative memory whose contents are written
-    during the forward pass and survive across a session. Tier 2 is an offline
-    consolidation pass, run outside the model, that distils accumulated session memory
-    into a sparse weight delta.
+    ``fast_weight`` describes volatile in-layer state. ``product_key`` describes a
+    directly writable bounded ledger. The current offline consolidation pass writes
+    context effects into that ledger; it does not yet distil skills into model weights.
     """
 
     enabled: bool = False
@@ -493,8 +493,14 @@ class ProphetConfig:
                     f"require 1 <= train_loop_min ({r.train_loop_min}) "
                     f"<= train_loop_max ({r.train_loop_max})"
                 )
+            if r.default_loop_k < 1:
+                errors.append("recurrent.default_loop_k must be >= 1")
             if r.truncated_backprop_steps < 1:
                 errors.append("recurrent.truncated_backprop_steps must be >= 1")
+            if not math.isfinite(r.halting_loss_weight) or r.halting_loss_weight < 0:
+                errors.append("recurrent.halting_loss_weight must be finite and >= 0")
+            if not math.isfinite(r.halting_target_steps) or r.halting_target_steps <= 1:
+                errors.append("recurrent.halting_target_steps must be finite and > 1")
 
         if self.ffn.kind == "moe":
             f = self.ffn
@@ -593,11 +599,11 @@ class ProphetConfig:
         Path(path).write_text(json.dumps(self.to_dict(), indent=2, default=list), encoding="utf-8")
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ProphetConfig":
+    def from_dict(cls, data: dict[str, Any]) -> ProphetConfig:
         return _build(cls, data)
 
     @classmethod
-    def from_json(cls, path: str | Path) -> "ProphetConfig":
+    def from_json(cls, path: str | Path) -> ProphetConfig:
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
