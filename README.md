@@ -70,11 +70,14 @@ modèle de 408M.
 
 ## État du projet
 
-> **Phase 0 — Recherche et conception terminées. Un premier poids de 7M paramètres
-> entraîné sur CPU sur du texte réel (bits/octet tenus à l'écart 4.35 → 2.18), puis
-> rendu agentique sur ses propres épisodes vérifiés : 0 % → 55 % / 32.5 % de succès sur
-> des tâches inédites, la copie d'arguments valant à elle seule +40 points
-> ([`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md)). Aucun modèle compétitif.**
+> **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
+> nombres, à 7M paramètres sur CPU.** Un poids entraîné sur du texte réel (bits/octet
+> tenus à l'écart 4.35 → 2.18), rendu agentique sur ses propres épisodes vérifiés
+> (0 % → 55 % / 32.5 % sur tâches inédites, la copie d'arguments valant +40 points) ; le
+> mur de l'oubli mesuré (2.18 → 7.36 sans rejeu, 2.61 avec) ; la boucle contre *k* = 1
+> à égalité (2.184 contre 2.179) ; le contexte borné-infini prouvé en mémoire (34 Go →
+> 62 Mo à 8M tokens) et non démontré en rappel ([`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md),
+> [`docs/10_NEXT_ARCHITECTURE.md`](docs/10_NEXT_ARCHITECTURE.md)). Aucun modèle compétitif.**
 > Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le chemin de
 > données réel (fichiers ou Hub, décontamination dans le flux, phases reprenables),
 > l'infrastructure d'entraînement, le harnais d'évaluation, le pilier agentique
