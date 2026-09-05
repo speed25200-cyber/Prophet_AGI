@@ -211,8 +211,12 @@ associatif — un nombre borné d'emplacements, adressés doucement — et non e
 prix de la borne. Ce qu'il vaut est une expérience, pas un argument :
 `scripts/needle_cpu.py` entraîne deux modèles identiques, avec et sans registre, sur un
 rappel clé→valeur et mesure l'exactitude *par distance*, dans et au-delà de la fenêtre ;
-l'ablation sur texte réel est dans `prophet.plan` avec son critère d'échec. Tant qu'elle
-n'a pas tourné, D3b est un interrupteur à `"none"` dans toutes les configurations livrées.
+l'ablation sur texte réel est dans `prophet.plan` avec son critère d'échec. Sur le rappel
+synthétique **[CPU]**, la réponse est venue, et contre le mécanisme : la couche hôte
+apprend dans sa fenêtre (12.6 %) et ouvrir la porte au registre la fait tomber à 4.9 %
+sans rien ajouter au-delà. D3b est un interrupteur à `"none"` dans toutes les
+configurations livrées, et le restera tant que l'ablation à 100M n'a pas renversé ce
+résultat — si elle le renverse.
 
 ---
 
@@ -327,7 +331,7 @@ main assurent la spéculation sans modèle externe.
 | D1 | Cœur bouclé récurrent uniquement, attention hors boucle | R02, R04 | **Acquis** (test) |
 | D2 | ≤ 4B total / ~370M actifs | R07, planificateur | **Acquis** (mémoire) |
 | D3 | Hybride GDN 3:1 avec SWA + globale NoPE | R02 | **Acquis** |
-| D3b | Attention globale à fenêtre + registre borné des KV évincés (mémoire constante en contexte) | interne, R02/R03 | **[ABLATION] — mécanique testée, rappel au-delà de la fenêtre mesuré sur synthétique (§4bis), hors des configs livrées** |
+| D3b | Attention globale à fenêtre + registre borné des KV évincés (mémoire constante en contexte) | interne, R02/R03 | **Non acquis** — mémoire constante prouvée ; sur rappel synthétique à 165k paramètres le registre *nuit* à son hôte dans la fenêtre (12.6 % → 4.9 %) et n'aide pas au-delà ([`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §1). Reste à `"none"` ; l'ablation à 100M décide. |
 | D4 | Profondeur réglable à l'exécution | R04 | **[ABLATION A1] à ≥ 350M** |
 | D4b | Halte entraînée, pour une profondeur dépendant de l'entrée | W1 | **Requis** — sans elle, la boucle n'achète qu'un facteur constant (§2ter) |
 | D1b | Bloc-notes latent persistant, pour réparer ce que D1 a coûté | W1 | **Candidat** — non implémenté (§2bis) |

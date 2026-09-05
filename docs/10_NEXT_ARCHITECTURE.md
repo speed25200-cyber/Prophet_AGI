@@ -57,9 +57,22 @@ pas le bon témoin — une couche SWA à RoPE, là où l'hôte du registre est u
 fenêtre — donc ce que ces 4.9 % disent, c'est qu'une couche NoPE à fenêtre n'apprend pas
 ce rappel dans ce budget, registre ou pas. Le témoin propre — la couche à registre avec
 sa porte clouée fermée, qui ne diffère du bras « registre » que par le terme de lecture —
-tourne ; c'est lui qui dira si le registre nuit, aide ou ne fait rien à son hôte. Tant
-qu'il n'a pas parlé, le nombre honnête pour D3b est : **mémoire constante prouvée,
-rappel au-delà de la fenêtre non démontré**. L'ablation sur texte réel
+a parlé :
+
+| Distance de la paire à la question | attention complète | fenêtre RoPE seule | hôte NoPE, porte clouée fermée | hôte NoPE + registre (porte libre) |
+|---|---:|---:|---:|---:|
+| ≤ fenêtre | 24.3 % | 13.6 % | 12.6 % | **4.9 %** |
+| 1 à 2 fenêtres | 19.9 % | 10.2 % | 10.2 % | 9.3 % |
+| > 2 fenêtres | 17.8 % | 7.5 % | 10.6 % | 8.1 % |
+
+Le témoin propre apprend dans sa fenêtre (12.6 %, comme la fenêtre RoPE) ; ouvrir la porte
+au registre **nuit** à son hôte dans la fenêtre (4.9 %) et n'ajoute rien au-delà (9.3 et
+8.1 contre 10.2 et 10.6). À cette échelle (165k paramètres, 3 000 pas, rappel synthétique),
+le verdict est celui que le critère d'échec du plan prévoyait : **mémoire constante
+prouvée, rappel au-delà de la fenêtre non démontré, coût dans la fenêtre mesuré** — D3b
+reste à `"none"`. Ce que l'expérience ne dit pas : si un hôte plus large ou plus de pas
+apprendraient à *lire* un registre qu'ils savent déjà écrire ; c'est l'ablation sur texte
+réel (100M, dans `prophet.plan`) qui le dira, avec le même critère. L'ablation sur texte réel
 (deux runs de 100M, BPB et rappel multi-clés à 32k) est dans `prophet.plan` avec son
 critère d'échec : BPB dégradé de plus de 0.5 % ou rappel au hasard au-delà de la fenêtre,
 et le registre reste à `"none"`.
