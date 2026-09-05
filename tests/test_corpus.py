@@ -254,3 +254,14 @@ def test_overrides_win_over_files(corpus):
     override = LocalTextSource.from_root(corpus, "code", 0.5)
     sources = build_sources(_mixture().phases[0], tokenizer=TOK, local_root=corpus, overrides={"web": override})
     assert sources[0].source is override
+
+
+def test_extra_sources_join_only_the_named_phases(corpus):
+    extra = sources_from_iterables({"episodes": (0.5, [[7, 7, 7, 7]] * 20)})
+    loader = build_loader(_mixture(), tokenizer=TOK, seq_len=8, batch_size=1, local_root=corpus,
+                          max_epochs=None, extra_sources=extra)
+    assert [s.name for s in loader.loaders[0].sources] == ["web", "code"]
+    assert [s.name for s in loader.loaders[1].sources] == ["web", "episodes"]
+    with pytest.raises(ValueError, match="unknown phases"):
+        build_loader(_mixture(), tokenizer=TOK, seq_len=8, batch_size=1, local_root=corpus,
+                     max_epochs=None, extra_sources=extra, extra_phases=["Z"])

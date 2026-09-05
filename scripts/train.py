@@ -106,6 +106,23 @@ def build_real_loader(args, cfg: ProphetConfig):
             n = decontaminator.add_benchmark(path.stem, items)
             print(f"decontaminate  {path.stem}: {n} items indexed")
 
+    extra = []
+    if args.quarantine:
+        if not args.tools:
+            print("\n--quarantine needs --tools: the episodes' schemas must be in context for "
+                  "the selection anchors to exist.", file=sys.stderr)
+            raise SystemExit(2)
+        from prophet.agent.actions import ToolRegistry, ToolSchema
+        from prophet.agent.quarantine import Quarantine
+        from prophet.agent.render import QuarantineSource
+        from prophet.data.corpus import TokenisedSource
+        registry = ToolRegistry()
+        for spec in json.loads(Path(args.tools).read_text()):
+            registry.add(ToolSchema(spec["name"], spec.get("description", ""), spec.get("parameters", {})))
+        episodes = QuarantineSource(Quarantine(args.quarantine), registry, weight=args.quarantine_weight)
+        print(f"quarantine     {episodes.n_documents()} promoted episodes at weight {args.quarantine_weight}")
+        extra.append(TokenisedSource(episodes, tokenizer, max_epochs=None, parse_special=True))
+
     batch_tokens = args.batch_size * args.seq_len * args.grad_accum
     total_tokens = args.tokens if args.tokens else args.steps * batch_tokens
     mixture = prophet_v1_mixture(total_tokens=total_tokens)
@@ -113,7 +130,7 @@ def build_real_loader(args, cfg: ProphetConfig):
     loader = build_loader(
         mixture, tokenizer=tokenizer, seq_len=args.seq_len, batch_size=args.batch_size,
         seed=args.seed, decontaminator=decontaminator, local_root=args.data_root,
-        allow_hub=args.hub,
+        allow_hub=args.hub, extra_sources=extra,
     )
     return loader, max(1, loader.total_steps() // args.grad_accum)
 
@@ -144,6 +161,14 @@ def main() -> int:
     ap.add_argument("--benchmarks", default=None,
                     help="directory of <benchmark>.jsonl test sets ({\"text\": ...}) to "
                          "decontaminate against; strongly recommended for a real run")
+    ap.add_argument("--quarantine", default=None,
+                    help="agent quarantine JSON; its promoted episodes join the anneal "
+                         "phase as a source (docs/08_AGENT.md §4 bis)")
+    ap.add_argument("--tools", default=None,
+                    help="JSON list of tool schemas the quarantined episodes ran with "
+                         "({name, description, parameters}); required with --quarantine")
+    ap.add_argument("--quarantine-weight", type=float, default=0.05,
+                    help="sampler weight of the episode source next to a phase summing to 1")
     ap.add_argument("--tokens", type=float, default=None,
                     help="total training tokens; sets --steps from the batch shape and "
                          "scales the mixture's phases (default: --steps x batch tokens)")

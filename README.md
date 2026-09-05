@@ -71,10 +71,13 @@ modèle de 408M.
 ## État du projet
 
 > **Phase 0 — Recherche et conception terminées. Aucun poids entraîné.**
-> Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le pipeline de
-> données, l'infrastructure d'entraînement, le harnais d'évaluation et le plan
-> d'exécution. **330 tests passent** et la boucle d'entraînement tourne de bout en bout
-> sur corpus synthétique.
+> Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le chemin de
+> données réel (fichiers ou Hub, décontamination dans le flux, phases reprenables),
+> l'infrastructure d'entraînement, le harnais d'évaluation, le pilier agentique
+> (actions typées, vérification à tiers, quarantaine, et le chemin des épisodes promus
+> vers le corpus) et le plan d'exécution. **~470 tests passent** ; la boucle
+> d'entraînement tourne de bout en bout sur corpus synthétique et sur un corpus local
+> minuscule, avec reprise dans la phase en cours.
 >
 > Réserve honnête : les identifiants de datasets et le tableau de bord concurrent
 > proviennent de rapports rédigés alors que l'accès au Hub et à arXiv était bloqué par le
@@ -93,6 +96,7 @@ modèle de 408M.
 | [`docs/05_ROADMAP.md`](docs/05_ROADMAP.md) | Plan sur 11 semaines et arbitrage du budget |
 | [`docs/06_MEMORY.md`](docs/06_MEMORY.md) | Mémoire persistante : conception, mesures, limites |
 | [`docs/07_WALLS.md`](docs/07_WALLS.md) | **Les murs** : mécanisme des verrous profonds, y compris ceux qu'on ne franchit pas |
+| [`docs/08_AGENT.md`](docs/08_AGENT.md) | **Le pilier agentique** : la boucle, les têtes d'action, la vérification, ce qui est construit et ce qui ne l'est pas |
 
 ## Outils
 

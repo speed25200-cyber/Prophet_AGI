@@ -26,7 +26,7 @@ first experiment (A4-0: does depth disagreement predict error?) is one function 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import IntEnum
 from typing import Sequence
 

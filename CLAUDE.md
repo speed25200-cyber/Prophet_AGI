@@ -49,12 +49,14 @@ prophet/
   eval/         Métriques (BPB) et harnais à trois niveaux
   memory/       Registre à clés-produit (écriture en forme close), état de session,
                 consolidation de contexte et de profondeur
+  agent/        Boucle agentique : actions typées et grammaire, vérification à tiers,
+                quarantaine à provenance, état et retour arrière, rendu des épisodes
   convert/      Conversion d'un donneur ouvert vers l'architecture Prophet
   analysis/     Mesure de la bande passante des canaux de raisonnement
   kernels/      Réservé aux noyaux Triton/CUDA — vide tant qu'aucun GPU n'a servi
 configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
 scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
-tests/          ~460 tests ; les plus importants sont des tests d'équivalence
+tests/          ~470 tests ; les plus importants sont des tests d'équivalence
 ```
 
 ## Ce que ce dépôt a appris à ses dépens

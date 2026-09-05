@@ -115,7 +115,7 @@ fois déduites les pertes de préemption.
 | **4–7** | **Voie A** : pré-entraînement Prophet-mini depuis zéro, phases A et B. | Courbe de perte, checkpoint de plateau, évaluations Tier-1 tous les 3 jours. |
 | **6** | **Voie B, en parallèle** : conversion du donneur puis entraînement de récupération. Ne dépend pas de la voie A. | Prophet-main récupéré, comparé au donneur sur le BPB tenu à l'écart. |
 | **8** | Phase C : trois recuits branchés depuis le checkpoint de plateau, puis fusion. Ablation mémoire R03. | Modèle de base fusionné. Verdict sur la mémoire persistante. |
-| **9–10** | Post-entraînement R10 sur les deux modèles : mid-training raisonnement, SFT bimode, distillation on-policy. | Modèles instruct. |
+| **9–10** | Post-entraînement R10 sur les deux modèles : mid-training raisonnement, SFT bimode, distillation on-policy. Si une porte a libéré des heures : la recette agentique A2 s'insère ici, avec son ablation de plafonds de profondeur avant elle. | Modèles instruct. |
 | **11** | Évaluation Tier-2 complète, quantification et export, carte du modèle. | Résultats publiables avec rapport de décontamination. |
 
 Les deux voies sont indépendantes après la semaine 3, ce qui est délibéré : si la

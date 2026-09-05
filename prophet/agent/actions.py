@@ -204,11 +204,19 @@ def _json_type_ok(value: Any, expected: str) -> bool:
 
 @dataclass
 class PrefixState:
-    """Result of validating a partial call: still viable, complete, or dead."""
+    """Result of validating a partial call: still viable, complete, or dead.
+
+    ``value_start`` marks a prefix that ends exactly where an argument value begins
+    (after ``"key":``) -- the one place a copy pointer may fire; ``key`` and
+    ``expected_type`` say which argument and what the schema expects there."""
 
     viable: bool
     complete: bool = False
     reason: str = ""
+    value_start: bool = False
+    tool: str | None = None
+    key: str | None = None
+    expected_type: str | None = None
 
 
 class ActionGrammar:
@@ -322,9 +330,14 @@ class ActionGrammar:
         i2 = _expect(s, i, "{")
         if i2 is None:
             return PrefixState(True)
-        seen, i, closed = self._scan_args(s, i2, schema)
+        seen, i, closed, at_value = self._scan_args(s, i2, schema)
         if not closed:
-            return PrefixState(True)
+            if at_value is not None:
+                key_name, expected = at_value
+                return PrefixState(
+                    True, value_start=True, tool=name.value, key=key_name, expected_type=expected
+                )
+            return PrefixState(True, tool=name.value)
         missing = [r for r in schema.required if r not in seen]
         if missing:
             raise _Dead(f"{name.value}: missing required {missing}")
@@ -338,27 +351,31 @@ class ActionGrammar:
             raise _Dead("trailing characters after the call")
         return PrefixState(True, complete=True)
 
-    def _scan_args(self, s: str, i: int, schema: ToolSchema) -> tuple[set[str], int, bool]:
+    def _scan_args(
+        self, s: str, i: int, schema: ToolSchema
+    ) -> tuple[set[str], int, bool, tuple[str, str | None] | None]:
+        """Returns ``(seen keys, index, closed, at_value)`` where ``at_value`` is
+        ``(key, expected type)`` when the prefix ends exactly at a value start."""
         props = schema.properties
         seen: set[str] = set()
         while True:
             i = _skip_ws(s, i)
             if i == len(s):
-                return seen, i, False
+                return seen, i, False, None
             if s[i] == "}":
-                return seen, i + 1, True
+                return seen, i + 1, True, None
             if seen:
                 i2 = _expect(s, i, ",")
                 if i2 is None:
-                    return seen, i, False
+                    return seen, i, False, None
                 i = _skip_ws(s, i2)
             key, i = _scan_string(s, i)
             if key is None:
-                return seen, i, False
+                return seen, i, False, None
             if not key.done:
                 if props and not any(k.startswith(key.value) for k in props):
                     raise _Dead(f"no parameter of {schema.name} starts with {key.value!r}")
-                return seen, i, False
+                return seen, i, False, None
             if props and key.value not in props:
                 raise _Dead(f"{schema.name} has no parameter {key.value!r}")
             if key.value in seen:
@@ -366,14 +383,14 @@ class ActionGrammar:
             i = _skip_ws(s, i)
             i2 = _expect(s, i, ":")
             if i2 is None:
-                return seen, i, False
+                return seen, i, False, None
             i = _skip_ws(s, i2)
-            if i == len(s):
-                return seen, i, False
             expected = props.get(key.value, {}).get("type")
+            if i == len(s):
+                return seen, i, False, (key.value, expected)
             done, i = _scan_value(s, i, expected)
             if not done:
-                return seen, i, False
+                return seen, i, False, None
             seen.add(key.value)
 
 

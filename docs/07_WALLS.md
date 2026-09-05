@@ -245,6 +245,14 @@ apprise aussi bien que les instances.
 
 ---
 
+**Addendum — le troisième étage a un chemin pour l'agent.** Le pilier agentique
+([`08_AGENT.md`](08_AGENT.md) §4 bis) relie la quarantaine au chargeur : un épisode
+*promu* — vérité terrain, ou consensus — est rendu dans le flux à ids de contrôle et
+devient une source ordinaire du corpus, dont les têtes d'action lisent leurs cibles.
+C'est la distillation de l'expérience vers les poids, mécaniquement ; ce n'est pas la
+preuve qu'elle apprend une compétence plutôt qu'une mémoire, ni la mesure de ce qu'elle
+efface. Ces deux-là restent le mur.
+
 ## Mur D — Le calcul d'inférence ne se cumule pas
 
 > Un modèle qui passe dix minutes de calcul à résoudre un problème difficile aujourd'hui

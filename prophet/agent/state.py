@@ -20,8 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-import torch
-from torch import Tensor
 
 from prophet.modeling.layers import AttentionCache, RecurrentState
 from prophet.modeling.model import ProphetCache

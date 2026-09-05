@@ -35,6 +35,7 @@ quarantine records -- not its competence.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
@@ -124,6 +125,8 @@ class StepRecord:
     the model has no action heads."""
     sel_margin: float | None = None
     """Top-1 minus top-2 selection probability -- A3's ambiguity signal."""
+    copied: int = 0
+    """Argument values filled by the copy pointer rather than generated."""
 
 
 @dataclass
@@ -154,6 +157,9 @@ class AgentLoop:
             self.grammar, lambda tid: self.tok.decode([tid]),
             end_id=self._sid("<|/call|>"),
         )
+        self._ids: list[int] = []
+        self._copied = 0
+        self._has_action = getattr(model, "action", None) is not None
         recurrent = getattr(getattr(model, "cfg", None), "recurrent", None)
         if cfg.depth_policy == "auto":
             # A model without a config (a scripted stand-in) ignores depth anyway.
@@ -185,6 +191,7 @@ class AgentLoop:
               positions: dict[str, list[int]] | None = None):
         if not ids:
             return None
+        self._ids.extend(ids)  # absolute position == index; eviction never renumbers
         t = torch.tensor([ids], dtype=torch.long, device=next(self.model.parameters()).device)
         kw: dict[str, Any] = dict(cache=cache, loop_k=loop_k, return_mtp=True)
         if halt_threshold is not None:
@@ -200,18 +207,38 @@ class AgentLoop:
     def _decode(self, cache: ProphetCache, *, budget: int, loop_k: int | None,
                 halt_threshold: float | None, greedy: bool, stop_ids: set[int],
                 constrained: bool = False) -> tuple[str, Any]:
-        """Generate up to ``budget`` tokens; return the text and the last output."""
+        """Generate up to ``budget`` tokens; return the text and the last output.
+
+        In a constrained span with action heads, every fed token also scores the copy
+        pointer at its own position, so that when the grammar reports a value start the
+        decision to copy -- and where from -- is already in hand.
+        """
         out = None
         pieces: list[int] = []
         prefix = ""
         last_id: int | None = None
+        copy_kw = {"copy_positions": [0]} if constrained and self._has_action else None
+        self._copied = 0
         for _ in range(budget):
             if last_id is not None:
-                out = self._feed([last_id], cache, loop_k=loop_k, halt_threshold=halt_threshold)
+                out = self._feed([last_id], cache, loop_k=loop_k, halt_threshold=halt_threshold,
+                                 positions=copy_kw)
             elif out is None:
                 # First token of the span is produced from the cache's current logits;
                 # the caller has already fed the span opener.
                 out = self._last_output
+            if constrained and copy_kw is not None:
+                spliced = self._try_copy(prefix, out)
+                if spliced:
+                    ids = self.tok.encode(spliced)
+                    pieces += ids
+                    prefix = self.tok.decode(pieces)
+                    # The value entered as if generated; the next token follows it.
+                    out = self._feed(ids, cache, loop_k=loop_k, positions=copy_kw)
+                    last_id = None
+                    self._copied += 1
+                    if self.grammar.check(prefix).complete:
+                        break
             logits = out.logits[0, -1].float()
             if constrained:
                 ranked = logits.topk(min(self.decoder.candidates, logits.numel())).indices.tolist()
@@ -239,12 +266,53 @@ class AgentLoop:
             self._last_output = self._feed([last_id], cache, loop_k=loop_k) or self._last_output
         return prefix, out
 
+    def _try_copy(self, prefix: str, out) -> str | None:
+        """At a value start, ask the gate; if it says copy, read the span the pointers
+        chose out of everything fed so far, render it as the JSON the schema expects,
+        and accept it only if the grammar does. Otherwise generate as usual."""
+        state = self.grammar.check(prefix)
+        if not state.value_start:
+            return None
+        gate = getattr(out, "copy_gate", None)
+        starts, ends = getattr(out, "copy_start", None), getattr(out, "copy_end", None)
+        key_pos = getattr(out, "copy_key_positions", None)
+        if gate is None or starts is None or ends is None or key_pos is None:
+            return None
+        if float(gate[0, -1]) <= 0.0:
+            return None
+        s_logits, e_logits = starts[0, -1].float(), ends[0, -1].float()
+        start_i = int(s_logits.argmax())
+        e_logits = e_logits.masked_fill(torch.arange(e_logits.numel()) < start_i, float("-inf"))
+        end_i = int(e_logits.argmax())
+        start, end = int(key_pos[start_i]), int(key_pos[end_i])
+        if end < start or end >= len(self._ids):
+            return None
+        span = self.tok.decode(self._ids[start : end + 1])
+        if not span or "\n" in span:
+            return None
+        if state.expected_type in (None, "string"):
+            rendered = json.dumps(span)
+        elif state.expected_type in ("integer", "number"):
+            try:
+                value = int(span) if state.expected_type == "integer" else float(span)
+            except ValueError:
+                return None
+            rendered = json.dumps(value)
+        elif state.expected_type == "boolean":
+            if span not in ("true", "false"):
+                return None
+            rendered = span
+        else:
+            return None
+        return rendered if self.grammar.check(prefix + rendered).viable else None
+
     # -- the episode -------------------------------------------------------------------
 
     @torch.no_grad()
     def run(self, goal: str, *, notes: str = "", modality_tool: int | None = None) -> EpisodeResult:
         self.model.eval()
         cache = ProphetCache()
+        self._ids = []
         state = AgentState(goal=goal, notes=notes, window_steps=self.cfg.window_steps)
 
         # The pinned prompt is read at the deciding depth: it is what every later span
@@ -304,8 +372,9 @@ class AgentLoop:
             if action is None:
                 # The grammar guarantees viability, not completion within budget.
                 records.append(StepRecord(step, think, None, None, "", gated="malformed",
-                                          selected=selected, sel_margin=sel_margin))
-                state.trajectory.append({"step": step, "action": None, "gated": "malformed"})
+                                          selected=selected, sel_margin=sel_margin,
+                                          copied=self._copied))
+                state.trajectory.append({"step": step, "think": think, "action": None, "gated": "malformed"})
                 state.step += 1
                 continue
 
@@ -327,16 +396,18 @@ class AgentLoop:
                     action = Action("verify", {"what": f"confidence {p:.2f} below tau_done"})
                 if action.name == "done":
                     records.append(StepRecord(step, think, action, verdict, "", gated,
-                                              selected=selected, sel_margin=sel_margin))
-                    state.trajectory.append(self._traj(step, action, verdict, ""))
+                                              selected=selected, sel_margin=sel_margin,
+                                              copied=self._copied))
+                    state.trajectory.append(self._traj(step, action, verdict, "", think))
                     self._close(state, passed=True, verified=verified_before_done)
                     return EpisodeResult(True, "done", records, state.notes, verified_before_done)
 
             elif action.name == "ask" or (p < self.cfg.tau_ask and self._needs_user(action)):
                 q = action.args.get("question", "clarification needed")
                 records.append(StepRecord(step, think, action, verdict, "", "ask",
-                                          selected=selected, sel_margin=sel_margin))
-                state.trajectory.append(self._traj(step, action, verdict, ""))
+                                          selected=selected, sel_margin=sel_margin,
+                                          copied=self._copied))
+                state.trajectory.append(self._traj(step, action, verdict, "", think))
                 self._close(state, passed=False, verified=False)
                 return EpisodeResult(False, "ask", records, state.notes, False, asked_user=q)
 
@@ -363,8 +434,9 @@ class AgentLoop:
                     state.evict_from_attention(cache, old)
 
             records.append(StepRecord(step, think, action, verdict, observation, gated,
-                                      selected=selected, sel_margin=sel_margin))
-            state.trajectory.append(self._traj(step, action, verdict, observation))
+                                      selected=selected, sel_margin=sel_margin,
+                                      copied=self._copied))
+            state.trajectory.append(self._traj(step, action, verdict, observation, think))
             state.step += 1
 
         self._close(state, passed=False, verified=False)
@@ -415,13 +487,18 @@ class AgentLoop:
     def _needs_user(self, action: Action) -> bool:
         return action.name in ("done", "submit", "send", "purchase")
 
-    def _traj(self, step: int, action: Action | None, verdict: Verdict | None, obs: str) -> dict:
+    def _traj(self, step: int, action: Action | None, verdict: Verdict | None, obs: str,
+              think: str = "") -> dict:
+        """One serialised step. The think span and the full (already capped)
+        observation are kept: a promoted episode is rendered back into training text
+        by ``prophet.agent.render``, and a summary cannot be un-summarised."""
         return {
             "step": step,
+            "think": think,
             "action": None if action is None else {"name": action.name, "args": action.args},
             "p_correct": None if verdict is None else verdict.p_correct,
             "tier": None if verdict is None else int(verdict.tier),
-            "observation": obs[:200],
+            "observation": obs,
         }
 
     def _execute(self, action: Action, state: AgentState, cache: ProphetCache) -> str:

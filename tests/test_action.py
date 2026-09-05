@@ -313,3 +313,82 @@ def test_budget_counts_the_action_heads_exactly():
     assert count_parameters(cfg).total - count_parameters(off).total == sum(
         p.numel() for p in ProphetModel(cfg).action.parameters()
     )
+
+
+# --------------------------------------------------------------------------------------
+# The loop uses the copy pointer at a value start
+# --------------------------------------------------------------------------------------
+
+
+class _Copying(_Selecting):
+    """Also answers the copy pointer: the gate says copy, and the pointers land on the
+    span ``target`` wherever it sits in what has been fed so far."""
+
+    def __init__(self, script: list[int], choice: int, target: str) -> None:
+        super().__init__(script, choice)
+        self.target = TOK.encode(target)
+        self.fed: list[int] = []
+        self.last_emitted: int | None = None
+
+    def forward(self, ids, *, cache=None, loop_k=None, return_mtp=True, halt_threshold=None,
+                modality_ids=None, **kw):
+        row = ids[0].tolist()
+        self.fed += row
+        self.seen_kwargs.append(kw)
+        b, s = ids.shape
+        if cache is not None:
+            cache.position += s
+        # Advance only on an echo of the last emission: a spliced value is not one, and
+        # a real model would simply predict what follows the value.
+        if self.last_emitted is not None and row[-1] == self.last_emitted:
+            self.cursor += 1
+            if self.last_emitted in (SID["<|/think|>"], SID["<|/call|>"]):
+                self.speaking = False
+            self.last_emitted = None
+        if row[-1] in (SID["<|think|>"], SID["<|call|>"]):
+            self.speaking = True
+        logits = torch.full((b, s, 600), -20.0)
+        nxt = TOK.eos_id
+        if self.speaking and self.cursor < len(self.script):
+            nxt = self.script[self.cursor]
+            self.last_emitted = nxt
+        logits[:, -1, nxt] = 20.0
+        sel = None
+        if "decision_positions" in kw:
+            sel = torch.full((b, 1, 3), -5.0)
+            sel[:, :, self.choice] = 5.0
+        copy_start = copy_end = gate = key_pos = None
+        if "copy_positions" in kw:
+            n = len(self.fed)
+            key_pos = torch.arange(n)
+            copy_start = torch.full((b, 1, n), -9.0)
+            copy_end = torch.full((b, 1, n), -9.0)
+            at = next((i for i in range(n - len(self.target) + 1)
+                       if self.fed[i : i + len(self.target)] == self.target), None)
+            if at is not None:
+                copy_start[0, 0, at] = 9.0
+                copy_end[0, 0, at + len(self.target) - 1] = 9.0
+            gate = torch.full((b, s), 5.0)
+        return ProphetOutput(logits=logits, hidden=torch.zeros(b, s, 8), loop_k=1,
+                             confidence=torch.full((b, s), 5.0), sel_logits=sel,
+                             copy_start=copy_start, copy_end=copy_end, copy_gate=gate,
+                             copy_key_positions=key_pos)
+
+
+def test_copy_pointer_fills_a_string_value_from_context():
+    # The script stops at the value start; the copied "notes.txt" from the goal fills it
+    # and the script resumes with the closing braces.
+    model = _Copying(_script("<|/think|>", '{"name":"read_file","args":{"path":', '}}<|/call|>'),
+                     choice=1, target="notes.txt")
+    result = _loop(model).run("please read notes.txt now")
+    rec = result.steps[0]
+    assert rec.action is not None and rec.action.args == {"path": "notes.txt"}
+    assert rec.copied == 1 and rec.observation == "contents of notes.txt"
+
+
+def test_copy_is_refused_when_the_span_does_not_fit_the_schema():
+    # `count.n` is an integer; the pointer offers a word, so the loop generates instead.
+    model = _Copying(_script("<|/think|>", '{"name":"count","args":{"n":', '3}}<|/call|>'),
+                     choice=2, target="notes")
+    rec = _loop(model).run("please read notes.txt now").steps[0]
+    assert rec.action is not None and rec.action.args == {"n": 3} and rec.copied == 0

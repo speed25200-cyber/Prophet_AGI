@@ -73,6 +73,10 @@ des sources absentes en local — après `scripts/verify_datasets.py`, jamais av
 courir non décontaminé, et il faut l'écrire. Vérifié de bout en bout sur CPU avec un
 corpus minuscule : trois phases, checkpoint, reprise dans la phase en cours.
 
+`--quarantine q.json --tools tools.json` ajoute les épisodes agentiques **promus** à la
+phase de recuit comme source supplémentaire (poids 0.05 par défaut, normalisé par
+l'échantillonneur) : le chemin de [`08_AGENT.md`](08_AGENT.md) §4 bis, sans autre format.
+
 Une seule longueur de séquence sert toutes les phases : la croissance de contexte par
 phase du plan R06 est l'extension longue R02, non financée, et changer la forme du batch
 en cours de run changerait la mémoire contre laquelle le budget a été vérifié.

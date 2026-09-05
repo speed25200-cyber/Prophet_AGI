@@ -81,8 +81,8 @@ d'un agent qui accomplit. La synthèse et ce qui en est construit sont dans
 |---|---|---|
 | [A1 — Revue du code](A1_codebase_review.md) | 23 défauts, dont 7 silencieux : biais d'oubli remis à zéro par l'init, gradient de halte identique à toutes les positions, amortissement résiduel ×0.11 à l'exécution détruisant toute copie de donneur, `nope_layers` jamais lu, estimateur de paramètres 10 % trop bas. | Tous corrigés, chacun avec un test comportemental (`tests/test_review_fixes.py`). L'estimateur colle au modèle réel à 1e-4. Le chemin de données réel (B17) est construit : fichiers ou Hub, décontamination dans le flux, plafond d'époques au tirage, phases reprenables. |
 | [A2 — Compétence agentique](A2_agentic_competence.md) | Les échecs d'un agent à 1–4B sont l'**omission** et la **perte de contexte long**, pas la syntaxe ; compacter par résumé fait passer les violations de 0 % à 30–59 %. | Boucle à fil unique : préfixe épinglé, fenêtre d'observations verbatim, éviction sans réécriture, retour arrière O(1). |
-| [A3 — Action structurée](A3_structured_action.md) | La grammaire supprime le formatage (déjà rare) ; les têtes d'action (pointeur sur les ancres de schéma, copie de span) visent les vraies erreurs. | Grammaire préfixe et décodeur contraint construits ; têtes de sélection, de copie et porte construites derrière `heads.action_head`, cibles lues dans le flux, sélection utilisée au décodage. Copie au décodage : non construite. |
-| [A4 — Auto-vérification](A4_self_verification.md) | Une tête de confiance peut porter le *agir*, jamais le *retenir* ; un désaccord entre profondeurs est un signal gratuit à mesurer. | Tiers de vérification, quarantaine à provenance, promotion/révocation. AUROC du désaccord de profondeur : expérience A4-0 non lancée. |
+| [A3 — Action structurée](A3_structured_action.md) | La grammaire supprime le formatage (déjà rare) ; les têtes d'action (pointeur sur les ancres de schéma, copie de span) visent les vraies erreurs. | Grammaire préfixe et décodeur contraint construits ; têtes de sélection, de copie et porte construites derrière `heads.action_head`, cibles lues dans le flux, sélection et copie utilisées au décodage. |
+| [A4 — Auto-vérification](A4_self_verification.md) | Une tête de confiance peut porter le *agir*, jamais le *retenir* ; un désaccord entre profondeurs est un signal gratuit à mesurer. | Tiers de vérification, quarantaine à provenance, promotion/révocation, et le chemin des épisodes promus vers le corpus d'entraînement. AUROC du désaccord de profondeur : expérience A4-0 non lancée. |
 
 ### Ce que le branchement a trouvé, que les rapports n'avaient pas vu
 
@@ -145,3 +145,8 @@ faire la moyenne, `scripts/design_search.py` a énuméré l'espace de conception
   tâche de la semaine 1.
 - **La décision D10.** Zéro ou conversion de donneur. Ouverte, et elle appartient au
   porteur du projet.
+- **Le pilier agentique n'a pas de nombre.** Tout y est mécanique et testé — boucle,
+  têtes, quarantaine, chemin vers le corpus — et rien n'y est entraîné : la recette A2
+  (67 h) n'est pas financée, l'ablation des plafonds de profondeur par token (4 h) et la
+  sonde de désaccord de profondeur (1 h) non plus. Le premier chiffre agentique honnête
+  du projet viendra d'une de ces trois lignes du plan, ou d'aucune.

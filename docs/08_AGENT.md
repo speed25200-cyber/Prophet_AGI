@@ -125,10 +125,18 @@ choisi (ou aux seules actions réservées) ; la marge top-1 − top-2 est enregi
 comme signal d'ambiguïté. Le trainer refuse `action_head` sans tokenizer, puisque les
 cibles en dépendent.
 
-**Non construit :** le chemin de copie au décodage. Il exige que la grammaire expose un
-état « début de valeur » et le type attendu pour valider le span copié ; aujourd'hui
-`ActionGrammar.check` ne rend que viable/complet. Le chemin par slots fermés
-(`<|slot_i|>`, contexte −95 %) reste non construit : A3-4 décide s'il survit.
+**Copie au décodage — construite.** La grammaire rend désormais l'état « début de
+valeur » avec la clé et le type attendus. Dans un span d'action, chaque token nourri
+score aussi le pointeur de copie à sa propre position ; au début d'une valeur, si la porte
+dit *copier*, la boucle lit le span choisi (début, fin ≥ début) dans tout ce qui a été
+nourri, le rend dans le JSON que le schéma attend (chaîne, entier, nombre, booléen) et ne
+l'accepte que si la grammaire l'accepte — sinon elle génère. Une valeur copiée entre dans
+le cache comme si elle avait été générée et coûte un pas, pas douze. Vérifié : une chaîne
+copiée depuis le but remplit l'argument ; un span qui ne tient pas dans le type (un mot
+pour un entier) est refusé et la génération reprend.
+
+**Non construit :** le chemin par slots fermés (`<|slot_i|>`, contexte −95 %). A3-4
+décide s'il survit.
 
 ---
 
@@ -170,6 +178,29 @@ programme (3–8 h-A100 estimées) ; il tourne sur un prior déclaré comme tel 
 
 ---
 
+## 4 bis. La boucle fermée : de la quarantaine au corpus
+
+Le mur C ([`07_WALLS.md`](07_WALLS.md)) dit que l'apprentissage continu a besoin d'un
+troisième étage — la distillation de l'expérience vers les poids — et que le gradient ne
+le fournit pas seul. Pour un agent, cet étage a maintenant un chemin mécanique :
+
+```
+épisode ─► quarantaine (provenance, tiers) ─► promotion (vérité terrain immédiate,
+consensus après accord, appris jamais) ─► rendu en flux à ids de contrôle ─► source du
+chargeur (parse_special) ─► cibles des têtes d'action lues dans ce flux ─► entraînement
+```
+
+`prophet/agent/render.py` rend un épisode promu exactement comme la boucle l'aurait
+produit — but, schémas, pensée, appel ou `<|nocall|>`, observation — et l'expose comme
+source de documents ; les pas malformés sont omis (ils ne sont pas une décision à
+apprendre). Les trajectoires conservent la pensée et l'observation complète pour cela :
+un résumé ne se dé-résume pas. Rien ici n'élargit ce que la promotion a permis : une
+trajectoire rendue ne porte aucune provenance propre.
+
+Ce qui n'est **pas** résolu par ce chemin : la mesure qui distingue une compétence d'une
+mémoire (W3), et le coût en oubli d'un tel flux à 250M — les deux sont dans la recette A2,
+non financée.
+
 ## 5. Où un petit agent peut réellement gagner
 
 Pas sur SWE-bench ou GAIA en ensemble ouvert. Sur deux terrains :
@@ -199,6 +230,7 @@ Pas sur SWE-bench ou GAIA en ensemble ouvert. Sur deux terrains :
 | Règle de décision (exécution ≫ appris ≫ rien) | testée |
 | **Compétence** de l'agent | **non mesurée** — le modèle n'est pas entraîné |
 | AUROC du désaccord de profondeur comme prédicteur d'erreur | **non mesurée** — A4-0 |
-| Têtes d'action typées : sélection, copie, porte, cibles depuis le flux, sélection au décodage | **construites, non entraînées** |
-| Copie au décodage, scoreur entraîné, recette d'entraînement agentique (~67 h-A100, A2 §8) | **non construits** |
+| Têtes d'action typées : sélection, copie, porte, cibles depuis le flux, sélection et copie au décodage | **construites, non entraînées** |
+| Chemin quarantaine → corpus (rendu, source, cibles) | **construit, non exercé sur un vrai modèle** |
+| Scoreur entraîné, recette d'entraînement agentique (~67 h-A100, A2 §8), chemin par slots fermés | **non construits** |
 | Plafonds de profondeur par token (`recurrent.token_depth`) : mécanique exacte, entraînement câblé | **construit, non ablaté** |
