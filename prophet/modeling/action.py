@@ -271,11 +271,17 @@ def build_action_targets(ids: Tensor, tokenizer) -> ActionTargets:
                 jumped[r, first : last + 1] = False
                 value_start = first - 1  # the position whose state emits <|copy|> or not
                 literal = text[span[0] : span[1]]
-                # Last token-aligned verbatim occurrence strictly before the call.
+                # Last token-aligned verbatim occurrence strictly before the call. A
+                # word in prose is usually one token *with its leading space* (" anchor")
+                # while the same word in JSON is bare ("anchor"), so an occurrence may
+                # start at the space just before it; the decode path strips that space.
                 found = None
                 at = text.rfind(literal, 0, body_start)
                 while at >= 0:
-                    cs, ce = _token_at(spans, at), _token_at(spans, at + len(literal), end=True)
+                    ce = _token_at(spans, at + len(literal), end=True)
+                    cs = _token_at(spans, at)
+                    if cs is None and at > 0 and text[at - 1] == " ":
+                        cs = _token_at(spans, at - 1)
                     if cs is not None and ce is not None and ce < t:
                         found = (cs, ce)
                         break

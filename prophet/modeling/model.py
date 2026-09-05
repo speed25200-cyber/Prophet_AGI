@@ -366,7 +366,10 @@ class ProphetModel(nn.Module):
         # and score the copy pointer against the keys of one existing attention layer,
         # which is told to keep them.
         self.action = None
-        self._copy_layer: CausalSelfAttention | None = None
+        # Remembered as a location, not as a submodule: assigning the layer to an
+        # attribute would register it a second time and duplicate its parameters in
+        # every state dict.
+        self._copy_where: tuple[str, int] | None = None
         if cfg.heads.action_head:
             where = cfg.copy_pointer_layer()
             if where is None:
@@ -375,7 +378,7 @@ class ProphetModel(nn.Module):
             layer = self.sections[section][index].mixer
             assert isinstance(layer, CausalSelfAttention)
             layer.record_keys = True
-            self._copy_layer = layer
+            self._copy_where = where
             self.action = ActionHeads(
                 d, cfg.heads.action_dk, layer.head_dim, cfg.norm_eps, norm_kind=cfg.norm_kind
             )
@@ -783,6 +786,16 @@ class ProphetModel(nn.Module):
         return logits
 
     # -- convenience -------------------------------------------------------------------
+
+    @property
+    def _copy_layer(self) -> CausalSelfAttention | None:
+        """The attention layer whose keys the copy pointer scores."""
+        if self._copy_where is None:
+            return None
+        section, index = self._copy_where
+        layer = self.sections[section][index].mixer
+        assert isinstance(layer, CausalSelfAttention)
+        return layer
 
     @staticmethod
     def apply_router_updates(output: ProphetOutput) -> int:

@@ -293,6 +293,8 @@ class AgentLoop:
         if end < start or end >= len(self._ids):
             return None
         span = self.tok.decode(self._ids[start : end + 1])
+        if span.startswith(" "):
+            span = span[1:]  # a word's token carries its leading space; the value does not
         if not span or "\n" in span:
             return None
         if state.expected_type in (None, "string"):

@@ -392,3 +392,31 @@ def test_copy_is_refused_when_the_span_does_not_fit_the_schema():
                      choice=2, target="notes")
     rec = _loop(model).run("please read notes.txt now").steps[0]
     assert rec.action is not None and rec.action.args == {"n": 3} and rec.copied == 0
+
+
+def test_copy_layer_is_not_registered_twice():
+    model = ProphetModel(_cfg())
+    keys = list(model.state_dict())
+    assert not any(k.startswith("_copy_layer") for k in keys)
+    assert model._copy_layer is model.sections["coda"][1].mixer
+
+
+def test_a_space_prefixed_word_in_context_is_a_copy_target():
+    """"the word anchor?" tokenises as " anchor"; the JSON value is bare "anchor". The
+    occurrence must still count, starting at the space-carrying token."""
+    reg = ToolRegistry()
+    reg.add(ToolSchema("grep", "g", {"type": "object", "properties": {"word": {"type": "string"}}, "required": ["word"]}))
+    text = ("<|system|>Which file contains the word anchor? " + reg.render() + "<|assistant|>"
+            + '<|call|>{"name":"grep","args":{"word":"anchor"}}<|/call|>')
+    ids = TOK.encode(text, parse_special=True)
+    t = build_action_targets(torch.tensor([ids]), TOK)
+    assert t.counts["values"] == 1 and t.counts["copyable"] == 1
+    start, end = int(t.copy_start[0, 0]), int(t.copy_end[0, 0])
+    assert TOK.decode(ids[start : end + 1]) in ("anchor", " anchor")
+
+
+def test_copy_splice_strips_the_leading_space_of_a_word_token():
+    model = _Copying(_script("<|/think|>", '{"name":"read_file","args":{"path":', '}}<|/call|>'),
+                     choice=1, target=" notes.txt")
+    rec = _loop(model).run("please read notes.txt now").steps[0]
+    assert rec.action is not None and rec.action.args == {"path": "notes.txt"} and rec.copied == 1
