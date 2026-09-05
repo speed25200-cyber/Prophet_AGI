@@ -29,7 +29,7 @@ instead of 65,536.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
@@ -175,8 +175,43 @@ class ProductKeyMemory(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         """Read the ledger. Shape-preserving: ``(batch, seq, dim)`` in and out."""
+        return self.read(x)
+
+    # -- functional state: one ledger, many memories ------------------------------------
+    #
+    # The buffers are *the* memory of a deployed model. Training a layer that writes
+    # (``LedgerAttention``) needs something else: a transient memory per sequence that
+    # starts empty and dies with the batch, or one document's evicted keys would be read
+    # by the next document and by its batch neighbours. ``read``/``write_state`` take
+    # that memory explicitly as ``(rows, n_slots, dim)`` tensors; the buffer path is the
+    # single-row case on a view of the buffers, so both paths run the same arithmetic.
+
+    def new_state(self, rows: int, *, device=None, dtype=None) -> tuple[Tensor, Tensor]:
+        """Empty per-row memories: ``(values (rows, n_slots, dim), counts (rows, n_slots))``."""
+        device = device or self.values.device
+        dtype = dtype or self.values.dtype
+        return (
+            torch.zeros(rows, self.cfg.n_slots, self.cfg.dim, device=device, dtype=dtype),
+            torch.zeros(rows, self.cfg.n_slots, device=device, dtype=self.write_counts.dtype),
+        )
+
+    def _rows_for(self, x: Tensor, values: Tensor) -> Tensor:
+        """Row index of every token of ``x`` into a ``(rows, n_slots, dim)`` memory."""
+        n = x.reshape(-1, self.cfg.dim).shape[0]
+        if values.shape[0] == 1:
+            return torch.zeros(n, dtype=torch.long, device=x.device)
+        per_row = n // values.shape[0]
+        return torch.arange(values.shape[0], device=x.device).repeat_interleave(per_row)
+
+    def read(self, x: Tensor, *, values: Tensor | None = None) -> Tensor:
+        """Read from the buffers, or from an explicit ``(rows, n_slots, dim)`` memory
+        whose row ``r`` serves the ``r``-th slice of ``x``'s leading dimension."""
+        cfg = self.cfg
+        mem = self.values.unsqueeze(0) if values is None else values
         indices, weights = self.address(x)
-        gathered = self.values[indices]  # (tokens, heads*top_k, dim)
+        rows = self._rows_for(x, mem)
+        flat_slot = indices + rows.unsqueeze(1) * cfg.n_slots
+        gathered = mem.reshape(-1, cfg.dim)[flat_slot]  # (tokens, heads*top_k, dim)
         out = (gathered * weights.unsqueeze(-1)).sum(1)
         # Heads are averaged rather than summed so the read magnitude is independent of
         # head count, which keeps the write step size comparable across configurations.
@@ -194,19 +229,38 @@ class ProductKeyMemory(nn.Module):
         why this can run on a device rather than only in a training job.
         """
         cfg = self.cfg
+        flat_x = x.reshape(-1, cfg.dim)
+        if cfg.max_writes is not None and int(self.tokens_written.item()) >= cfg.max_writes:
+            indices, weights = self.address(flat_x)
+            current = (self.values[indices] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
+            before = (current - target.reshape(-1, cfg.dim)).norm(dim=-1).mean().item()
+            return WriteStats(0, 0.0, 0.0, before, before, accepted=False)
+        self.tokens_written += flat_x.shape[0]
+        return self.write_state(
+            self.values.unsqueeze(0), self.write_counts.unsqueeze(0), x, target, lr=lr
+        )
+
+    @torch.no_grad()
+    def write_state(
+        self, values: Tensor, counts: Tensor, x: Tensor, target: Tensor, *, lr: float | None = None
+    ) -> WriteStats:
+        """The write rule on an explicit memory (``values`` ``(rows, n_slots, dim)``,
+        ``counts`` ``(rows, n_slots)``), updated in place. Row ``r`` of the memory takes
+        the ``r``-th slice of ``x``'s leading dimension. The buffers are the one-row case."""
+        cfg = self.cfg
         lr = cfg.write_lr if lr is None else lr
 
         flat_x = x.reshape(-1, cfg.dim)
         flat_t = target.reshape(-1, cfg.dim)
         indices, weights = self.address(flat_x)
+        rows = self._rows_for(flat_x, values)
+        flat_slot = indices + rows.unsqueeze(1) * cfg.n_slots      # (t, h*k) into rows*slots
+        vflat = values.view(-1, cfg.dim)
+        cflat = counts.view(-1)
 
-        current = (self.values[indices] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
+        current = (vflat[flat_slot] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
         residual = current - flat_t                      # (tokens, dim)
         residual_before = residual.norm(dim=-1).mean().item()
-
-        if cfg.max_writes is not None and int(self.tokens_written.item()) >= cfg.max_writes:
-            return WriteStats(0, 0.0, 0.0, residual_before, residual_before, accepted=False)
-        self.tokens_written += flat_x.shape[0]
 
         # The read is ``sum_i a_i V[i]`` with ``a_i = w_i / n_heads``, so moving the
         # output by ``-residual`` is an underdetermined linear system. Its minimum-norm
@@ -221,8 +275,8 @@ class ProductKeyMemory(nn.Module):
 
         # EWC-lite: slots written often move less. Without this, the slots that carry the
         # most agreed-upon knowledge are exactly the ones every new session churns.
-        counts = self.write_counts[indices].unsqueeze(-1)
-        update = update / (1.0 + cfg.ewc_lambda * counts.sqrt())
+        seen = cflat[flat_slot].unsqueeze(-1)
+        update = update / (1.0 + cfg.ewc_lambda * seen.sqrt())
 
         # Trust region, per slot. One surprising example must not overwrite a slot that
         # thousands of earlier ones agreed on.
@@ -232,15 +286,13 @@ class ProductKeyMemory(nn.Module):
         update = update * scale
 
         if cfg.decay < 1.0:
-            self.values.mul_(cfg.decay)
+            vflat.mul_(cfg.decay)
 
-        flat_idx = indices.reshape(-1)
-        self.values.index_add_(0, flat_idx, update.reshape(-1, cfg.dim).to(self.values.dtype))
-        self.write_counts.index_add_(
-            0, flat_idx, torch.ones_like(flat_idx, dtype=self.write_counts.dtype)
-        )
+        flat_idx = flat_slot.reshape(-1)
+        vflat.index_add_(0, flat_idx, update.reshape(-1, cfg.dim).to(vflat.dtype))
+        cflat.index_add_(0, flat_idx, torch.ones_like(flat_idx, dtype=cflat.dtype))
 
-        after = (self.values[indices] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
+        after = (vflat[flat_slot] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
         residual_after = (after - flat_t).norm(dim=-1).mean().item()
 
         return WriteStats(

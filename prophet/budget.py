@@ -251,6 +251,8 @@ def count_parameters(cfg: ProphetConfig, loop_k: int | None = None) -> ParamBrea
     trunk_active = 0
     for i, (_section, _idx, kind) in enumerate(cfg.section_layout()):
         mixer = 0 if kind == "identity" else (lin_p if kind in ("gdn", "mamba2") else attn_p)
+        if kind == "full_attn" and cfg.mixer.global_memory == "ledger":
+            mixer += cfg.mixer.n_heads  # the per-head recall gate; the ledger itself is buffers
         out.add(f"mixer/{kind}", mixer)
         ff_res, ff_act = _ffn_params(cfg, cfg.layer_is_moe(i))
         out.add("ffn/moe" if cfg.layer_is_moe(i) else "ffn/dense", ff_res)
@@ -435,7 +437,14 @@ def _kv_bytes_per_token(cfg: ProphetConfig, kv_dtype: str, context_len: int) -> 
     # holds a fixed-size state, and counting it as attention would make the cache
     # appear to grow with context where it does not.
     for _section, _idx, kind in cfg.section_layout():
-        if kind == "full_attn":
+        if kind == "full_attn" and m.global_memory == "ledger":
+            # Exact inside the window, then a fixed ledger: constant beyond the window,
+            # amortised over the context like a windowed layer plus the ledger's rows.
+            per_tok = 2 * m.n_kv_heads * hd * b
+            ledger_bytes = m.global_ledger_slots * (m.n_kv_heads * hd * b + 4)
+            total += per_tok * min(1.0, m.global_window / max(context_len, 1))
+            total += ledger_bytes / max(context_len, 1)
+        elif kind == "full_attn":
             if m.kv_compression == "mla":
                 total += m.kv_lora_rank * b
             else:

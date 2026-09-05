@@ -173,8 +173,10 @@ def _batches(tokenizer: ProphetTokenizer, docs: list[str], *, seq_len: int, batc
         yield torch.tensor(full, dtype=torch.long), full_bytes
 
 
-def evaluate(work: Path, *, seq_len: int, max_docs: int) -> dict:
-    cfg = ProphetConfig.from_json(CONFIG)
+def evaluate(work: Path, *, seq_len: int, max_docs: int, config: str | Path = CONFIG,
+             run_dir: Path | None = None) -> dict:
+    run_dir = run_dir or work
+    cfg = ProphetConfig.from_json(config)
     tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
     heldout = [json.loads(l)["text"] for l in (work / "benchmarks" / "heldout.jsonl").read_text().splitlines() if l.strip()]
     heldout = heldout[:max_docs]
@@ -182,7 +184,7 @@ def evaluate(work: Path, *, seq_len: int, max_docs: int) -> dict:
     fresh = ProphetModel(cfg).eval()
     with torch.no_grad():
         untrained = evaluate_bpb(fresh, _batches(tokenizer, heldout, seq_len=seq_len, batch_size=8))
-    ckpt = CheckpointManager(work / "checkpoints")
+    ckpt = CheckpointManager(run_dir / "checkpoints")
     state, meta = ckpt.load_latest()
     trained = ProphetModel(cfg).eval()
     trained.load_state_dict(state["model"])
@@ -201,7 +203,7 @@ def evaluate(work: Path, *, seq_len: int, max_docs: int) -> dict:
         "nats_per_token_untrained": untrained.nats_per_token,
         "nats_per_token_trained": after.nats_per_token,
     }
-    (work / "report.json").write_text(json.dumps(report, indent=2))
+    (run_dir / "report.json").write_text(json.dumps(report, indent=2))
     return report
 
 
@@ -230,9 +232,15 @@ def main() -> int:
     ap.add_argument("--max-prose", type=int, default=20_000)
     ap.add_argument("--max-code", type=int, default=3_000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--config", default=str(CONFIG),
+                    help="model config; a variant run shares the corpus and tokenizer")
+    ap.add_argument("--tag", default="",
+                    help="name of a variant run: checkpoints and report go under runs/<tag>/")
     args = ap.parse_args()
     work = Path(args.work)
     work.mkdir(parents=True, exist_ok=True)
+    run_dir = work / "runs" / args.tag if args.tag else work
+    run_dir.mkdir(parents=True, exist_ok=True)
     stages = ["corpus", "tokenizer", "train", "eval"] if args.stage == "all" else [args.stage]
     started = time.time()
 
@@ -244,20 +252,20 @@ def main() -> int:
               "--out", work / "tokenizer.json", "--vocab-size", args.vocab_size, "--max-docs", 3000])
     if "train" in stages:
         common = [
-            sys.executable, ROOT / "scripts" / "train.py", "--config", CONFIG,
+            sys.executable, ROOT / "scripts" / "train.py", "--config", args.config,
             "--tokenizer", work / "tokenizer.json", "--data-root", work / "corpus",
             "--benchmarks", work / "benchmarks", "--mixture", work / "mixture.yaml",
             "--tokens", args.tokens, "--batch-size", args.batch_size, "--seq-len", args.seq_len,
-            "--checkpoint-dir", work / "checkpoints", "--checkpoint-every", 100, "--log-every", 20,
+            "--checkpoint-dir", run_dir / "checkpoints", "--checkpoint-every", 100, "--log-every", 20,
             "--device", "cpu", "--allow-slow-scan", "--seed", args.seed,
         ]
         _run(common + ["--session-minutes", args.minutes])
         # Prove the resume: a second launch continues the same run and the same stream.
         _run(common + ["--session-minutes", args.resume_minutes])
     if "eval" in stages:
-        report = evaluate(work, seq_len=args.seq_len, max_docs=400)
+        report = evaluate(work, seq_len=args.seq_len, max_docs=400, config=args.config, run_dir=run_dir)
         report["wall_minutes_this_invocation"] = (time.time() - started) / 60
-        (work / "report.json").write_text(json.dumps(report, indent=2))
+        (run_dir / "report.json").write_text(json.dumps(report, indent=2))
         print("\n| Quantité | Valeur |\n|---|---:|")
         for key, value in report.items():
             print(f"| {key} | {value:.4f} |" if isinstance(value, float) else f"| {key} | {value} |")

@@ -9,6 +9,8 @@ transformer — so that every ablation measures a delta against something known.
 
 from __future__ import annotations
 
+import math
+
 import json
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
@@ -104,6 +106,23 @@ class MixerConfig:
     attention_sink_tokens: int = 4
     """Always-attended prefix tokens; prevents the softmax-sink collapse that breaks
     windowed attention at long context."""
+    global_memory: Literal["none", "ledger"] = "none"
+    """What a full-attention layer keeps of the context beyond ``global_window``.
+
+    ``"none"``: everything -- exact recall, a KV cache linear in context. ``"ledger"``:
+    the layer attends inside the window and writes every evicted key/value pair into a
+    bounded product-key ledger it reads back through a per-head gate (the design of
+    ``prophet.memory.ledger``, mounted on attention). Memory per token is then constant
+    in context length: the number that makes "infinite context" a statement rather than
+    a wish. Recall beyond the window is associative, not exact, and the ablation that
+    prices that is in ``prophet.plan``."""
+    global_window: int = 4096
+    """Exact-attention window of a ledger-backed global layer."""
+    global_ledger_slots: int = 16384
+    """Slots per ledger-backed layer (a perfect square). At 16k slots and a 512-wide
+    KV row, one layer's memory is 8 MB in bf16 whatever the context."""
+    global_ledger_top_k: int = 32
+    global_ledger_heads: int = 1
     kv_compression: Literal["none", "mla"] = "none"
     kv_lora_rank: int = 512
     """Latent dimension when ``kv_compression == "mla"``."""
@@ -602,6 +621,26 @@ class ProphetConfig:
                     )
                 if not self.memory.layers:
                     errors.append("memory.mount='coda' needs at least one index in layers")
+
+        if self.mixer.global_memory == "ledger":
+            m = self.mixer
+            side = math.isqrt(m.global_ledger_slots)
+            if side * side != m.global_ledger_slots:
+                errors.append(f"mixer.global_ledger_slots ({m.global_ledger_slots}) must be a perfect square")
+            if not 1 <= m.global_ledger_top_k <= m.global_ledger_slots:
+                errors.append("mixer.global_ledger_top_k must lie in [1, global_ledger_slots]")
+            if m.global_window < 1 or m.global_ledger_heads < 1:
+                errors.append("mixer.global_window and global_ledger_heads must be >= 1")
+            for section, index, kind in self.section_layout():
+                if kind == "full_attn" and self.layer_uses_rope(index, section):
+                    errors.append(
+                        f"mixer.global_memory='ledger' needs NoPE global layers: {section}[{index}] "
+                        "applies RoPE, and a rotated key written to the ledger would be "
+                        "addressed by a query rotated to a different position"
+                    )
+                    break
+            if not any(kind == "full_attn" for _, _, kind in self.section_layout()):
+                errors.append("mixer.global_memory='ledger' needs at least one full_attn layer")
 
         if self.heads.action_head:
             if not 0 <= self.heads.action_kv_head < self.mixer.n_kv_heads:

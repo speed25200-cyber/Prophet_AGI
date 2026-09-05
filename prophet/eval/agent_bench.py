@@ -169,26 +169,32 @@ class BenchReport:
 def run_bench(
     model: Any,
     tokenizer: Any,
-    tasks: Sequence[FileTask],
+    tasks: Sequence[Any],
     cfg: AgentConfig,
     *,
     quarantine: Any | None = None,
     carry_session: bool = False,
     scorer: Any | None = None,
     make_loop: Callable[..., AgentLoop] | None = None,
+    tools_for: Callable[[Any], ToolRegistry] | None = None,
+    verifier_for_task: Callable[[Any], Callable[[AgentState], bool]] | None = None,
 ) -> BenchReport:
     """Run every task once, in order, and report.
 
     ``carry_session`` passes each episode's recurrent state to the next -- the R03 bet
     applied to the agent -- which is the one thing that can bend the curve on a frozen
     model. ``quarantine`` collects the episodes for promotion and later consolidation.
+    ``tools_for`` / ``verifier_for_task`` select the task family (default: the file
+    family above; ``prophet.agent.tasks`` provides the others).
     """
+    tools_for = tools_for or file_tools
+    verifier_for_task = verifier_for_task or verifier_for
     report = BenchReport()
     session = None
     for task in tasks:
-        tools = file_tools(task)
+        tools = tools_for(task)
         loop = (make_loop or AgentLoop)(
-            model, tokenizer, tools, cfg, quarantine=quarantine, verifier_tool=verifier_for(task),
+            model, tokenizer, tools, cfg, quarantine=quarantine, verifier_tool=verifier_for_task(task),
             scorer=scorer,
         )
         result: EpisodeResult = loop.run(task.goal, session=session if carry_session else None)

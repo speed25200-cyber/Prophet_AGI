@@ -24,6 +24,7 @@ from torch import Tensor, nn
 
 __all__ = [
     "make_norm",
+    "LedgerAttention",
     "RMSNorm",
     "RotaryEmbedding",
     "apply_rotary",
@@ -229,6 +230,18 @@ class AttentionCache:
         self.seen += s
         return self.keys, self.values, self.positions
 
+    def evictable(self) -> tuple[Tensor, Tensor] | None:
+        """The keys and values :meth:`evict` is about to drop (oldest first, sinks kept),
+        each ``(batch, kv_heads, m, head_dim)``; ``None`` when nothing would be dropped."""
+        if self.window is None or self.keys is None:
+            return None
+        limit = self.window + self.sink_tokens
+        length = self.keys.shape[2]
+        if length <= limit:
+            return None
+        drop = torch.arange(self.sink_tokens, length - self.window, device=self.keys.device)
+        return self.keys.index_select(2, drop), self.values.index_select(2, drop)
+
     def evict(self) -> None:
         """Trim to the window plus the sinks. A no-op for full attention."""
         if self.window is None or self.keys is None:
@@ -403,6 +416,171 @@ class CausalSelfAttention(nn.Module):
                 in_window = in_window | (k < self.sink_tokens)
             mask = mask & in_window
         return mask.unsqueeze(0).unsqueeze(0)
+
+class LedgerAttention(CausalSelfAttention):
+    """Windowed attention whose evicted keys and values live on in a bounded ledger.
+
+    The full-attention layers are the one place the hybrid stack's memory grows with
+    context. This layer keeps their exact recall inside ``window`` and, instead of
+    dropping what falls out of it, writes each evicted ``(key, value)`` pair into a
+    product-key ledger addressed by the key (``prophet.memory.ledger``: frozen
+    addressing, closed-form write, trust region). Every query then reads the ledger by
+    its own key-space address and adds the recalled value through a per-head gate:
+
+        out_h = attention_in_window_h + sigmoid(g_h) * ledger(q_h)
+
+    An empty ledger reads as zero, so before anything is evicted the layer *is* a
+    sliding-window layer. Memory is the window plus ``n_slots`` rows, whatever the
+    context length; recall beyond the window is associative (a bounded number of slots,
+    softly addressed), which is the price of the bound and what the ablation measures.
+
+    Training has no cache, so the layer keeps one transient memory per sequence: the
+    sequence is walked in blocks of ``window``; block ``j`` reads what blocks ``<= j-1``
+    wrote, and blocks are written after they are read. That is a slightly smaller
+    memory than decode sees (where every key older than the window has been written),
+    so a trained layer meets at least as much memory at inference as it was trained
+    with, never less. The written tensors carry no gradient; the read does, through the
+    addressing softmax, which is how the query projection learns to ask.
+
+    Requires NoPE: a key rotated to its position could only be found by a query rotated
+    to the same position, and a ledger has no positions.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        *,
+        n_heads: int,
+        n_kv_heads: int,
+        head_dim: int | None = None,
+        qk_norm: bool = True,
+        window: int = 4096,
+        sink_tokens: int = 0,
+        norm_eps: float = 1e-5,
+        bias: bool = False,
+        ledger_slots: int = 16384,
+        ledger_top_k: int = 32,
+        ledger_heads: int = 1,
+        ledger_memory_dim: int = 256,
+    ) -> None:
+        super().__init__(
+            dim, n_heads=n_heads, n_kv_heads=n_kv_heads, head_dim=head_dim, qk_norm=qk_norm,
+            window=window, sink_tokens=sink_tokens, norm_eps=norm_eps, bias=bias, use_rope=False,
+        )
+        from prophet.memory.ledger import LedgerConfig, ProductKeyMemory  # local: no import cycle
+
+        kv_dim = n_kv_heads * self.head_dim
+        memory_dim = min(ledger_memory_dim, kv_dim)
+        memory_dim -= memory_dim % 2
+        self.ledger = ProductKeyMemory(LedgerConfig(
+            dim=kv_dim, memory_dim=memory_dim, n_slots=ledger_slots, top_k=ledger_top_k,
+            n_heads=ledger_heads,
+        ))
+        self.gate = nn.Parameter(torch.zeros(n_heads))
+        """Per query head: how much of the recalled value enters. Zero logit = half; the
+        empty ledger makes the initial value irrelevant."""
+
+    # -- helpers -----------------------------------------------------------------------
+
+    def _kv_query(self, q: Tensor) -> Tensor:
+        """Queries in key space: ``(b, heads, s, hd)`` -> ``(b, s, kv_heads*hd)``, each KV
+        head's query being the mean of the query heads that share it."""
+        b, _, s, hd = q.shape
+        grouped = q.view(b, self.n_kv_heads, self.n_rep, s, hd).mean(2)  # (b, kv, s, hd)
+        return grouped.permute(0, 2, 1, 3).reshape(b, s, self.n_kv_heads * hd)
+
+    def _flat_kv(self, t: Tensor) -> Tensor:
+        """``(b, kv_heads, m, hd)`` -> ``(b, m, kv_heads*hd)``."""
+        b, kv, m, hd = t.shape
+        return t.permute(0, 2, 1, 3).reshape(b, m, kv * hd)
+
+    def _mix(self, out: Tensor, read: Tensor) -> Tensor:
+        """Add the gated recall to the attention output (both ``(b, heads, s, hd)`` after
+        the read is spread over the query heads sharing each KV head)."""
+        b, s, _ = read.shape
+        read_h = read.view(b, s, self.n_kv_heads, self.head_dim).permute(0, 2, 1, 3)
+        read_h = read_h.repeat_interleave(self.n_rep, dim=1)
+        return out + torch.sigmoid(self.gate).view(1, -1, 1, 1) * read_h
+
+    # -- forward -----------------------------------------------------------------------
+
+    def forward(
+        self,
+        x: Tensor,
+        *,
+        cos: Tensor | None = None,
+        sin: Tensor | None = None,
+        cache: AttentionCache | None = None,
+    ) -> Tensor:
+        b, s, _ = x.shape
+        q = self.q_proj(x).view(b, s, self.n_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x).view(b, s, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).view(b, s, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        if self.q_norm is not None:
+            q = self.q_norm(q)
+            k = self.k_norm(k)
+        # NoPE by construction: cos/sin are ignored.
+
+        if cache is not None:
+            if b != 1:
+                raise ValueError(
+                    "LedgerAttention with a cache serves one sequence at a time: the "
+                    "ledger buffers are the memory of one conversation, not of a batch"
+                )
+            cache.window = self.window
+            cache.sink_tokens = self.sink_tokens
+            q_pos = torch.arange(cache.seen, cache.seen + s, device=x.device)
+            keys, values, k_pos = cache.append(k, v)
+        else:
+            keys, values = k, v
+            q_pos = torch.arange(s, device=x.device)
+            k_pos = q_pos
+
+        if self.record_keys:
+            self.last_keys, self.last_key_positions = keys, k_pos
+
+        if self.n_rep > 1:
+            keys = keys.repeat_interleave(self.n_rep, dim=1)
+            values = values.repeat_interleave(self.n_rep, dim=1)
+        out = F.scaled_dot_product_attention(
+            q, keys, values, attn_mask=self._position_mask(q_pos, k_pos), is_causal=False,
+            scale=self.scale,
+        )
+
+        q_kv = self._kv_query(q)                                   # (b, s, kv_dim)
+        if cache is not None:
+            # Reads see everything evicted before this chunk; then this chunk's
+            # evictions are written, so the next chunk sees them.
+            read = self.ledger.read(q_kv)
+            pending = cache.evictable()
+            if pending is not None:
+                ek, ev = pending
+                self.ledger.write(self._flat_kv(ek.detach()), self._flat_kv(ev.detach()))
+            cache.evict()
+        else:
+            read = self._blockwise_read(q_kv, k, v)
+        return self.o_proj(self._mix(out, read).transpose(1, 2).reshape(b, s, -1))
+
+    def _blockwise_read(self, q_kv: Tensor, k: Tensor, v: Tensor) -> Tensor:
+        """Cache-free path: a transient memory per row, read block by block, written
+        one block behind the read."""
+        b, s, _ = q_kv.shape
+        w = self.window or s
+        if s <= w:
+            return torch.zeros_like(q_kv)  # nothing evicted yet: exactly a windowed layer
+        values, counts = self.ledger.new_state(b, device=q_kv.device, dtype=q_kv.dtype)
+        k_flat, v_flat = self._flat_kv(k.detach()), self._flat_kv(v.detach())
+        reads = []
+        previous: tuple[int, int] | None = None
+        for start in range(0, s, w):
+            end = min(start + w, s)
+            reads.append(self.ledger.read(q_kv[:, start:end], values=values))
+            if previous is not None:
+                a, e = previous
+                self.ledger.write_state(values, counts, k_flat[:, a:e], v_flat[:, a:e])
+            previous = (start, end)
+        return torch.cat(reads, dim=1)
+
 
 
 # --------------------------------------------------------------------------------------
@@ -692,6 +870,20 @@ def build_mixer(
     m = cfg.mixer
     if kind == "identity":
         return None
+    if kind == "full_attn" and m.global_memory == "ledger":
+        return LedgerAttention(
+            cfg.d_model,
+            n_heads=m.n_heads,
+            n_kv_heads=m.n_kv_heads,
+            head_dim=cfg.head_dim,
+            qk_norm=m.qk_norm,
+            window=m.global_window,
+            sink_tokens=m.attention_sink_tokens,
+            norm_eps=cfg.norm_eps,
+            ledger_slots=m.global_ledger_slots,
+            ledger_top_k=m.global_ledger_top_k,
+            ledger_heads=m.global_ledger_heads,
+        )
     if kind in ("full_attn", "swa"):
         return CausalSelfAttention(
             cfg.d_model,
