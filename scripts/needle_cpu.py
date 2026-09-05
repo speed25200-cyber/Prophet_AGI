@@ -65,8 +65,13 @@ VOCAB = 256
 
 
 def make_example(rng: random.Random, *, n_pairs: int, max_gap: int, window: int | None = None,
-                 inside_fraction: float = -1.0, form: str = "plain") -> tuple[list[int], int, int]:
-    """Returns (ids, answer position, distance from the asked pair to the question).
+                 inside_fraction: float = -1.0, form: str = "plain",
+                 n_ask: int = 1) -> tuple[list[int], list[int], list[int]]:
+    """Returns (ids, answer positions, distances from each asked pair to its question).
+
+    ``n_ask`` keys are asked one after another at the end (each answer then sits in
+    the context of the next question): ``n_ask`` supervised positions per sequence
+    instead of one, the same mechanism to learn.
 
     ``form="plain"`` lists ``k v |`` and asks ``k``: the value is predicted at the key
     itself, one hop (an induction head). ``form="eq"`` is the first protocol, ``k = v |``
@@ -77,7 +82,8 @@ def make_example(rng: random.Random, *, n_pairs: int, max_gap: int, window: int 
     """
     keys = rng.sample(range(N_KEYS), n_pairs)
     vals = [rng.randrange(N_VALUES) for _ in keys]
-    asked = rng.randrange(n_pairs)
+    order = rng.sample(range(n_pairs), min(n_ask, n_pairs))
+    asked = order[0]
     ids: list[int] = []
     pair_pos = []
     for k, v in zip(keys, vals, strict=True):
@@ -95,32 +101,43 @@ def make_example(rng: random.Random, *, n_pairs: int, max_gap: int, window: int 
     else:
         gap = rng.randrange(0, max_gap + 1)
     ids += [FILL0 + rng.randrange(8) for _ in range(gap)]
-    ids += question
-    answer_pos = len(ids)  # the model predicts the value at this position
-    ids.append(VAL0 + vals[asked])
-    distance = answer_pos - pair_pos[asked]
-    return ids, answer_pos, distance
+    positions, distances = [], []
+    for asked in order:
+        ids += [KEY0 + keys[asked], EQ] if form == "eq" else [KEY0 + keys[asked]]
+        positions.append(len(ids))  # the model predicts the value at this position
+        distances.append(len(ids) - pair_pos[asked])
+        ids.append(VAL0 + vals[asked])
+    return ids, positions, distances
 
 
 def batch(rng: random.Random, *, n: int, n_pairs: int, max_gap: int, length: int, window: int | None = None,
-          inside_fraction: float = -1.0, form: str = "plain"):
+          inside_fraction: float = -1.0, form: str = "plain", n_ask: int = 1):
+    """``targets``, ``positions`` and ``distances`` are ``(n, n_ask)``."""
     rows, targets, positions, distances = [], [], [], []
     for _ in range(n):
         ids, pos, dist = make_example(rng, n_pairs=n_pairs, max_gap=max_gap, window=window,
-                                      inside_fraction=inside_fraction, form=form)
-        ids = ids[:length] + [0] * (length - len(ids))
+                                      inside_fraction=inside_fraction, form=form, n_ask=n_ask)
+        if len(ids) > length:
+            raise ValueError(f"sequence of {len(ids)} tokens exceeds --length {length}")
+        ids = ids + [0] * (length - len(ids))
         rows.append(ids)
-        targets.append(ids[pos])
-        positions.append(pos - 1)  # logits at pos-1 predict the token at pos
+        targets.append([ids[p] for p in pos])
+        positions.append([p - 1 for p in pos])  # logits at pos-1 predict the token at pos
         distances.append(dist)
     return (
         torch.tensor(rows), torch.tensor(targets), torch.tensor(positions), torch.tensor(distances),
     )
 
 
-def config(arm: str, *, window: int, slots: int, length: int) -> ProphetConfig:
+def config(arm: str, *, window: int, slots: int, length: int, qk_norm: bool = False) -> ProphetConfig:
     """``full``: exact global attention (window = the whole sequence); ``none``: the
-    global layer windowed; ``ledger``: windowed plus the ledger."""
+    global layer windowed; ``ledger``: windowed plus the ledger.
+
+    ``qk_norm`` is off by default here: with normalised queries and keys the attention
+    logit is bounded by sqrt(head_dim) times the learned gains -- 4 at head_dim 16 --
+    so one key among 160 can take at most e^4 / (e^4 + 159) = 26% of the mass. That
+    is the plateau the first three protocols hit (24-25% with full attention).
+    """
     memory = "ledger" if arm in ("ledger", "closed") else "none"
     global_window = length if arm == "full" else window
     # "none": the global layer becomes a plain sliding-window layer (same window as the
@@ -130,7 +147,7 @@ def config(arm: str, *, window: int, slots: int, length: int) -> ProphetConfig:
         name=f"needle-{arm}", d_model=64, n_layers=4, max_seq_len=1024,
         frontend=FrontendConfig(vocab_size=VOCAB, tie_word_embeddings=True),
         mixer=MixerConfig(
-            pattern=pattern, n_heads=4, n_kv_heads=2, sliding_window=global_window,
+            pattern=pattern, n_heads=4, n_kv_heads=2, sliding_window=global_window, qk_norm=qk_norm,
             attention_sink_tokens=1, nope_layers=(1,), global_memory=memory,
             global_window=global_window, global_ledger_slots=slots, global_ledger_top_k=8,
             linear_heads=2, linear_head_dim=16,
@@ -144,16 +161,17 @@ def config(arm: str, *, window: int, slots: int, length: int) -> ProphetConfig:
 
 
 def accuracy_by_distance(model, rng, *, n: int, n_pairs: int, max_gap: int, length: int, window: int,
-                         inside_fraction: float = -1.0, form: str = "plain") -> dict:
+                         inside_fraction: float = -1.0, form: str = "plain", n_ask: int = 1) -> dict:
     model.eval()
     buckets: dict[str, list[int]] = {}
     with torch.no_grad():
         for _ in range(n // 32):
             ids, targets, positions, distances = batch(rng, n=32, n_pairs=n_pairs, max_gap=max_gap, length=length,
-                                                       window=window, inside_fraction=inside_fraction, form=form)
+                                                       window=window, inside_fraction=inside_fraction, form=form,
+                                                       n_ask=n_ask)
             logits = model(ids, loop_k=1).logits
-            pred = logits[torch.arange(32), positions].argmax(-1)
-            for ok, d in zip((pred == targets).tolist(), distances.tolist(), strict=True):
+            pred = logits[torch.arange(32).unsqueeze(1), positions].argmax(-1)  # (32, n_ask)
+            for ok, d in zip((pred == targets).flatten().tolist(), distances.flatten().tolist(), strict=True):
                 key = "inside" if d <= window else ("1-2x" if d <= 2 * window else ">2x")
                 buckets.setdefault(key, []).append(int(ok))
     return {k: (sum(v) / len(v), len(v)) for k, v in sorted(buckets.items())}
@@ -169,9 +187,10 @@ def lr_at(step: int, *, steps: int, peak: float, warmup: int) -> float:
 
 def train(memory: str, *, window: int, slots: int, steps: int, minutes: float, seed: int, length: int,
           n_pairs: int, max_gap: int, log, lr: float = 1e-3, warmup: int = 100,
-          inside_fraction: float = -1.0, form: str = "plain") -> tuple[ProphetModel, dict]:
+          inside_fraction: float = -1.0, form: str = "plain", n_ask: int = 1,
+          qk_norm: bool = False) -> tuple[ProphetModel, dict]:
     torch.manual_seed(seed)
-    cfg = config(memory, window=window, slots=slots, length=length)
+    cfg = config(memory, window=window, slots=slots, length=length, qk_norm=qk_norm)
     cfg.validate()
     model = ProphetModel(cfg).train()
     if memory == "closed":
@@ -188,10 +207,10 @@ def train(memory: str, *, window: int, slots: int, steps: int, minutes: float, s
     losses = []
     for step in range(steps):
         ids, targets, positions, _ = batch(rng, n=32, n_pairs=n_pairs, max_gap=max_gap, length=length,
-                                           window=window, inside_fraction=inside_fraction, form=form)
+                                           window=window, inside_fraction=inside_fraction, form=form, n_ask=n_ask)
         logits = model(ids, loop_k=1).logits
-        picked = logits[torch.arange(32), positions]
-        loss = torch.nn.functional.cross_entropy(picked.float(), targets)
+        picked = logits[torch.arange(32).unsqueeze(1), positions]  # (32, n_ask, vocab)
+        loss = torch.nn.functional.cross_entropy(picked.float().flatten(0, 1), targets.flatten())
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -227,7 +246,11 @@ def main() -> int:
                     help="share of examples with the asked pair inside the window (negative: uniform gap)")
     ap.add_argument("--form", choices=["plain", "eq"], default="plain",
                     help="'plain': k v | ... k -> v (one hop); 'eq': k = v | ... k = -> v (two hops)")
+    ap.add_argument("--questions", type=int, default=None,
+                    help="keys asked at the end of each sequence (default: all the pairs)")
+    ap.add_argument("--qk-norm", action="store_true", help="normalise queries and keys (bounds the logit)")
     args = ap.parse_args()
+    n_ask = args.pairs if args.questions is None else args.questions
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -236,14 +259,15 @@ def main() -> int:
 
     report: dict = {"window": args.window, "slots": args.slots, "pairs": args.pairs, "max_gap": args.max_gap,
                     "lr": args.lr, "warmup": args.warmup, "inside_fraction": args.inside_fraction, "form": args.form,
-                    "steps": args.steps}
+                    "steps": args.steps, "questions": n_ask, "qk_norm": args.qk_norm}
     for memory in [a for a in args.arms.split(",") if a]:
         model, stats = train(memory, window=args.window, slots=args.slots, steps=args.steps, minutes=args.minutes,
                              seed=args.seed, length=args.length, n_pairs=args.pairs, max_gap=args.max_gap, log=log,
-                             lr=args.lr, warmup=args.warmup, inside_fraction=args.inside_fraction, form=args.form)
+                             lr=args.lr, warmup=args.warmup, inside_fraction=args.inside_fraction, form=args.form,
+                             n_ask=n_ask, qk_norm=args.qk_norm)
         acc = accuracy_by_distance(model, random.Random(args.seed + 100), n=args.eval_n, n_pairs=args.pairs,
                                    max_gap=args.max_gap, length=args.length, window=args.window,
-                                   inside_fraction=args.inside_fraction, form=args.form)
+                                   inside_fraction=args.inside_fraction, form=args.form, n_ask=n_ask)
         report[memory] = {"train": stats, "accuracy_by_distance": {k: {"accuracy": a, "n": n} for k, (a, n) in acc.items()}}
         log(f"[{memory}] {stats} accuracy {acc}")
     (out / "report.json").write_text(json.dumps(report, indent=2))
