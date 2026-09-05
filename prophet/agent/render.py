@@ -35,9 +35,14 @@ def render_episode(
     """The episode as the text the agent loop would have produced.
 
     Layout mirrors ``AgentLoop``: system goal, one ``<|tool_def|>`` block per schema,
-    notes, then per step an optional think span, the call (or ``<|nocall|>``), and the
+    notes, then per step the think span, the call (or ``<|nocall|>``), and the
     observation as a ``<|tool|>`` turn. Malformed steps (no action) are dropped: they
     are not a decision to learn.
+
+    The think span is rendered even when empty (``<|think|><|/think|>``): the loop opens
+    one at every step, so a model whose training data had none met an unseen control
+    token at decode and filled it with junk before every call. An empty span teaches
+    the cheapest thing: close it at once.
     """
     parts = [f"<|system|>Goal: {goal}\n", tools.render(), f"\nNotes:\n{notes}\n<|assistant|>"]
     for step in trajectory:
@@ -45,8 +50,7 @@ def render_episode(
         if action is None and step.get("gated") == "malformed":
             continue
         think = step.get("think") or ""
-        if think:
-            parts.append(f"<|think|>{think}<|/think|>")
+        parts.append(f"<|think|>{think}<|/think|>")
         if action is None:
             parts.append("<|nocall|>")
         else:

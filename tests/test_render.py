@@ -43,6 +43,10 @@ def test_render_mirrors_the_loop_and_drops_malformed_steps():
     assert "<|tool|>hello world<|assistant|>" in text
     assert text.count("<|call|>") == 2 and "<|nocall|>" not in text
     assert text.endswith("<|eos|>")
+    # Every kept step has its think span, empty or not, because the loop opens one.
+    assert text.count("<|think|>") == 2 and "<|think|>look at notes.txt<|/think|><|call|>" in text
+    bare = render_episode("g", _registry(), [{"step": 0, "think": "", "action": {"name": "done", "args": {}}}])
+    assert "<|assistant|><|think|><|/think|><|call|>" in bare
 
 
 def test_rendered_episode_yields_action_targets():
