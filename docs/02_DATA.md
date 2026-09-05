@@ -122,6 +122,17 @@ le pointeur de copie ne peut pas le remplir. Le benchmark (`prophet/eval/agent_b
 accepte n'importe quelle famille ; les quatre familles à copie ont 100 % de valeurs
 copiables dans leurs trajectoires rendues, `replace` en a moins (test).
 
+**Séquences d'épisodes.** `make_related_tasks` produit des *suites* de tâches `lookup` :
+la première ouvre un fichier, chaque suivante demande un autre champ du **même** fichier
+(une fois sur deux) ou en ouvre un nouveau. La trajectoire parfaite d'un fichier déjà lu
+par l'épisode précédent note la réponse **sans le relire** — ce qu'un agent dont l'état de
+session porte le fichier doit faire — et celle d'un fichier nouveau le lit d'abord.
+Entraînées à plusieurs épisodes par ligne (`scripts/first_agent_run_cpu.py
+--episodes-per-row 3`, chaque épisode à son `<|bos|>`) et jouées avec l'état porté, ces
+suites mesurent si l'état récurrent borné retient ce que l'épisode précédent a lu : moins
+de tokens à succès égal, ou une réponse fausse. Les nombres sont dans
+[`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §2.
+
 ## Phase A-stable — 28.0B tokens (70%), context 4096, LR warmup_then_constant
 
 Build the world model. Broadest mixture, highest token volume, constant peak learning rate. No instruction data at all — it is deliberately saved for the phases where recency makes it count.
