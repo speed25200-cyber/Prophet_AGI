@@ -396,6 +396,28 @@ class ProphetConfig:
             raise ValueError("mixer pattern must not be empty")
         return pattern[index % len(pattern)]
 
+    def layer_uses_rope(self, index: int, section: str = "trunk") -> bool:
+        """Whether the attention block at this position gets rotary positions.
+
+        ``nope_layers`` holds *pattern positions*, not absolute block indices, so that
+        "every global layer is position-free" is one entry rather than one per block.
+        With ``pattern=["swa", "full_attn"]`` and ``nope_layers=(1,)``, every block
+        produced by pattern slot 1 -- each full-attention layer -- runs without RoPE. That
+        is the R02 design: local layers keep positions, global layers extrapolate freely.
+        """
+        pattern = self.mixer.pattern
+        if self.recurrent.enabled:
+            override = {
+                "prelude": self.recurrent.prelude_pattern,
+                "core": self.recurrent.core_pattern,
+                "coda": self.recurrent.coda_pattern,
+            }.get(section)
+            if override:
+                pattern = override
+        if not pattern:
+            return True
+        return (index % len(pattern)) not in self.mixer.nope_layers
+
     def section_layout(self) -> list[tuple[str, int, MixerKind]]:
         """The parameterised blocks in order, as ``(section, index_in_section, kind)``.
 

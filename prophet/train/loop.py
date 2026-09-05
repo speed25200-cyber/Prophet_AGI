@@ -41,7 +41,12 @@ class TrainConfig:
     decay_frac: float = 0.18
     grad_clip: float = 1.0
 
-    mtp_weight: float = 0.3
+    mtp_weight: float | None = None
+    """Weight on the multi-token-prediction loss. ``None`` takes the value from the model
+    config's ``heads.mtp_loss_weight``, so the two cannot silently disagree -- they did,
+    and the config field was dead."""
+    confidence_weight: float | None = None
+    """Same rule, from ``heads.confidence_loss_weight``."""
     z_loss_weight: float = 1e-4
     ponder_weight: float = 0.0
     """Weight on the halting objective. Zero disables it; the model config's
@@ -130,6 +135,14 @@ class Trainer:
             if cfg.ponder_weight == 0.0:
                 cfg.ponder_weight = model_config.recurrent.halting_loss_weight
             cfg.ponder_target_steps = model_config.recurrent.halting_target_steps
+        # The auxiliary-head weights live on the model config, next to the heads they
+        # weight. The trainer only overrides them when told to explicitly.
+        if cfg.mtp_weight is None:
+            cfg.mtp_weight = model_config.heads.mtp_loss_weight if model_config else 0.3
+        if cfg.confidence_weight is None:
+            cfg.confidence_weight = (
+                model_config.heads.confidence_loss_weight if model_config else 0.0
+            )
 
         self.ckpt = CheckpointManager(cfg.checkpoint_dir, keep_milestones=cfg.keep_milestones)
         self.step = 0

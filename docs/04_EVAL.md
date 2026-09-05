@@ -69,7 +69,7 @@ quelqu'un d'autre, avec un format de prompt différent, ne prouve rien.
 | BFCL-v3 (outils) | Llama-3.2-3B 67.0 | ≥ 62 |
 
 **Nuance honnête, à ne pas enterrer.** Ces cibles sont celles d'un modèle de 1.3B actifs.
-Notre point de fonctionnement réel est de **369M actifs pour ~25B tokens**, soit 73× à
+Notre point de fonctionnement réel est de **408M actifs pour ~22B tokens**, soit 73× à
 7 300× moins de compute que les modèles ci-dessus. Sur les benchmarks de connaissance
 (MMLU, GPQA), les atteindre par pré-entraînement de zéro est **arithmétiquement exclu** —
 c'est le constat de [`00_PROBLEM_LANDSCAPE.md`](00_PROBLEM_LANDSCAPE.md) §9 sur la capacité

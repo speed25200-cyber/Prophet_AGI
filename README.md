@@ -62,11 +62,11 @@ le budget de tokens, la mémoire de l'appareil cible et l'absence de mauvaise al
 
 | | Total | Actifs/token | Prof. effective | Tokens | Cible |
 |---|---:|---:|---:|---:|---|
-| **Prophet-main** | 3.79B | 369M | 24 (k=4) | 24.6B | 5090 / Mac Studio |
-| **Prophet-mini** | 229M | 211M | 14 (k=2) | 58.3B | iPhone 17 Pro |
+| **Prophet-main** | 3.83B | 408M | 24 (k=4) | 22.4B | 5090 / Mac Studio |
+| **Prophet-mini** | 253M | 236M | 14 (k=2) | 52.1B | iPhone 17 Pro |
 
-Rapport de sparsité 10.3× : la capacité d'un modèle de 3.8B pour le coût par token d'un
-modèle de 369M.
+Rapport de sparsité 9.4× : la capacité d'un modèle de 3.8B pour le coût par token d'un
+modèle de 408M.
 
 ## État du projet
 
@@ -123,7 +123,7 @@ La réponse retenue n'est pas de choisir un camp, mais de faire les deux sur deu
 
 | Modèle | Origine | Budget | Rôle |
 |---|---|---:|---|
-| **Prophet-mini** (229M) | Poids aléatoires | 85 h-A100 | Preuve honnête de l'architecture. Cible iPhone. |
+| **Prophet-mini** (253M) | Poids aléatoires | 85 h-A100 | Preuve honnête de l'architecture. Cible iPhone. |
 | **Prophet-main** (~970M) | Conversion d'un donneur Apache-2.0 | 30 h-A100 | Modèle compétitif. 89 % des paramètres hérités. |
 
 Le rapport de coût — 85 heures contre 30 — est le résultat central : la conversion coûte

@@ -269,8 +269,10 @@ class CausalSelfAttention(nn.Module):
         sink_tokens: int = 0,
         norm_eps: float = 1e-5,
         bias: bool = False,
+        use_rope: bool = True,
     ) -> None:
         super().__init__()
+        self.use_rope = use_rope
         if n_heads % n_kv_heads != 0:
             raise ValueError(f"n_heads={n_heads} must be divisible by n_kv_heads={n_kv_heads}")
         self.n_heads = n_heads
@@ -307,7 +309,9 @@ class CausalSelfAttention(nn.Module):
         if self.q_norm is not None:
             q = self.q_norm(q)
             k = self.k_norm(k)
-        if cos is not None:
+        if cos is not None and self.use_rope:
+            # A NoPE layer receives cos/sin like every other block and ignores them: the
+            # decision lives in the config, not in what the caller happens to pass.
             q = apply_rotary(q, cos, sin)
             k = apply_rotary(k, cos, sin)
 
@@ -530,8 +534,10 @@ class GatedDeltaNet(nn.Module):
 # --------------------------------------------------------------------------------------
 
 
-def build_mixer(kind: str, cfg, *, layer_index: int) -> nn.Module | None:
-    """Instantiate the sequence mixer for one block, per ``cfg.mixer.pattern``."""
+def build_mixer(
+    kind: str, cfg, *, layer_index: int, section: str = "trunk"
+) -> nn.Module | None:
+    """Instantiate the sequence mixer for one block, per the section's pattern."""
     m = cfg.mixer
     if kind == "identity":
         return None
@@ -545,6 +551,7 @@ def build_mixer(kind: str, cfg, *, layer_index: int) -> nn.Module | None:
             window=None if kind == "full_attn" else m.sliding_window,
             sink_tokens=m.attention_sink_tokens if kind == "swa" else 0,
             norm_eps=cfg.norm_eps,
+            use_rope=cfg.layer_uses_rope(layer_index, section),
         )
     if kind in ("gdn", "mamba2"):
         return GatedDeltaNet(

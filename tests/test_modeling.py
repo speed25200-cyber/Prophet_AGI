@@ -479,17 +479,75 @@ def test_generate_extends_the_sequence():
 
 
 def test_budget_estimate_tracks_the_real_parameter_count():
-    """The budget calculator gates every expensive decision, so it must not drift far
-    from the model it claims to describe."""
-    cfg = tiny_config(
-        recurrent=RecurrentCoreConfig(enabled=False),
-        n_layers=4,
-        mixer=MixerConfig(pattern=["full_attn"], n_heads=4, n_kv_heads=2, head_dim=32),
-        heads=HeadsConfig(),
-    )
+    """The budget calculator gates every expensive decision, so it must not drift from
+    the model it claims to describe.
+
+    This used to check a flat, non-recurrent config at a 15% tolerance -- and passed
+    while the estimator was counting the looped core's recurrent blocks as attention
+    blocks, 10% short on every shipped config. The check now uses a recurrent stack with
+    a core override, which is the shape that was wrong, at a tolerance tight enough to
+    catch a single mis-assigned layer.
+    """
+    cfg = tiny_config(heads=HeadsConfig(n_multi_token_predict=1, confidence_head=True))
     estimated = count_parameters(cfg).total
     actual = ProphetModel(cfg).num_parameters()
-    assert 0.85 < estimated / actual < 1.15, f"estimate {estimated} vs actual {actual}"
+    assert abs(estimated / actual - 1.0) < 0.02, f"estimate {estimated} vs actual {actual}"
+
+
+def test_budget_estimate_matches_every_shipped_config():
+    """The shipped configurations are the ones the memory and device claims rest on.
+    Built on the meta device so the 3.8B main config costs no memory."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "configs"
+    checked = 0
+    for path in sorted(root.glob("prophet_*.json")):
+        cfg = ProphetConfig.from_json(path)
+        with torch.device("meta"):
+            model = ProphetModel(cfg)
+        actual = sum(p.numel() for p in model.parameters())
+        estimated = count_parameters(cfg).total
+        assert abs(estimated / actual - 1.0) < 0.02, (
+            f"{path.name}: estimate {estimated / 1e6:.1f}M, real {actual / 1e6:.1f}M"
+        )
+        checked += 1
+    assert checked >= 3
+
+
+def test_budget_counts_recurrent_core_as_bounded_state_not_attention():
+    """The specific mis-assignment: with core_pattern=['gdn'], no core block may be
+    counted under an attention key, and the KV bytes per token must not grow with the
+    number of core blocks."""
+    from prophet.budget import _kv_bytes_per_token
+
+    cfg = tiny_config()
+    by = count_parameters(cfg).by_component
+    n_core = cfg.recurrent.core_layers
+    n_attn_blocks = sum(
+        1 for s, _, k in cfg.section_layout() if k in ("full_attn", "swa")
+    )
+    # Attention parameters must correspond to prelude+coda blocks only.
+    assert n_attn_blocks == cfg.recurrent.prelude_layers + cfg.recurrent.coda_layers
+    assert by.get("mixer/gdn", 0) > 0
+
+    wide = tiny_config(recurrent=RecurrentCoreConfig(
+        enabled=True, prelude_layers=1, core_layers=8, coda_layers=1,
+        core_pattern=["gdn"], default_loop_k=3, truncated_backprop_steps=2,
+    ))
+    # More core blocks add bounded state, which amortises to ~0 per token at long
+    # context. The right assertion is absolute, not relative: six extra recurrent
+    # layers must add less than one byte per token at 128k, whereas six extra
+    # full-attention layers would add hundreds.
+    a = _kv_bytes_per_token(cfg, "int8", 131072)
+    b = _kv_bytes_per_token(wide, "int8", 131072)
+    assert 0 <= b - a < 1.0, f"recurrent layers added {b - a:.2f} bytes/token"
+
+    attn_wide = tiny_config(recurrent=RecurrentCoreConfig(
+        enabled=True, prelude_layers=1, core_layers=8, coda_layers=1,
+        core_pattern=["full_attn"], default_loop_k=3, truncated_backprop_steps=2,
+    ))
+    c = _kv_bytes_per_token(attn_wide, "int8", 131072)
+    assert c - a > 100.0, "attention in the core should cost real KV bytes per token"
 
 
 def test_unimplemented_frontend_fails_loudly():
@@ -605,3 +663,68 @@ def test_halting_probe_passes_do_not_corrupt_the_cache():
                 f"coda cache holds {slot.keys.shape[2]} positions for 10 tokens; "
                 "the per-iteration probe passes are writing to it"
             )
+
+
+# --------------------------------------------------------------------------------------
+# NoPE layers: the decision the model was silently ignoring
+# --------------------------------------------------------------------------------------
+
+
+def test_nope_pattern_slots_disable_rope_on_the_right_blocks():
+    """``nope_layers`` holds pattern positions. With ``["swa", "full_attn"]`` and
+    ``nope_layers=(1,)``, every full-attention block is position-free and every windowed
+    block keeps positions -- the R02 design. Before this test existed the model applied
+    RoPE everywhere and nothing noticed: the config was set, the invariant checked it,
+    the docs claimed it, and the attention layer never looked."""
+    cfg = tiny_config(mixer=MixerConfig(
+        pattern=["swa", "full_attn"], n_heads=4, n_kv_heads=2, head_dim=32,
+        sliding_window=8, attention_sink_tokens=2, linear_heads=2, linear_head_dim=16,
+        nope_layers=(1,),
+    ))
+    model = ProphetModel(cfg)
+    for section in ("prelude", "coda"):
+        for block in model.sections[section]:
+            if block.kind == "full_attn":
+                assert block.mixer.use_rope is False, f"{section} full_attn still uses RoPE"
+            elif block.kind == "swa":
+                assert block.mixer.use_rope is True
+
+
+def test_empty_nope_layers_keeps_rope_everywhere():
+    model = ProphetModel(tiny_config())
+    for section in model.sections.values():
+        for block in section:
+            if hasattr(block.mixer, "use_rope"):
+                assert block.mixer.use_rope is True
+
+
+def test_a_nope_layer_is_invariant_to_position_spacing_and_a_rope_layer_is_not():
+    """The behavioural half. A uniform shift cannot tell them apart -- RoPE is relative,
+    so shifting every position by a constant changes nothing either way. Non-uniform
+    spacing does: the RoPE layer's output moves, the NoPE layer's does not."""
+    torch.manual_seed(0)
+    rope = CausalSelfAttention(64, n_heads=4, n_kv_heads=2, head_dim=16, use_rope=True).eval()
+    nope = CausalSelfAttention(64, n_heads=4, n_kv_heads=2, head_dim=16, use_rope=False).eval()
+    nope.load_state_dict(rope.state_dict())
+    emb = RotaryEmbedding(16, theta=10000.0)
+    x = torch.randn(1, 6, 64)
+
+    close = emb(torch.arange(6).unsqueeze(0))
+    spread = emb((torch.arange(6) * 7).unsqueeze(0))
+
+    with torch.no_grad():
+        assert not torch.allclose(rope(x, cos=close[0], sin=close[1]),
+                                  rope(x, cos=spread[0], sin=spread[1]), atol=1e-4)
+        assert torch.allclose(nope(x, cos=close[0], sin=close[1]),
+                              nope(x, cos=spread[0], sin=spread[1]), atol=1e-6)
+
+
+def test_layer_uses_rope_respects_section_patterns():
+    cfg = tiny_config(mixer=MixerConfig(
+        pattern=["swa", "full_attn"], n_heads=4, n_kv_heads=2, head_dim=32,
+        sliding_window=8, linear_heads=2, linear_head_dim=16, nope_layers=(1,),
+    ))
+    assert cfg.layer_uses_rope(0, "prelude") is True
+    assert cfg.layer_uses_rope(1, "prelude") is False
+    assert cfg.layer_uses_rope(3, "coda") is False   # 3 % 2 == 1
+    assert cfg.layer_uses_rope(0, "core") is True    # core pattern is ["gdn"], slot 0

@@ -11,7 +11,7 @@ deux origines, une seule architecture :
 
 | Modèle | Origine | Budget | Rôle |
 |---|---|---:|---|
-| **Prophet-mini** (229M) | Poids aléatoires | 85 h | Preuve honnête de l'architecture. Cible iPhone. |
+| **Prophet-mini** (253M) | Poids aléatoires | 85 h | Preuve honnête de l'architecture. Cible iPhone. |
 | **Prophet-main** (~970M) | Conversion d'un donneur Apache-2.0 | 30 h | Modèle compétitif. 89 % des paramètres hérités. |
 
 Le rapport de coût — 85 heures contre 30 — est le résultat central : la conversion coûte

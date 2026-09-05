@@ -33,20 +33,46 @@ Lire `docs/00_PROBLEM_LANDSCAPE.md` avant toute contribution.
 ## Structure
 
 ```
-docs/           Spécifications et rapports de recherche (R01–R12)
+docs/           Spécifications, registre de décisions, rapports de recherche
+                (R01–R12 verrous, W1–W4 murs, A1–A4 revue et agentique)
 prophet/
-  config.py     Schéma de configuration — tout pari est un interrupteur explicite
+  config.py     Schéma de configuration — tout pari est un interrupteur explicite,
+                validate() refuse l'impossible, design_warnings() refuse l'incohérent
   budget.py     Paramètres, mémoire, débit par appareil, alertes d'allocation
   scaling.py    Points de fonctionnement sous budget d'heures-A100
-  plan.py       Allocation du compute entre les tracks
-  modeling/     Couches, MoE, modèle à profondeur récurrente
-  data/         Tokenizer, mélanges, décontamination, streaming reprenable
-  train/        Muon, planning WSD, checkpointing atomique, boucle
+  plan.py       Allocation du compute entre les tracks (ordre strict, sans remplissage)
+  modeling/     Couches (attention GQA/SWA/NoPE, delta gated), MoE, modèle à
+                profondeur récurrente avec halte apprise
+  data/         Tokenizer Prophet-Tok v1, mélanges, décontamination, streaming reprenable
+  train/        Muon + AdamW, planning WSD, checkpointing atomique, boucle, pertes
   eval/         Métriques (BPB) et harnais à trois niveaux
-configs/        Configurations d'expériences (JSON/YAML)
-scripts/        Scripts exécutables (Colab compris)
-tests/          173 tests
+  memory/       Registre à clés-produit (écriture en forme close), état de session,
+                consolidation de contexte et de profondeur
+  convert/      Conversion d'un donneur ouvert vers l'architecture Prophet
+  analysis/     Mesure de la bande passante des canaux de raisonnement
+  kernels/      Réservé aux noyaux Triton/CUDA — vide tant qu'aucun GPU n'a servi
+configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
+scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
+tests/          ~300 tests ; les plus importants sont des tests d'équivalence
 ```
+
+## Ce que ce dépôt a appris à ses dépens
+
+Six défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+normalement et aurait produit un modèle fluide et faux :
+
+| Défaut | Comment il a été trouvé |
+|---|---|
+| Init aléatoire de l'état récurrent fuyant à l'inférence | test d'équivalence préremplissage/décodage |
+| Embeddings liés écrasés au chargement après copie du state dict | test sur dictionnaire copié en profondeur |
+| `β = sigmoid` bornant l'écriture delta à (0,1) : parité hors d'atteinte | track W2, vérifié par sonde : hasard → 0.996 |
+| Config livrée avec l'attention **dans** la boucle | track W2 ; désormais `design_warnings()` |
+| Sondes de halte écrivant *k* fois dans le même cache | test d'équivalence avec halte |
+| `nope_layers` réglé, vérifié, documenté — et ignoré par le modèle | revue A1 : grep des champs jamais lus |
+
+**Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
+réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par
+un test comportemental, dans le même commit.
 
 ## Avant de proposer un changement d'architecture
 
@@ -58,8 +84,11 @@ python scripts/design_search.py          # qu'est-ce qui satisfait toutes les co
 python -m prophet.plan                   # d'où vient le compute ?
 ```
 
-Ces outils ont déjà corrigé deux erreurs de conception avant qu'elles ne coûtent quoi que
-ce soit. Une proposition sans passage par eux n'est pas recevable.
+Ces outils ont déjà corrigé des erreurs de conception avant qu'elles ne coûtent quoi que
+ce soit. Une proposition sans passage par eux n'est pas recevable. Un changement de
+modèle passe aussi par la suite de tests d'équivalence (`tests/test_modeling.py`) : le
+décodage incrémental doit rester identique à une passe complète, avec cache, halte et
+mémoire activés.
 
 ## Conventions
 

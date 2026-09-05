@@ -112,13 +112,15 @@ class ProphetBlock(nn.Module):
         kind: str,
         is_moe: bool,
         residual_scale: float = 1.0,
+        layer_index: int = 0,
+        section: str = "trunk",
     ) -> None:
         super().__init__()
         self.kind = kind
         self.residual_scale = residual_scale
 
         self.norm1 = RMSNorm(cfg.d_model, cfg.norm_eps)
-        self.mixer = build_mixer(kind, cfg, layer_index=0)
+        self.mixer = build_mixer(kind, cfg, layer_index=layer_index, section=section)
         self.norm2 = RMSNorm(cfg.d_model, cfg.norm_eps)
 
         if is_moe:
@@ -244,6 +246,8 @@ class ProphetModel(nn.Module):
                     kind=kind,
                     is_moe=cfg.layer_is_moe(self._global_index(layout, sec, idx)),
                     residual_scale=scale,
+                    layer_index=idx,
+                    section=sec,
                 )
                 for sec, idx, kind in layout
                 if sec == name

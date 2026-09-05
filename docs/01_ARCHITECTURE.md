@@ -126,11 +126,19 @@ l'absence de mauvaise allocation :
 
 | Configuration | Total | Actifs | Prof. eff. | Tokens | Tok/actif | Entraînement | Appareil |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **prophet-main** `d1536 p4c4×4o4 e128` | **3.79B** | **369M** | 24 | 24.6B | 31 | 38.1 GB | 2.59 GB (5090) |
-| **prophet-mini** `d1280 p3c4×2o3` | **229M** | 211M | 14 | 58.3B | 173 | 3.4 GB | 0.67 GB (iPhone) |
+| **prophet-main** `d1536 p4c4×4o4 e128` | **3.83B** | **408M** | 24 | 22.4B | 25 | 38.5 GB | 2.54 GB (5090) |
+| **prophet-mini** `d1280 p3c4×2o3` | **253M** | 236M | 14 | 52.1B | 138 | 3.6 GB | 0.66 GB (iPhone) |
 
-Le rapport de sparsité de 10.3× est ce qui rend la chose intéressante : la capacité de
-connaissance d'un modèle de 3.8B pour le coût par token d'un modèle de 369M.
+Le rapport de sparsité de 9.4× est ce qui rend la chose intéressante : la capacité de
+connaissance d'un modèle de 3.8B pour le coût par token d'un modèle de 408M.
+
+> **Révision (revue A1).** Ces chiffres ont été recalculés après correction de
+> l'estimateur : il parcourait les blocs avec le motif global et comptait les quatre
+> blocs récurrents du cœur comme de l'attention — 31M paramètres de moins que la
+> réalité sur la config sonde, et dans le sens qui flattait la mémoire. L'estimateur
+> colle désormais au modèle réel à 10⁻⁴ près sur toutes les configurations livrées, et
+> un test le garde. Les conclusions (tient sur un A100, tient sur chaque appareil)
+> survivent ; les valeurs ont bougé.
 
 ---
 
@@ -225,7 +233,7 @@ l'exécution.
 
 | Modèle | Origine | Rôle |
 |---|---|---|
-| **Prophet-mini** (229M) | **Poids aléatoires** | Preuve scientifique honnête de l'architecture. Cible iPhone. Ne doit rien au pré-entraînement de personne. |
+| **Prophet-mini** (253M) | **Poids aléatoires** | Preuve scientifique honnête de l'architecture. Cible iPhone. Ne doit rien au pré-entraînement de personne. |
 | **Prophet-main** (~970M) | **Conversion d'un donneur Apache-2.0** | Modèle compétitif. Hérite de la connaissance ; nous n'achetons que l'architecture. |
 
 Les deux partagent l'architecture, le tokenizer d'entrée près, les données et l'évaluation.

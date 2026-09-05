@@ -239,14 +239,16 @@ def count_parameters(cfg: ProphetConfig, loop_k: int | None = None) -> ParamBrea
     out.add("frontend/embeddings", fe_resident)
     out.embedding = fe_resident
 
-    depth = cfg.parameterised_depth()
     attn_p = _attention_params(cfg)
     lin_p = _linear_mixer_params(cfg)
 
+    # Walk the section-aware layout, never ``layer_mixer(i)`` over a flat depth: the
+    # looped core overrides the global pattern, and reading the global pattern here once
+    # counted four recurrent core blocks as four attention blocks -- 31M parameters short
+    # on the shipped probe config, and wrong in the direction that flatters memory.
     trunk_resident = 0
     trunk_active = 0
-    for i in range(depth):
-        kind = cfg.layer_mixer(i)
+    for i, (_section, _idx, kind) in enumerate(cfg.section_layout()):
         mixer = 0 if kind == "identity" else (lin_p if kind in ("gdn", "mamba2") else attn_p)
         out.add(f"mixer/{kind}", mixer)
         ff_res, ff_act = _ffn_params(cfg, cfg.layer_is_moe(i))
@@ -266,7 +268,9 @@ def count_parameters(cfg: ProphetConfig, loop_k: int | None = None) -> ParamBrea
         per_head = _attention_params(cfg) + 3 * d * _swiglu_hidden(d, cfg.ffn.hidden_mult)
         heads += cfg.heads.n_multi_token_predict * per_head
     if cfg.heads.confidence_head:
-        heads += d * d + d
+        heads += 2 * d + 1  # RMSNorm gain + Linear(d, 1)
+    if cfg.recurrent.enabled and cfg.recurrent.halting == "ponder":
+        heads += 2 * d + 1  # the halting head has the same shape
     if heads:
         out.add("aux_heads", heads)
 
@@ -399,8 +403,10 @@ def _kv_bytes_per_token(cfg: ProphetConfig, kv_dtype: str, context_len: int) -> 
     m = cfg.mixer
     hd = cfg.head_dim
     total = 0.0
-    for i in range(cfg.parameterised_depth()):
-        kind = cfg.layer_mixer(i)
+    # Section-aware for the same reason as count_parameters: a recurrent core block
+    # holds a fixed-size state, and counting it as attention would make the cache
+    # appear to grow with context where it does not.
+    for _section, _idx, kind in cfg.section_layout():
         if kind == "full_attn":
             if m.kv_compression == "mla":
                 total += m.kv_lora_rank * b
@@ -479,11 +485,7 @@ def inference_profile(
 
 
 def _n_full_attn_layers(cfg: ProphetConfig) -> int:
-    return sum(
-        1
-        for i in range(cfg.parameterised_depth())
-        if cfg.layer_mixer(i) in ("full_attn", "swa")
-    )
+    return sum(1 for _s, _i, kind in cfg.section_layout() if kind in ("full_attn", "swa"))
 
 
 # --------------------------------------------------------------------------------------
