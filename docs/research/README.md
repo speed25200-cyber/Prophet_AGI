@@ -145,8 +145,9 @@ faire la moyenne, `scripts/design_search.py` a énuméré l'espace de conception
   tâche de la semaine 1.
 - **La décision D10.** Zéro ou conversion de donneur. Ouverte, et elle appartient au
   porteur du projet.
-- **Le pilier agentique n'a pas de nombre.** Tout y est mécanique et testé — boucle,
-  têtes, quarantaine, chemin vers le corpus — et rien n'y est entraîné : la recette A2
-  (67 h) n'est pas financée, l'ablation des plafonds de profondeur par token (4 h) et la
-  sonde de désaccord de profondeur (1 h) non plus. Le premier chiffre agentique honnête
-  du projet viendra d'une de ces trois lignes du plan, ou d'aucune.
+- **Le pilier agentique a un chiffre de mécanique, pas de compétence.** À 7M paramètres
+  sur CPU, un modèle entraîné sur ses propres épisodes vérifiés passe de 0 % à 55 % / 32.5 %
+  sur des tâches inédites d'une famille triviale, et la copie d'arguments vaut à elle
+  seule +40 points ([`../09_FIRST_RUN.md`](../09_FIRST_RUN.md)). Ce que cela vaut à
+  l'échelle reste à la recette A2 (67 h), non financée, comme l'ablation des plafonds de
+  profondeur par token (4 h) et la sonde de désaccord de profondeur (1 h).

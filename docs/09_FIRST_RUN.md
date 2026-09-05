@@ -1,4 +1,4 @@
-# 09 — Premier run : un Prophet de 7M paramètres entraîné sur CPU, de bout en bout
+# 09 — Premiers runs : un Prophet de 7M paramètres entraîné sur CPU, puis rendu agentique
 
 > **Ce que ce document prouve :** que chaque étage du run A100 fonctionne sur des données
 > réelles et produit un nombre vérifiable. **Ce qu'il ne prouve pas :** une capacité.
@@ -101,3 +101,44 @@ python scripts/first_run_cpu.py --work /tmp/prophet-first-run --stage all \
 ```
 
 Le rapport (`report.json`) et les logs restent sous `--work`.
+
+---
+
+## Deuxième moitié : le premier chiffre agentique
+
+`scripts/first_agent_run_cpu.py` reprend ce poids, active les têtes d'action typées
+(`heads.action_head`, +49,697 paramètres) et l'entraîne sur 600 trajectoires parfaites
+de la famille de tâches du benchmark à vérificateurs (`grep` du mot, `note` du fichier,
+`done`), **rendues par le chemin qu'un épisode promu de la quarantaine emprunte**
+(`prophet.agent.render`) — un épisode par ligne pour que chaque appel ait ses schémas en
+contexte. 500 pas, 21 minutes, perte 8.16 → 0.030,
+exactitude de sélection 100%, perte des têtes 2e-07, aucun pas non fini.
+Puis le benchmark sur des tâches **jamais vues**, le vérificateur exécutable décidant.
+
+Deux lancements, mêmes poids de départ, mêmes données, même graine ; une seule différence.
+
+| | Succès (graine 7, 40 tâches) | Succès (graine 11, 40 tâches) | Valeurs copiées | Appels malformés |
+|---|---:|---:|---:|---:|
+| Têtes non entraînées | 0 % | — | 0 | 100 % |
+| Run 1 : cibles de copie **absentes** (0 sur 40 valeurs) | 5.0% | 0.0% | 0 / 0 | 10.1% / 8.1% |
+| Run 2 : cibles de copie **présentes** (40 sur 40) | **55.0%** | **32.5%** | 78 / 79 | 3.4% / 5.8% |
+
+Le run 1 avait appris le flux d'entraînement parfaitement (sélection à 100 %, perte des
+têtes ~1e-6) et ne transférait presque rien : un mot en prose est un token *avec son
+espace* (« anchor»), le même mot en JSON est nu (« anchor »), donc aucune occurrence
+verbatim ne commençait sur une frontière de token, le pointeur de copie n'a jamais eu une
+seule cible, et le modèle devait *épeler* des valeurs qu'il ne pouvait que copier. Une
+occurrence peut désormais commencer au token porteur d'espace, et le décodage retire cet
+espace en épissant la valeur. C'est la trouvaille du run, et elle est de la classe des
+dix autres : les tests d'équivalence passaient.
+
+**Ce que ces nombres disent.** Que la mécanique du pilier — ancres, grammaire, sélection,
+copie, portes du vérificateur — permet à un modèle de 7M paramètres d'apprendre une
+famille de tâches depuis ses propres épisodes vérifiés, et que la copie d'arguments vaut
+à elle seule la différence entre « rien » et « la moitié ». **Ce qu'ils ne disent pas :**
+la famille de tâches est triviale, 40 tâches par graine donnent ±15 points, l'écart entre
+graines (55 contre 32.5) est de cet ordre, et rien ici ne se compare à quoi que ce soit
+d'existant. Le premier chiffre agentique du projet est un chiffre de mécanique, mesuré
+sur ses propres outils, avec son intervalle.
+
+Reproduire : `python scripts/first_agent_run_cpu.py --work /tmp/prophet-first-run --minutes 22 --seq-len 320`.

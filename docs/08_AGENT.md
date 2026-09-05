@@ -230,9 +230,9 @@ Pas sur SWE-bench ou GAIA en ensemble ouvert. Sur deux terrains :
 | Règle de décision (exécution ≫ appris ≫ rien) | testée |
 | **Compétence** de l'agent | **non mesurée** — le modèle n'est pas entraîné |
 | AUROC du désaccord de profondeur comme prédicteur d'erreur | **non mesurée** — A4-0 |
-| Têtes d'action typées : sélection, copie, porte, cibles depuis le flux, sélection et copie au décodage | **construites, non entraînées** |
-| Chemin quarantaine → corpus (rendu, source, cibles) | **construit, non exercé sur un vrai modèle** |
+| Têtes d'action typées : sélection, copie, porte, cibles depuis le flux, sélection et copie au décodage | **construites, entraînées une fois à 7M paramètres** |
+| Chemin quarantaine → corpus (rendu, source, cibles) | **construit, exercé : les 600 épisodes du premier run agentique y sont passés** |
 | État de session porté d'un épisode à l'autre (R03 appliqué à l'agent) | **construit, effet non mesuré** |
-| Benchmark à vérificateurs et courbe d'apprentissage (`prophet/eval/agent_bench.py`) | **construit ; aucun chiffre sur un modèle entraîné** |
+| Benchmark à vérificateurs et courbe d'apprentissage (`prophet/eval/agent_bench.py`) | **construit ; premier chiffre à 7M paramètres : 0 % → 55 % / 32.5 % de succès sur tâches inédites, copie d'arguments = +40 points ([`09_FIRST_RUN.md`](09_FIRST_RUN.md))** |
 | Scoreur entraîné, recette d'entraînement agentique (~67 h-A100, A2 §8), chemin par slots fermés | **non construits** |
 | Plafonds de profondeur par token (`recurrent.token_depth`) : mécanique exacte, entraînement câblé | **construit, non ablaté** |

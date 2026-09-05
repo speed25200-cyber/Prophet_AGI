@@ -62,7 +62,7 @@ tests/          ~460 tests ; les plus importants sont des tests d'équivalence
 
 ## Ce que ce dépôt a appris à ses dépens
 
-Dix défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+Onze défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
 normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
 et faux :
 
@@ -78,6 +78,7 @@ et faux :
 | Boucle agentique lisant à *k*=1 puis pensant à *k*=8 sur un cache dont l'état profond n'avait pas vu l'observation | modèle réel branché sur la boucle ; désormais plafonds par token, équivalence testée à 1e-4 |
 | Schémas d'outils encodés comme *texte* dans le prompt épinglé : leurs ids de contrôle étaient des octets, donc aucune ancre pour la tête de sélection | test de la boucle avec un modèle exposant des têtes d'action ; ids de contrôle épissés explicitement |
 | Balayage delta par blocs : gradient en 1/α et exp masquée *après* coup — NaN dès qu'une porte d'oubli se ferme, alors que tous les tests d'équivalence passaient | le premier entraînement réel (divergence au pas 280) ; log-sigmoïde et masque en espace log, garde anti-NaN dans le trainer |
+| Cibles de copie jamais alignées : un mot en prose est un token *avec son espace*, nu en JSON — zéro cible sur 40 valeurs, têtes apprises à 100 % et 5 % de transfert | le premier run agentique ; occurrence acceptée au token porteur d'espace, espace retiré à l'épissage : 0 → 40 cibles, 5 % → 55 % de succès |
 
 **Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
 réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par

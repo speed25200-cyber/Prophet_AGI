@@ -71,8 +71,10 @@ modèle de 408M.
 ## État du projet
 
 > **Phase 0 — Recherche et conception terminées. Un premier poids de 7M paramètres
-> entraîné sur CPU, de bout en bout, sur du texte réel : bits/octet tenus à l'écart
-> 4.35 → 2.18 ([`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md)). Aucun modèle compétitif.**
+> entraîné sur CPU sur du texte réel (bits/octet tenus à l'écart 4.35 → 2.18), puis
+> rendu agentique sur ses propres épisodes vérifiés : 0 % → 55 % / 32.5 % de succès sur
+> des tâches inédites, la copie d'arguments valant à elle seule +40 points
+> ([`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md)). Aucun modèle compétitif.**
 > Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le chemin de
 > données réel (fichiers ou Hub, décontamination dans le flux, phases reprenables),
 > l'infrastructure d'entraînement, le harnais d'évaluation, le pilier agentique
@@ -99,7 +101,7 @@ modèle de 408M.
 | [`docs/06_MEMORY.md`](docs/06_MEMORY.md) | Mémoire persistante : conception, mesures, limites |
 | [`docs/07_WALLS.md`](docs/07_WALLS.md) | **Les murs** : mécanisme des verrous profonds, y compris ceux qu'on ne franchit pas |
 | [`docs/08_AGENT.md`](docs/08_AGENT.md) | **Le pilier agentique** : la boucle, les têtes d'action, la vérification, ce qui est construit et ce qui ne l'est pas |
-| [`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md) | **Le premier run** : 7M paramètres sur CPU, chaque étage exercé, un nombre, et le défaut qu'il a trouvé |
+| [`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md) | **Les premiers runs** : 7M paramètres sur CPU, chaque étage exercé, un nombre de langage, un nombre agentique, et les deux défauts qu'ils ont trouvés |
 
 ## Outils
 
