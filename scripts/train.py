@@ -33,6 +33,7 @@ from prophet.budget import allocation_warnings, count_parameters, training_memor
 from prophet.config import ProphetConfig  # noqa: E402
 from prophet.data.corpus import build_loader  # noqa: E402
 from prophet.data.decontaminate import Decontaminator  # noqa: E402
+from prophet.data.mixture import Mixture  # noqa: E402
 from prophet.data.recipes import prophet_v1_mixture  # noqa: E402
 from prophet.data.streaming import StreamingLoader, sources_from_iterables  # noqa: E402
 from prophet.data.tokenizer import ProphetTokenizer  # noqa: E402
@@ -125,7 +126,11 @@ def build_real_loader(args, cfg: ProphetConfig):
 
     batch_tokens = args.batch_size * args.seq_len * args.grad_accum
     total_tokens = args.tokens if args.tokens else args.steps * batch_tokens
-    mixture = prophet_v1_mixture(total_tokens=total_tokens)
+    if args.mixture:
+        mixture = Mixture.from_yaml(args.mixture)
+        mixture = mixture.rescale(total_tokens) if hasattr(mixture, "rescale") else mixture
+    else:
+        mixture = prophet_v1_mixture(total_tokens=total_tokens)
     # The loader serves micro-batches; the trainer draws grad_accum of them per step.
     loader = build_loader(
         mixture, tokenizer=tokenizer, seq_len=args.seq_len, batch_size=args.batch_size,
@@ -169,6 +174,9 @@ def main() -> int:
                          "({name, description, parameters}); required with --quarantine")
     ap.add_argument("--quarantine-weight", type=float, default=0.05,
                     help="sampler weight of the episode source next to a phase summing to 1")
+    ap.add_argument("--mixture", default=None,
+                    help="a Mixture YAML to train on instead of the v1 recipe (local "
+                         "corpora, smoke runs); its phases are rescaled to --tokens")
     ap.add_argument("--tokens", type=float, default=None,
                     help="total training tokens; sets --steps from the batch shape and "
                          "scales the mixture's phases (default: --steps x batch tokens)")
@@ -178,8 +186,8 @@ def main() -> int:
                     help="wall-clock budget for this session; the run checkpoints and "
                          "exits cleanly before Colab kills it, and resumes next time")
     ap.add_argument("--allow-slow-scan", action="store_true",
-                    help="run without flash-linear-attention (reference scan). For tiny "
-                         "CPU checks of the real data path only; never for a budgeted run")
+                    help="run without flash-linear-attention, on the blockwise scan. "
+                         "For CPU runs; a budgeted A100 run wants the fused kernel")
     args = ap.parse_args()
 
     cfg = ProphetConfig.from_json(args.config)

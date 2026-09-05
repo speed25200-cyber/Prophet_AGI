@@ -457,9 +457,15 @@ class GatedDeltaNet(nn.Module):
         bias: bool = False,
         allow_fused: bool = True,
         beta_max: float = 2.0,
+        chunk_size: int | None = 64,
     ) -> None:
         super().__init__()
         self.beta_max = beta_max
+        self.chunk_size = chunk_size
+        """Chunk length of the blockwise scan used off-GPU (and on GPU without ``fla``).
+        ``None`` selects the token-by-token reference scan. The two are the same
+        computation to float precision (tested); the chunked form replaces a Python loop
+        over every token with one triangular solve per chunk."""
         self.n_heads = n_heads
         self.head_k = head_dim
         self.head_v = int(head_dim * expand)
@@ -550,6 +556,8 @@ class GatedDeltaNet(nn.Module):
                 initial_state=init, output_final_state=state is not None,
             )
             new_state = None if fla_state is None else fla_state.transpose(-1, -2).contiguous()
+        elif self.chunk_size is not None and s > 1:
+            out, new_state = self._chunk_scan(q, k, v, alpha, beta, state, self.chunk_size)
         else:
             out, new_state = self._scan(q, k, v, alpha, beta, state)
 
@@ -596,6 +604,66 @@ class GatedDeltaNet(nn.Module):
         out = torch.stack(outputs, dim=1)  # (b, s, h, dv)
         return out.to(q.dtype), S.detach() if state is not None else S
 
+    def _chunk_scan(
+        self,
+        q: Tensor,
+        k: Tensor,
+        v: Tensor,
+        alpha: Tensor,
+        beta: Tensor,
+        state: RecurrentState | None,
+        chunk: int,
+    ) -> tuple[Tensor, Tensor]:
+        """Blockwise form of the same recurrence; exact, and a matmul per chunk.
+
+        Within a chunk starting from state ``S0``, with cumulative decays
+        ``G_t = prod_{i<=t} alpha_i``, the state unrolls to
+        ``S_t = G_t S0 + sum_{i<=t} (G_t/G_i) w_i k_i^T`` where the written rows
+        ``w_t = beta_t (v_t - alpha_t S_{t-1} k_t)`` satisfy a unit lower-triangular system
+        ``(I + T) W = B`` with ``T_ti = beta_t (G_t/G_i) k_i.k_t`` for ``i < t`` and
+        ``B_t = beta_t v_t - beta_t G_t S0 k_t``. One triangular solve gives every ``w``;
+        outputs are ``o_t = G_t S0 q_t + sum_{i<=t} (G_t/G_i)(k_i.q_t) w_i``. Ratios are
+        formed in log space and never exceed one, so nothing overflows.
+        """
+        b, s, h, dk = k.shape
+        dv = v.shape[-1]
+        dtype = torch.float32
+        S = (
+            state.state.to(dtype)
+            if state is not None and state.state is not None
+            else q.new_zeros(b, h, dv, dk, dtype=dtype)
+        )
+        q32 = q.float().transpose(1, 2)      # (b, h, s, dk)
+        k32 = k.float().transpose(1, 2)
+        v32 = v.float().transpose(1, 2)      # (b, h, s, dv)
+        log_a = alpha.float().clamp_min(1e-30).log().transpose(1, 2)  # (b, h, s)
+        beta32 = beta.float().transpose(1, 2)
+        outputs = []
+        for start in range(0, s, chunk):
+            end = min(start + chunk, s)
+            c = end - start
+            qc, kc, vc = q32[:, :, start:end], k32[:, :, start:end], v32[:, :, start:end]
+            bc = beta32[:, :, start:end].unsqueeze(-1)              # (b, h, c, 1)
+            L = log_a[:, :, start:end].cumsum(-1)                    # (b, h, c)
+            G = L.exp().unsqueeze(-1)                                # (b, h, c, 1)
+            ratio = (L.unsqueeze(-1) - L.unsqueeze(-2)).exp()        # (b, h, c, c): G_t / G_i
+            idx = torch.arange(c, device=k.device)
+            strict = idx.unsqueeze(1) > idx.unsqueeze(0)             # i < t
+            incl = idx.unsqueeze(1) >= idx.unsqueeze(0)              # i <= t
+            KK = kc @ kc.transpose(-1, -2)                            # (b, h, c, c): k_t . k_i
+            T = (bc * ratio * KK).masked_fill(~strict, 0.0)
+            S0k = (S @ kc.transpose(-1, -2)).transpose(-1, -2)       # (b, h, c, dv): S0 k_t
+            B = bc * vc - bc * G * S0k
+            eye = torch.eye(c, device=k.device, dtype=dtype)
+            W = torch.linalg.solve_triangular(eye + T, B, upper=False, unitriangular=True)
+            A = (ratio * (qc @ kc.transpose(-1, -2))).masked_fill(~incl, 0.0)
+            out_c = G * (qc @ S.transpose(-1, -2)) + A @ W           # (b, h, c, dv)
+            outputs.append(out_c)
+            decay_all = (L[:, :, -1:] - L).exp().unsqueeze(-1)       # (b, h, c, 1): G_c / G_i
+            S = G[:, :, -1:].transpose(-1, -2) * S + (W * decay_all).transpose(-1, -2) @ kc
+        out = torch.cat(outputs, dim=2).transpose(1, 2)              # (b, s, h, dv)
+        return out.to(q.dtype), S.detach() if state is not None else S
+
 
 # --------------------------------------------------------------------------------------
 # Factory
@@ -630,5 +698,6 @@ def build_mixer(
             conv_kernel=m.conv_kernel,
             norm_eps=cfg.norm_eps,
             beta_max=m.linear_beta_max,
+            chunk_size=m.linear_chunk_size,
         )
     raise ValueError(f"unknown mixer kind: {kind!r}")

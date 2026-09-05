@@ -109,6 +109,13 @@ CONFIGS: dict[str, ProphetConfig] = {
         "prophet-500m-probe", d_model=1536, prelude=2, core=4, coda=2, loop_k=4,
         n_heads=12, n_kv_heads=3,
     ),
+    # A CPU-sized instance of the same stack: what a session without a GPU can train
+    # on a real corpus end to end (scripts/first_run_cpu.py). Not a research point;
+    # the first weights the pipeline has produced.
+    "prophet_cpu_first_run.json": build(
+        "prophet-cpu-first-run", d_model=256, prelude=2, core=2, coda=2, loop_k=2,
+        n_heads=4, n_kv_heads=2, head_dim=64, vocab_size=4096,
+    ),
 }
 
 

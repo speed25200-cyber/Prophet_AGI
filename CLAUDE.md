@@ -53,7 +53,8 @@ prophet/
                 quarantaine à provenance, état et retour arrière, rendu des épisodes
   convert/      Conversion d'un donneur ouvert vers l'architecture Prophet
   analysis/     Mesure de la bande passante des canaux de raisonnement
-  kernels/      Réservé aux noyaux Triton/CUDA — vide tant qu'aucun GPU n'a servi
+  kernels/      Réservé aux noyaux Triton/CUDA — vide tant qu'aucun GPU n'a servi ;
+                le balayage delta par blocs (CPU/Mac) vit dans modeling/layers.py
 configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
 scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
 tests/          ~430 tests ; les plus importants sont des tests d'équivalence

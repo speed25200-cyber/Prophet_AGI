@@ -157,6 +157,16 @@ budget utilise la répartition réelle, pas un optimiseur 8 bits qui n'existe pa
 > et un test d'équivalence GPU contre `_scan` (sortie *et* état final) est requis avant
 > qu'il ne porte un entraînement.
 
+**Le balayage par blocs.** Là où le noyau fusionné n'est pas (CPU, Apple silicon, un GPU
+sans `fla`), la règle delta s'exécute désormais par blocs de 64 tokens : une résolution
+triangulaire et quelques produits matriciels par bloc au lieu d'une boucle Python sur
+chaque token. C'est la même récurrence à la précision flottante près — sorties, état
+transmis et gradients sont vérifiés contre le balayage de référence
+(`tests/test_chunk_scan.py`). Mesuré sur 4 cœurs CPU, config tiny, batch 4 × 256 à *k*=4,
+aller-retour : 28.5 s par pas en référence, 0.53 s par blocs de 64. C'est ce qui rend un
+entraînement CPU de bout en bout possible (`scripts/first_run_cpu.py`), et ce qui servira
+au Mac Studio.
+
 ---
 
 ## 5 bis. Lancer un run réel

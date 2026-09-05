@@ -44,6 +44,7 @@
     "linear_expand": 2.0,
     "conv_kernel": 4,
     "linear_beta_max": 2.0,
+    "linear_chunk_size": 64,
     "rope_theta": 500000.0,
     "rope_scaling": "none",
     "rope_scaling_factor": 1.0,
@@ -110,7 +111,14 @@
     "n_multi_token_predict": 1,
     "mtp_loss_weight": 0.3,
     "confidence_head": false,
-    "confidence_loss_weight": 0.1
+    "confidence_loss_weight": 0.1,
+    "action_head": false,
+    "action_dk": 128,
+    "action_kv_head": 0,
+    "sel_loss_weight": 0.5,
+    "ptr_loss_weight": 0.5,
+    "gate_loss_weight": 0.1,
+    "jumped_token_lm_weight": 0.1
   },
   "modality": {
     "n_modalities": 1,
