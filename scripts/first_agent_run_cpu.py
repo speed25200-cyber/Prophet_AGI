@@ -91,7 +91,6 @@ def bench(model, tokenizer, *, n_tasks: int, seed: int) -> dict:
     cfg = AgentConfig(max_steps=4, think_budget=4, action_budget=64, halt_threshold=None,
                       k_decide=2, tau_done=0.0, tau_act=0.0, tau_ask=0.0)
     report = run_bench(model, tokenizer, make_tasks(n_tasks, seed=seed), cfg)
-    steps = [s for e in report.episodes for s in getattr(e, "_records", [])]
     return {
         "tasks": report.n,
         "success_rate": report.success_rate,
