@@ -55,6 +55,10 @@ class TrainConfig:
     """Same rule, from ``heads.confidence_loss_weight``."""
     z_loss_weight: float = 1e-4
     ponder_weight: float = 0.0
+    max_wall_seconds: float | None = None
+    """Stop -- with a checkpoint -- once a step ends past this many seconds after
+    ``train()`` started. A Colab session ends without warning; a run that knows its own
+    deadline ends with a clean checkpoint instead of a corrupted half-written one."""
     sel_weight: float | None = None
     ptr_weight: float | None = None
     gate_weight: float | None = None
@@ -288,6 +292,7 @@ class Trainer:
             stop_at = min(stop_at, self.step + max_steps)
 
         self.model.train()
+        began = time.time()
         while self.step < stop_at:
             start = time.time()
             lr = self._apply_lr()
@@ -360,6 +365,10 @@ class Trainer:
             if self.cfg.checkpoint_every and self.step % self.cfg.checkpoint_every == 0:
                 self.ckpt.save(self.state_dict(), self.step,
                                extra={"loss": accumulated, "lr": lr})
+            # The deadline is checked where a stop request is: after the step, so the
+            # step in flight completes and the checkpoint below is a consistent one.
+            if self.cfg.max_wall_seconds is not None and time.time() - began >= self.cfg.max_wall_seconds:
+                self.stop_requested = True
             if self.stop_requested:
                 break
 

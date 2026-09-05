@@ -96,6 +96,27 @@ de départ à plusieurs recuits.
 
 ---
 
+### Ce que chaque session exécute
+
+```bash
+python scripts/gpu_check.py --config configs/prophet_mini.json      # 1. le noyau est-il d'accord ? à quelle vitesse ?
+python scripts/colab_session.py --config configs/prophet_mini.json \
+    --work /content/drive/MyDrive/prophet --session-minutes 600 -- \
+    --tokenizer tokenizer.json --data-root corpus/ --benchmarks benchmarks/ \
+    --tokens 16.1e9 --batch-size 16 --seq-len 4096 --grad-accum 4     # 2. puis 3. à la session suivante
+```
+
+`gpu_check.py` compare le noyau fusionné au balayage de référence sur *ce* GPU (sorties
+et état rendu) et refuse de continuer sur un désaccord — rien avant lui n'a jamais
+vérifié le contrat de disposition. Il mesure ensuite le coût d'un pas sous la politique
+réelle du trainer (bf16, checkpointing d'activations) et le rapporte en tok/s, en heures
+pour le budget de tokens, et en pic mémoire face à la prédiction de `prophet.budget`,
+pour que l'estimateur soit calibré contre la réalité dès le premier jour.
+`--session-minutes` fait s'arrêter le run *par lui-même*, avec un checkpoint propre, un
+peu avant que Colab ne le tue ; la commande suivante reprend dans la même phase de
+données, sur le même flux. `tests/test_gpu.py` contient les mêmes vérifications sous
+pytest, sautées sans GPU.
+
 ## 4. Stabilité
 
 Un run qui diverge à 70 % du budget est la pire perte possible. Les mesures retenues, par

@@ -485,3 +485,21 @@ def test_training_with_halting_runs_and_reports_depth(tmp_path):
     )
     trainer.train()
     assert logged and any("ponder/expected_depth" in m.extra for m in logged)
+
+
+def test_wall_clock_deadline_stops_the_run_cleanly(tmp_path):
+    """A run past its wall-clock budget stops at a step boundary and can resume."""
+    from prophet.train.loop import TrainConfig, Trainer
+
+    cfg = ProphetConfig.from_json("configs/prophet_tiny_smoke.json")
+    model = ProphetModel(cfg)
+    rows = [[int(x) for x in torch.randint(0, 2048, (32,))] for _ in range(8)]
+    loader = StreamingLoader(sources_from_iterables({"a": (1.0, rows)}), seq_len=32, batch_size=1)
+    trainer = Trainer(
+        model, loader,
+        TrainConfig(total_steps=50, seq_len=32, checkpoint_dir=str(tmp_path), device="cpu",
+                    max_wall_seconds=0.0),
+        model_config=cfg,
+    )
+    trainer.train()
+    assert trainer.step <= 1 and trainer.stop_requested

@@ -75,7 +75,7 @@ modèle de 408M.
 > données réel (fichiers ou Hub, décontamination dans le flux, phases reprenables),
 > l'infrastructure d'entraînement, le harnais d'évaluation, le pilier agentique
 > (actions typées, vérification à tiers, quarantaine, et le chemin des épisodes promus
-> vers le corpus) et le plan d'exécution. **~470 tests passent** ; la boucle
+> vers le corpus) et le plan d'exécution. **~430 tests passent** ; la boucle
 > d'entraînement tourne de bout en bout sur corpus synthétique et sur un corpus local
 > minuscule, avec reprise dans la phase en cours.
 >
@@ -115,7 +115,10 @@ python scripts/train.py --config configs/prophet_tiny_smoke.json --smoke
 python scripts/train_tokenizer.py --data-root corpus/ --out tokenizer.json   # puis :
 python scripts/train.py --config configs/prophet_mini.json --tokenizer tokenizer.json \
     --data-root corpus/ --benchmarks benchmarks/ --tokens 16.1e9        # run réel
-python -m pytest tests/ -q                 # ~330 tests
+python scripts/gpu_check.py --config configs/prophet_mini.json   # sur A100 : noyau, tok/s, mémoire
+python scripts/colab_session.py --config configs/prophet_mini.json --work /content/drive/MyDrive/prophet \
+    --session-minutes 600 -- --tokenizer tokenizer.json --data-root corpus/ --benchmarks benchmarks/
+python -m pytest tests/ -q                 # ~430 tests (les tests GPU sont sautés sans CUDA)
 ```
 
 Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant

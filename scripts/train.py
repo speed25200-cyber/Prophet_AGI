@@ -174,6 +174,9 @@ def main() -> int:
                          "scales the mixture's phases (default: --steps x batch tokens)")
     ap.add_argument("--max-steps-this-session", type=int, default=None,
                     help="stop early without ending the run, e.g. to fit a Colab window")
+    ap.add_argument("--session-minutes", type=float, default=None,
+                    help="wall-clock budget for this session; the run checkpoints and "
+                         "exits cleanly before Colab kills it, and resumes next time")
     ap.add_argument("--allow-slow-scan", action="store_true",
                     help="run without flash-linear-attention (reference scan). For tiny "
                          "CPU checks of the real data path only; never for a budgeted run")
@@ -249,6 +252,7 @@ def main() -> int:
         checkpoint_dir=args.checkpoint_dir,
         seed=args.seed,
         device=args.device,
+        max_wall_seconds=None if args.session_minutes is None else args.session_minutes * 60.0,
     )
     trainer = Trainer(model, loader, train_cfg, model_config=cfg, tokenizer=tokenizer)
     global _TRAINER
