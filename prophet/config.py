@@ -9,9 +9,8 @@ transformer — so that every ablation measures a delta against something known.
 
 from __future__ import annotations
 
-import math
-
 import json
+import math
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any, Literal, get_origin, get_type_hints
@@ -730,6 +729,15 @@ class ProphetConfig:
                 "context-extension run instead of coming for free"
             )
 
+        if self.mixer.qk_norm and self.head_dim < 32:
+            cap = self.head_dim ** 0.5
+            out.append(
+                f"qk_norm at head_dim {self.head_dim} caps the attention logit at "
+                f"sqrt(head_dim) = {cap:.1f} times the learned gains: one key among more than "
+                f"~e^{cap:.1f} = {2.718281828 ** cap:.0f} can never take most of the mass unless the gains grow, "
+                "which is a plateau on exact retrieval, not a loss-curve event"
+            )
+
         if self.mixer.linear_beta_max <= 1.0 and any(
             kind in ("gdn", "mamba2") for _, _, kind in layout
         ):
@@ -750,11 +758,11 @@ class ProphetConfig:
         Path(path).write_text(json.dumps(self.to_dict(), indent=2, default=list), encoding="utf-8")
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ProphetConfig":
+    def from_dict(cls, data: dict[str, Any]) -> ProphetConfig:
         return _build(cls, data)
 
     @classmethod
-    def from_json(cls, path: str | Path) -> "ProphetConfig":
+    def from_json(cls, path: str | Path) -> ProphetConfig:
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
