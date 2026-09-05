@@ -46,7 +46,7 @@ prophet/
   data/         Tokenizer Prophet-Tok v1, mélanges, décontamination, streaming reprenable,
                 corpus réels (fichiers/Hub, phases, plafond d'époques au tirage)
   train/        Muon + AdamW, planning WSD, checkpointing atomique, boucle, pertes
-  eval/         Métriques (BPB) et harnais à trois niveaux
+  eval/         Métriques (BPB), harnais à trois niveaux, benchmark agentique à vérificateurs
   memory/       Registre à clés-produit (écriture en forme close), état de session,
                 consolidation de contexte et de profondeur
   agent/        Boucle agentique : actions typées et grammaire, vérification à tiers,
@@ -56,12 +56,12 @@ prophet/
   kernels/      Réservé aux noyaux Triton/CUDA — vide tant qu'aucun GPU n'a servi
 configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
 scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
-tests/          ~470 tests ; les plus importants sont des tests d'équivalence
+tests/          ~430 tests ; les plus importants sont des tests d'équivalence
 ```
 
 ## Ce que ce dépôt a appris à ses dépens
 
-Huit défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+Neuf défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
 normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
 et faux :
 
@@ -75,6 +75,7 @@ et faux :
 | `nope_layers` réglé, vérifié, documenté — et ignoré par le modèle | revue A1 : grep des champs jamais lus |
 | Biais de routage MoE mis à jour *dans* le forward : sous checkpointing d'activations, le recalcul route autrement et le backward **plante** sur toute config MoE | expérience de comptage d'appels au routeur ; le pas est enregistré et appliqué après le backward |
 | Boucle agentique lisant à *k*=1 puis pensant à *k*=8 sur un cache dont l'état profond n'avait pas vu l'observation | modèle réel branché sur la boucle ; désormais plafonds par token, équivalence testée à 1e-4 |
+| Schémas d'outils encodés comme *texte* dans le prompt épinglé : leurs ids de contrôle étaient des octets, donc aucune ancre pour la tête de sélection | test de la boucle avec un modèle exposant des têtes d'action ; ids de contrôle épissés explicitement |
 
 **Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
 réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par

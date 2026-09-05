@@ -58,6 +58,7 @@ from prophet.agent.verify import (
     decide,
     extract_signals,
 )
+from prophet.memory.session import extract_session, model_fingerprint, restore_session
 from prophet.modeling.model import ProphetCache
 
 __all__ = ["Tokenizer", "AgentConfig", "StepRecord", "EpisodeResult", "AgentLoop"]
@@ -137,6 +138,10 @@ class EpisodeResult:
     final_notes: str
     verified_before_done: bool
     asked_user: str | None = None
+    session: Any | None = None
+    """The bounded recurrent state at the end of the episode (``SessionMemory``), for
+    the next episode to start from. Attention caches are not carried: see
+    ``prophet.memory.session``."""
 
 
 class AgentLoop:
@@ -309,10 +314,23 @@ class AgentLoop:
     # -- the episode -------------------------------------------------------------------
 
     @torch.no_grad()
-    def run(self, goal: str, *, notes: str = "", modality_tool: int | None = None) -> EpisodeResult:
+    def run(self, goal: str, *, notes: str = "", modality_tool: int | None = None,
+            session: Any | None = None) -> EpisodeResult:
+        """Run one episode.
+
+        ``session`` carries the recurrent core's bounded state from an earlier episode
+        (track R03 applied to the agent): the model starts with what it accumulated,
+        while the attention layers start empty at the carried position. The returned
+        ``EpisodeResult.session`` is the state to pass next time.
+        """
         self.model.eval()
         cache = ProphetCache()
         self._ids = []
+        fingerprint = model_fingerprint(self.model) if isinstance(self.model, torch.nn.Module) and hasattr(self.model, "cfg") else ""
+        if session is not None:
+            restore_session(session, cache, fingerprint=fingerprint)
+            # Positions continue from the carried count; the id log must line up.
+            self._ids = [self.tok.pad_id] * cache.position
         state = AgentState(goal=goal, notes=notes, window_steps=self.cfg.window_steps)
 
         # The pinned prompt is read at the deciding depth: it is what every later span
@@ -400,7 +418,8 @@ class AgentLoop:
                                               copied=self._copied))
                     state.trajectory.append(self._traj(step, action, verdict, "", think))
                     self._close(state, passed=True, verified=verified_before_done)
-                    return EpisodeResult(True, "done", records, state.notes, verified_before_done)
+                    return EpisodeResult(True, "done", records, state.notes, verified_before_done,
+                                         session=self._session(cache, fingerprint))
 
             elif action.name == "ask" or (p < self.cfg.tau_ask and self._needs_user(action)):
                 q = action.args.get("question", "clarification needed")
@@ -409,7 +428,8 @@ class AgentLoop:
                                           copied=self._copied))
                 state.trajectory.append(self._traj(step, action, verdict, "", think))
                 self._close(state, passed=False, verified=False)
-                return EpisodeResult(False, "ask", records, state.notes, False, asked_user=q)
+                return EpisodeResult(False, "ask", records, state.notes, False, asked_user=q,
+                                     session=self._session(cache, fingerprint))
 
             elif self.tools.is_irreversible(action.name) and p < self.cfg.tau_act:
                 gated = "verify_first"
@@ -440,9 +460,14 @@ class AgentLoop:
             state.step += 1
 
         self._close(state, passed=False, verified=False)
-        return EpisodeResult(False, "max_steps", records, state.notes, False)
+        return EpisodeResult(False, "max_steps", records, state.notes, False,
+                             session=self._session(cache, fingerprint))
 
     # -- helpers -------------------------------------------------------------------------
+
+    @staticmethod
+    def _session(cache: ProphetCache, fingerprint: str):
+        return extract_session(cache, fingerprint=fingerprint) if cache.slots else None
 
     @staticmethod
     def _selection(out, tool_names: list[str]) -> tuple[str | None, float | None]:

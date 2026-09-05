@@ -97,6 +97,28 @@ les concurrents, sinon le chiffre ne veut rien dire.
 
 ---
 
+## 4 bis. Le niveau agentique : des vérificateurs, et une courbe
+
+Un agent s'évalue comme le reste : sous 500M, un score unique est au hasard, donc le
+harnais doit produire un signal qui *bouge*. `prophet/eval/agent_bench.py` :
+
+- **Chaque tâche a un vérificateur exécutable.** L'action `done` n'est acceptée que s'il
+  passe (tier vérité terrain de la boucle) ; « fini mais faux » est un échec, pas un
+  crédit partiel. La famille de tâches est petite et déterministe — trouver lequel de
+  quelques fichiers contient un mot, noter son nom, finir — assez simple pour qu'un
+  modèle scripté la réussisse (ce qui teste le harnais), assez stricte pour qu'un modèle
+  aléatoire échoue (ce qui teste le vérificateur), et calée sur les échecs mesurés par A2 :
+  omission, mauvais outil, valeur d'argument présente dans le contexte.
+- **La courbe, pas le point.** `learning_curve(block)` rapporte le succès par bloc
+  d'épisodes consécutifs, *modèle gelé*. Ce qui monte ne peut monter que par ce qui est
+  porté d'un épisode à l'autre — l'état de session récurrent (`carry_session`), les
+  épisodes promus de la quarantaine, un registre — c'est-à-dire exactement ce que les
+  paris mémoire doivent faire bouger. Une courbe plate sur un modèle gelé est la ligne
+  de base honnête, et c'est ce que le harnais rapporte aujourd'hui.
+
+Rapporté par épisode : fini, vérifié, pas, appels d'outils, appels malformés, valeurs
+copiées, question posée. Aucun de ces nombres n'existe encore pour un modèle entraîné.
+
 ## 5. Décontamination
 
 Implémentée dans `prophet/data/decontaminate.py`. Recouvrement de 13-grammes à seuil 50 %

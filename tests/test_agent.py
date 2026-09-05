@@ -478,3 +478,23 @@ def test_real_model_runs_through_the_loop_end_to_end():
                      AgentConfig(max_steps=2, think_budget=6, action_budget=24, halt_threshold=None))
     result = loop.run("read a.py")
     assert len(result.steps) <= 2
+
+
+def test_session_state_carries_across_episodes():
+    """The recurrent core's bounded state persists between episodes; positions and the
+    id log continue from where the carried session stopped."""
+    from prophet.modeling.layers import RecurrentState
+
+    cfg = ProphetConfig.from_json("configs/prophet_tiny_smoke.json")
+    model = ProphetModel(cfg).eval()
+    loop = AgentLoop(model, TOK, registry(),
+                     AgentConfig(max_steps=1, think_budget=3, action_budget=12, halt_threshold=None))
+    first = loop.run("one")
+    assert first.session is not None and first.session.tokens_seen > 0
+    saved = {k: v.clone() for k, v in first.session.states.items()}
+    second = loop.run("two", session=first.session)
+    assert second.session.tokens_seen > first.session.tokens_seen
+    # The second episode started from the saved state: its first feed read it.
+    assert any(isinstance(s, RecurrentState) for s in ProphetCache().slots.values()) is False
+    assert set(saved) <= set(second.session.states)
+    assert not all(torch.equal(saved[k], second.session.states[k]) for k in saved)
