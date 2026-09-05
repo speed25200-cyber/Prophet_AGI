@@ -121,6 +121,8 @@ class EpisodeReport:
     copied: int
     asked: bool
     reason: str
+    tokens: int = 0
+    """Tokens the model processed in the episode, prompt included."""
 
     @property
     def success(self) -> bool:
@@ -148,6 +150,17 @@ class BenchReport:
     def mean_steps(self) -> float:
         return sum(e.steps for e in self.episodes) / max(self.n, 1)
 
+    @property
+    def mean_tokens(self) -> float:
+        return sum(e.tokens for e in self.episodes) / max(self.n, 1)
+
+    @property
+    def tokens_per_success(self) -> float | None:
+        """Total tokens spent divided by successes: the token-efficiency number of an
+        agent. ``None`` when nothing succeeded (infinite, and reported as such)."""
+        wins = sum(e.success for e in self.episodes)
+        return None if wins == 0 else sum(e.tokens for e in self.episodes) / wins
+
     def learning_curve(self, block: int = 8) -> list[float]:
         """Success rate per block of consecutive episodes, in order."""
         if block < 1:
@@ -159,10 +172,13 @@ class BenchReport:
 
     def summary(self) -> str:
         curve = " ".join(f"{x:.2f}" for x in self.learning_curve())
+        tps = self.tokens_per_success
         return (
             f"{self.n} episodes: success {self.success_rate:.1%}, "
-            f"{self.mean_steps:.1f} steps/episode, malformed {self.malformed_rate:.1%}, "
-            f"asked {sum(e.asked for e in self.episodes)}; curve [{curve}]"
+            f"{self.mean_steps:.1f} steps/episode, {self.mean_tokens:.0f} tokens/episode, "
+            f"tokens/success {'inf' if tps is None else f'{tps:.0f}'}, "
+            f"malformed {self.malformed_rate:.1%}, asked {sum(e.asked for e in self.episodes)}; "
+            f"curve [{curve}]"
         )
 
 
@@ -211,5 +227,6 @@ def run_bench(
             copied=sum(s.copied for s in result.steps),
             asked=result.asked_user is not None,
             reason=result.reason,
+            tokens=int(getattr(result, "tokens", 0)),
         ))
     return report

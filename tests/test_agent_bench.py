@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 import torch
 from torch import nn
 
@@ -143,3 +145,11 @@ def test_session_can_be_carried_across_bench_episodes():
     tasks = make_tasks(2, seed=2)
     report = run_bench(_Scripted([_perfect(t) for t in tasks]), TOK, tasks, _cfg(), carry_session=True)
     assert report.n == 2
+
+
+def test_tokens_per_success_is_reported():
+    tasks = make_tasks(2, seed=1)
+    report = run_bench(_Scripted([_perfect(t) for t in tasks]), TOK, tasks, _cfg())
+    assert report.mean_tokens > 50 and report.tokens_per_success == pytest.approx(report.mean_tokens)
+    bad = run_bench(_Scripted([_wrong(t) for t in tasks]), TOK, tasks, _cfg())
+    assert bad.tokens_per_success is None and "tokens/success inf" in bad.summary()

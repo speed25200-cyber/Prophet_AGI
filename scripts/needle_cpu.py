@@ -8,6 +8,8 @@ values are single tokens from disjoint vocabularies), then filler, then asks ``k
 one of the keys; the model must emit ``v``. Two models of identical size are trained on
 it, both with a global window of ``window`` tokens:
 
+- ``full``   -- the global layer sees the whole sequence: the learnability control. If
+               this arm does not learn within the budget, the experiment says nothing.
 - ``none``   -- the global layer is exactly windowed: past the window the pair is gone.
 - ``ledger`` -- the global layer writes evicted keys and values into a bounded ledger
                and reads it back (``mixer.global_memory``).
@@ -47,7 +49,7 @@ from prophet.config import (  # noqa: E402
 )
 from prophet.modeling.model import ProphetModel  # noqa: E402
 
-N_KEYS, N_VALUES = 64, 64
+N_KEYS, N_VALUES = 16, 16
 FILLER = 128  # one filler token id band
 KEY0, VAL0, FILL0, EQ, QMARK, SEP = 1, 1 + N_KEYS, 1 + N_KEYS + N_VALUES, 200, 201, 202
 VOCAB = 256
@@ -86,20 +88,27 @@ def batch(rng: random.Random, *, n: int, n_pairs: int, max_gap: int, length: int
     )
 
 
-def config(memory: str, *, window: int, slots: int) -> ProphetConfig:
+def config(arm: str, *, window: int, slots: int, length: int) -> ProphetConfig:
+    """``full``: exact global attention (window = the whole sequence); ``none``: the
+    global layer windowed; ``ledger``: windowed plus the ledger."""
+    memory = "ledger" if arm == "ledger" else "none"
+    global_window = length if arm == "full" else window
+    # "none": the global layer becomes a plain sliding-window layer (same window as the
+    # ledger arm, no ledger), which is what a bounded stack without the mechanism is.
+    pattern = ["swa", "swa"] if arm == "none" else ["swa", "full_attn"]
     return ProphetConfig(
-        name=f"needle-{memory}", d_model=64, n_layers=4, max_seq_len=1024,
+        name=f"needle-{arm}", d_model=64, n_layers=4, max_seq_len=1024,
         frontend=FrontendConfig(vocab_size=VOCAB, tie_word_embeddings=True),
         mixer=MixerConfig(
-            pattern=["swa", "full_attn"], n_heads=4, n_kv_heads=2, sliding_window=window,
+            pattern=pattern, n_heads=4, n_kv_heads=2, sliding_window=global_window,
             attention_sink_tokens=1, nope_layers=(1,), global_memory=memory,
-            global_window=window, global_ledger_slots=slots, global_ledger_top_k=8,
+            global_window=global_window, global_ledger_slots=slots, global_ledger_top_k=8,
             linear_heads=2, linear_head_dim=16,
         ),
         ffn=FeedForwardConfig(kind="dense", hidden_mult=2.0),
         recurrent=RecurrentCoreConfig(enabled=True, prelude_layers=1, core_layers=1, coda_layers=2,
                                       train_loop_min=1, train_loop_max=1, default_loop_k=1,
-                                      halting="none", core_pattern=["gdn"], coda_pattern=["swa", "full_attn"]),
+                                      halting="none", core_pattern=["gdn"], coda_pattern=pattern),
         heads=HeadsConfig(n_multi_token_predict=0),
     )
 
@@ -121,17 +130,17 @@ def accuracy_by_distance(model, rng, *, n: int, n_pairs: int, max_gap: int, leng
 def train(memory: str, *, window: int, slots: int, steps: int, minutes: float, seed: int, length: int,
           n_pairs: int, max_gap: int, log) -> tuple[ProphetModel, dict]:
     torch.manual_seed(seed)
-    cfg = config(memory, window=window, slots=slots)
+    cfg = config(memory, window=window, slots=slots, length=length)
     cfg.validate()
     model = ProphetModel(cfg).train()
-    opt = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=0.01)
+    opt = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=0.01)
     rng = random.Random(seed)
     started = time.time()
     losses = []
     for step in range(steps):
-        ids, targets, positions, _ = batch(rng, n=16, n_pairs=n_pairs, max_gap=max_gap, length=length)
+        ids, targets, positions, _ = batch(rng, n=32, n_pairs=n_pairs, max_gap=max_gap, length=length)
         logits = model(ids, loop_k=1).logits
-        picked = logits[torch.arange(16), positions]
+        picked = logits[torch.arange(32), positions]
         loss = torch.nn.functional.cross_entropy(picked.float(), targets)
         opt.zero_grad()
         loss.backward()
@@ -155,7 +164,8 @@ def main() -> int:
     ap.add_argument("--pairs", type=int, default=6)
     ap.add_argument("--max-gap", type=int, default=96)
     ap.add_argument("--length", type=int, default=160)
-    ap.add_argument("--steps", type=int, default=1500)
+    ap.add_argument("--steps", type=int, default=3000)
+    ap.add_argument("--arms", default="full,none,ledger")
     ap.add_argument("--minutes", type=float, default=12.0, help="per model")
     ap.add_argument("--eval-n", type=int, default=640)
     ap.add_argument("--seed", type=int, default=0)
@@ -167,7 +177,7 @@ def main() -> int:
         print(msg, flush=True)
 
     report: dict = {"window": args.window, "slots": args.slots, "pairs": args.pairs, "max_gap": args.max_gap}
-    for memory in ("none", "ledger"):
+    for memory in [a for a in args.arms.split(",") if a]:
         model, stats = train(memory, window=args.window, slots=args.slots, steps=args.steps, minutes=args.minutes,
                              seed=args.seed, length=args.length, n_pairs=args.pairs, max_gap=args.max_gap, log=log)
         acc = accuracy_by_distance(model, random.Random(args.seed + 100), n=args.eval_n, n_pairs=args.pairs,
@@ -175,12 +185,12 @@ def main() -> int:
         report[memory] = {"train": stats, "accuracy_by_distance": {k: {"accuracy": a, "n": n} for k, (a, n) in acc.items()}}
         log(f"[{memory}] {stats} accuracy {acc}")
     (out / "report.json").write_text(json.dumps(report, indent=2))
-    print("\n| Distance de la paire à la question | sans registre | avec registre |\n|---|---:|---:|")
+    arms = [a for a in args.arms.split(",") if a]
+    print("\n| Distance de la paire à la question | " + " | ".join(arms) + " |\n|---|" + "---:|" * len(arms))
     for key in ("inside", "1-2x", ">2x"):
-        a = report["none"]["accuracy_by_distance"].get(key, {}).get("accuracy", float("nan"))
-        b = report["ledger"]["accuracy_by_distance"].get(key, {}).get("accuracy", float("nan"))
         label = {"inside": "≤ fenêtre", "1-2x": "1 à 2 fenêtres", ">2x": "> 2 fenêtres"}[key]
-        print(f"| {label} | {a:.1%} | {b:.1%} |")
+        cells = [f"{report[a]['accuracy_by_distance'].get(key, {}).get('accuracy', float('nan')):.1%}" for a in arms]
+        print(f"| {label} | " + " | ".join(cells) + " |")
     return 0
 
 

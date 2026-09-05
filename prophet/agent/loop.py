@@ -142,6 +142,9 @@ class EpisodeResult:
     """The bounded recurrent state at the end of the episode (``SessionMemory``), for
     the next episode to start from. Attention caches are not carried: see
     ``prophet.memory.session``."""
+    tokens: int = 0
+    """Every token the model processed in the episode: prompt, spans, observations and
+    spliced values. The denominator of "tokens per success"."""
 
 
 class AgentLoop:
@@ -421,7 +424,7 @@ class AgentLoop:
                     state.trajectory.append(self._traj(step, action, verdict, "", think))
                     self._close(state, passed=True, verified=verified_before_done)
                     return EpisodeResult(True, "done", records, state.notes, verified_before_done,
-                                         session=self._session(cache, fingerprint))
+                                         session=self._session(cache, fingerprint), tokens=len(self._ids))
 
             elif action.name == "ask" or (p < self.cfg.tau_ask and self._needs_user(action)):
                 q = action.args.get("question", "clarification needed")
@@ -431,7 +434,7 @@ class AgentLoop:
                 state.trajectory.append(self._traj(step, action, verdict, "", think))
                 self._close(state, passed=False, verified=False)
                 return EpisodeResult(False, "ask", records, state.notes, False, asked_user=q,
-                                     session=self._session(cache, fingerprint))
+                                     session=self._session(cache, fingerprint), tokens=len(self._ids))
 
             elif self.tools.is_irreversible(action.name) and p < self.cfg.tau_act:
                 gated = "verify_first"
@@ -463,7 +466,7 @@ class AgentLoop:
 
         self._close(state, passed=False, verified=False)
         return EpisodeResult(False, "max_steps", records, state.notes, False,
-                             session=self._session(cache, fingerprint))
+                             session=self._session(cache, fingerprint), tokens=len(self._ids))
 
     # -- helpers -------------------------------------------------------------------------
 
