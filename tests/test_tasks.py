@@ -13,7 +13,14 @@ import torch
 from prophet.agent.actions import Action
 from prophet.agent.render import render_episode
 from prophet.agent.state import AgentState
-from prophet.agent.tasks import FAMILIES, make_tasks, perfect_trajectory, tools_for, verifier_for
+from prophet.agent.tasks import (
+    FAMILIES,
+    make_related_tasks,
+    make_tasks,
+    perfect_trajectory,
+    tools_for,
+    verifier_for,
+)
 from prophet.data.tokenizer import ProphetTokenizer
 from prophet.modeling.action import build_action_targets
 
@@ -71,7 +78,7 @@ def test_rendered_episodes_carry_copyable_targets_for_every_copy_family():
 def test_dataset_builder_writes_families_and_a_manifest(tmp_path):
     manifest = build(tmp_path, per_family=3, seed=1, eval_seed=7, families=["files", "calc"])
     assert set(manifest["families"]) == {"files", "calc"}
-    rows = [json.loads(l) for l in (tmp_path / "calc.jsonl").read_text().splitlines()]
+    rows = [json.loads(line) for line in (tmp_path / "calc.jsonl").read_text().splitlines()]
     assert len(rows) == 3 and rows[0]["family"] == "calc" and "<|call|>" in rows[0]["text"]
     assert json.loads((tmp_path / "manifest.json").read_text())["eval_seed"] == 7
     with pytest.raises(SystemExit, match="must differ"):
@@ -136,3 +143,43 @@ def test_benchmark_specs_cover_the_harness_tiers():
     for task in TIER1:
         if task.kind == "multiple_choice" or task.name in ("arc_challenge", "commonsense_qa", "winogrande"):
             assert task.name in names, task.name
+
+
+# --------------------------------------------------------------------------------------
+# Sequences of episodes (the carried-state recipe)
+# --------------------------------------------------------------------------------------
+
+
+def test_build_rows_concatenates_episodes_each_at_its_bos():
+    from first_agent_run_cpu import build_rows
+
+    one, s1 = build_rows(TOK, 4, seed=1, seq_len=2048, per_row=1)
+    two, s2 = build_rows(TOK, 4, seed=1, seq_len=2048, per_row=2)
+    assert len(one) == 4 and len(two) == 2 and s1["rows"] == 4 and s2["episodes"] == 4
+    strip = lambda row: [t for t in row if t != TOK.pad_id]  # noqa: E731
+    # A row of two is the two single rows back to back: the second episode starts from
+    # the state the first one left, which is what a carried session is at inference.
+    assert strip(two[0]) == strip(one[0]) + strip(one[1])
+    assert strip(one[0])[0] == TOK.bos_id and strip(one[0])[-1] == TOK.eos_id
+    assert strip(two[0]).count(TOK.bos_id) == 2
+    with pytest.raises(ValueError, match="per_row"):
+        build_rows(TOK, 2, seed=1, seq_len=64, per_row=0)
+
+
+def test_related_lookup_sequences_share_files_and_skip_the_read_when_seen():
+    a, b = make_related_tasks(6, size=3, seed=2), make_related_tasks(6, size=3, seed=2)
+    assert [t.goal for t in a] == [t.goal for t in b] and len(a) == 18
+    seen = [t for t in a if t.extra["seen"]]
+    assert seen and all(t.extra["position"] > 0 for t in seen)
+    for i, task in enumerate(a):
+        assert task.extra["seen"] == (task.extra["position"] > 0 and task.files == a[i - 1].files)
+        if task.extra["seen"]:
+            assert task.extra["key"] != a[i - 1].extra["key"]
+        names = [s["action"]["name"] for s in perfect_trajectory(task)]
+        assert names == (["note", "done"] if task.extra["seen"] else ["read_file", "note", "done"])
+        state = AgentState(goal=task.goal, notes=task.answer)
+        assert verifier_for(task)(state)
+    # A new file after a switch is never the file of the previous episode.
+    for i, task in enumerate(a[1:], 1):
+        if task.extra["position"] > 0 and not task.extra["seen"]:
+            assert task.extra["file"] != a[i - 1].extra["file"]

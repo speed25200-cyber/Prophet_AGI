@@ -25,6 +25,11 @@ the window at all, and how does it decay with distance? Numbers are reported per
 distance bucket; a ``ledger`` column that equals ``none`` beyond the window means the
 mechanism bought nothing at this scale.
 
+The first protocol (``--form eq --inside-fraction -1``: two-hop pairs, uniform gap) was
+insensitive -- the full-attention control itself reached 24% where chance is 6%, so the
+arms could not be told apart. The default is now one hop and half the examples inside
+the window: the learnability control must pass before any column means anything.
+
 Tiny by design (a few hundred thousand parameters, minutes on CPU). Not a claim about
 any real corpus; the ablation on real text is in ``prophet.plan``.
 """
@@ -33,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import sys
 import time
@@ -58,8 +64,17 @@ KEY0, VAL0, FILL0, EQ, QMARK, SEP = 1, 1 + N_KEYS, 1 + N_KEYS + N_VALUES, 200, 2
 VOCAB = 256
 
 
-def make_example(rng: random.Random, *, n_pairs: int, max_gap: int) -> tuple[list[int], int, int]:
-    """Returns (ids, answer position, distance from the asked pair to the question)."""
+def make_example(rng: random.Random, *, n_pairs: int, max_gap: int, window: int | None = None,
+                 inside_fraction: float = -1.0, form: str = "plain") -> tuple[list[int], int, int]:
+    """Returns (ids, answer position, distance from the asked pair to the question).
+
+    ``form="plain"`` lists ``k v |`` and asks ``k``: the value is predicted at the key
+    itself, one hop (an induction head). ``form="eq"`` is the first protocol, ``k = v |``
+    asked as ``k =``, two hops. ``inside_fraction`` in [0, 1] draws that share of the
+    examples with the asked pair inside ``window`` and the rest beyond it, so the host
+    learns the skill on the answerable half instead of drowning it in the unanswerable
+    one; negative means the gap is uniform, the first protocol.
+    """
     keys = rng.sample(range(N_KEYS), n_pairs)
     vals = [rng.randrange(N_VALUES) for _ in keys]
     asked = rng.randrange(n_pairs)
@@ -67,20 +82,32 @@ def make_example(rng: random.Random, *, n_pairs: int, max_gap: int) -> tuple[lis
     pair_pos = []
     for k, v in zip(keys, vals, strict=True):
         pair_pos.append(len(ids))
-        ids += [KEY0 + k, EQ, VAL0 + v, SEP]
-    gap = rng.randrange(0, max_gap + 1)
+        ids += [KEY0 + k, EQ, VAL0 + v, SEP] if form == "eq" else [KEY0 + k, VAL0 + v, SEP]
+    question = [KEY0 + keys[asked], EQ] if form == "eq" else [KEY0 + keys[asked]]
+    # distance = answer_pos - pair_pos[asked] = len(ids) + gap + len(question) - pair_pos[asked]
+    base = len(ids) + len(question) - pair_pos[asked]
+    if inside_fraction >= 0 and window is not None:
+        widest_inside = window - base  # the largest gap that keeps the pair inside
+        if rng.random() < inside_fraction and widest_inside >= 0:
+            gap = rng.randrange(0, min(widest_inside, max_gap) + 1)
+        else:
+            gap = rng.randrange(max(widest_inside + 1, 0), max_gap + 1) if widest_inside < max_gap else max_gap
+    else:
+        gap = rng.randrange(0, max_gap + 1)
     ids += [FILL0 + rng.randrange(8) for _ in range(gap)]
-    ids += [KEY0 + keys[asked], EQ]
+    ids += question
     answer_pos = len(ids)  # the model predicts the value at this position
     ids.append(VAL0 + vals[asked])
     distance = answer_pos - pair_pos[asked]
     return ids, answer_pos, distance
 
 
-def batch(rng: random.Random, *, n: int, n_pairs: int, max_gap: int, length: int):
+def batch(rng: random.Random, *, n: int, n_pairs: int, max_gap: int, length: int, window: int | None = None,
+          inside_fraction: float = -1.0, form: str = "plain"):
     rows, targets, positions, distances = [], [], [], []
     for _ in range(n):
-        ids, pos, dist = make_example(rng, n_pairs=n_pairs, max_gap=max_gap)
+        ids, pos, dist = make_example(rng, n_pairs=n_pairs, max_gap=max_gap, window=window,
+                                      inside_fraction=inside_fraction, form=form)
         ids = ids[:length] + [0] * (length - len(ids))
         rows.append(ids)
         targets.append(ids[pos])
@@ -116,12 +143,14 @@ def config(arm: str, *, window: int, slots: int, length: int) -> ProphetConfig:
     )
 
 
-def accuracy_by_distance(model, rng, *, n: int, n_pairs: int, max_gap: int, length: int, window: int) -> dict:
+def accuracy_by_distance(model, rng, *, n: int, n_pairs: int, max_gap: int, length: int, window: int,
+                         inside_fraction: float = -1.0, form: str = "plain") -> dict:
     model.eval()
     buckets: dict[str, list[int]] = {}
     with torch.no_grad():
         for _ in range(n // 32):
-            ids, targets, positions, distances = batch(rng, n=32, n_pairs=n_pairs, max_gap=max_gap, length=length)
+            ids, targets, positions, distances = batch(rng, n=32, n_pairs=n_pairs, max_gap=max_gap, length=length,
+                                                       window=window, inside_fraction=inside_fraction, form=form)
             logits = model(ids, loop_k=1).logits
             pred = logits[torch.arange(32), positions].argmax(-1)
             for ok, d in zip((pred == targets).tolist(), distances.tolist(), strict=True):
@@ -130,8 +159,17 @@ def accuracy_by_distance(model, rng, *, n: int, n_pairs: int, max_gap: int, leng
     return {k: (sum(v) / len(v), len(v)) for k, v in sorted(buckets.items())}
 
 
+def lr_at(step: int, *, steps: int, peak: float, warmup: int) -> float:
+    """Linear warmup, then cosine to a tenth of the peak."""
+    if step < warmup:
+        return peak * (step + 1) / warmup
+    progress = (step - warmup) / max(steps - warmup, 1)
+    return peak * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * progress)))
+
+
 def train(memory: str, *, window: int, slots: int, steps: int, minutes: float, seed: int, length: int,
-          n_pairs: int, max_gap: int, log) -> tuple[ProphetModel, dict]:
+          n_pairs: int, max_gap: int, log, lr: float = 1e-3, warmup: int = 100,
+          inside_fraction: float = -1.0, form: str = "plain") -> tuple[ProphetModel, dict]:
     torch.manual_seed(seed)
     cfg = config(memory, window=window, slots=slots, length=length)
     cfg.validate()
@@ -144,18 +182,21 @@ def train(memory: str, *, window: int, slots: int, steps: int, minutes: float, s
                 with torch.no_grad():
                     layer.gate.fill_(-1e4)  # sigmoid = 0: the read never enters
                 layer.gate.requires_grad_(False)
-    opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=3e-3, weight_decay=0.01)
+    opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr, weight_decay=0.01)
     rng = random.Random(seed)
     started = time.time()
     losses = []
     for step in range(steps):
-        ids, targets, positions, _ = batch(rng, n=32, n_pairs=n_pairs, max_gap=max_gap, length=length)
+        ids, targets, positions, _ = batch(rng, n=32, n_pairs=n_pairs, max_gap=max_gap, length=length,
+                                           window=window, inside_fraction=inside_fraction, form=form)
         logits = model(ids, loop_k=1).logits
         picked = logits[torch.arange(32), positions]
         loss = torch.nn.functional.cross_entropy(picked.float(), targets)
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        for group in opt.param_groups:
+            group["lr"] = lr_at(step, steps=steps, peak=lr, warmup=warmup)
         opt.step()
         losses.append(float(loss))
         if step % 50 == 0:
@@ -180,6 +221,12 @@ def main() -> int:
     ap.add_argument("--minutes", type=float, default=12.0, help="per model")
     ap.add_argument("--eval-n", type=int, default=640)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--warmup", type=int, default=100)
+    ap.add_argument("--inside-fraction", type=float, default=0.5,
+                    help="share of examples with the asked pair inside the window (negative: uniform gap)")
+    ap.add_argument("--form", choices=["plain", "eq"], default="plain",
+                    help="'plain': k v | ... k -> v (one hop); 'eq': k = v | ... k = -> v (two hops)")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -187,12 +234,16 @@ def main() -> int:
     def log(msg: str) -> None:
         print(msg, flush=True)
 
-    report: dict = {"window": args.window, "slots": args.slots, "pairs": args.pairs, "max_gap": args.max_gap}
+    report: dict = {"window": args.window, "slots": args.slots, "pairs": args.pairs, "max_gap": args.max_gap,
+                    "lr": args.lr, "warmup": args.warmup, "inside_fraction": args.inside_fraction, "form": args.form,
+                    "steps": args.steps}
     for memory in [a for a in args.arms.split(",") if a]:
         model, stats = train(memory, window=args.window, slots=args.slots, steps=args.steps, minutes=args.minutes,
-                             seed=args.seed, length=args.length, n_pairs=args.pairs, max_gap=args.max_gap, log=log)
+                             seed=args.seed, length=args.length, n_pairs=args.pairs, max_gap=args.max_gap, log=log,
+                             lr=args.lr, warmup=args.warmup, inside_fraction=args.inside_fraction, form=args.form)
         acc = accuracy_by_distance(model, random.Random(args.seed + 100), n=args.eval_n, n_pairs=args.pairs,
-                                   max_gap=args.max_gap, length=args.length, window=args.window)
+                                   max_gap=args.max_gap, length=args.length, window=args.window,
+                                   inside_fraction=args.inside_fraction, form=args.form)
         report[memory] = {"train": stats, "accuracy_by_distance": {k: {"accuracy": a, "n": n} for k, (a, n) in acc.items()}}
         log(f"[{memory}] {stats} accuracy {acc}")
     (out / "report.json").write_text(json.dumps(report, indent=2))

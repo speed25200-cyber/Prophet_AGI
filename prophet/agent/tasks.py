@@ -30,7 +30,8 @@ from typing import Any
 from prophet.agent.actions import Action, ToolRegistry, ToolSchema
 from prophet.agent.state import AgentState
 
-__all__ = ["Task", "FAMILIES", "make_tasks", "tools_for", "verifier_for", "perfect_trajectory"]
+__all__ = ["Task", "FAMILIES", "make_tasks", "make_related_tasks", "tools_for", "verifier_for",
+           "perfect_trajectory"]
 
 _WORDS = [
     "anchor", "beacon", "cinder", "delta", "ember", "falcon", "garnet", "harbor", "iris",
@@ -137,6 +138,40 @@ def make_tasks(n: int, *, family: str, seed: int = 0) -> list[Task]:
     return [FAMILIES[family](rng, i, seed) for i in range(n)]
 
 
+def make_related_tasks(n_rows: int, *, size: int = 3, seed: int = 0, p_same: float = 0.5) -> list[Task]:
+    """Lookup tasks in *sequences*, flat and in order: ``n_rows`` runs of ``size``
+    episodes. The first episode of a run opens a new file; each later one asks another
+    field of the same file with probability ``p_same`` (``extra["seen"]`` is True) or
+    opens a new file. A seen file's perfect trajectory notes the answer without reading
+    it again -- what an agent whose session state carries the file should do -- and an
+    unseen one reads first. Trained on rows of ``size`` such episodes and benched with
+    the session carried, the pair measures whether the recurrent state holds what the
+    previous episode read: fewer tokens at the same success, or a wrong answer.
+    """
+    rng = random.Random(f"lookup-seq-{seed}")
+    tasks: list[Task] = []
+    for row in range(n_rows):
+        fields: dict[str, str] = {}
+        name = ""
+        keys_left: list[str] = []
+        for position in range(size):
+            same = position > 0 and keys_left and rng.random() < p_same
+            if not same:
+                previous = name
+                while name == previous:
+                    name = f"{rng.choice(_WORDS)}_{rng.choice(_WORDS)}.json"
+                fields = {"city": rng.choice(["Lyon", "Oslo", "Kyoto", "Quito", "Perth"]),
+                          "year": str(rng.randrange(1900, 2030)), "code": rng.choice(_WORDS)}
+                keys_left = list(fields)
+                rng.shuffle(keys_left)
+            key = keys_left.pop()
+            goal = f"Read {name} and note the value of the field {key}, then finish."
+            tasks.append(Task(f"lookup-seq-{seed}-{row}-{position}", "lookup", goal, fields[key],
+                              {name: json.dumps(fields, separators=(",", ":"))},
+                              {"key": key, "file": name, "seen": bool(same), "row": row, "position": position}))
+    return tasks
+
+
 # --------------------------------------------------------------------------------------
 # Tools, verifiers, perfect trajectories
 # --------------------------------------------------------------------------------------
@@ -213,6 +248,8 @@ def perfect_trajectory(task: Task) -> list[dict[str, Any]]:
         return [step(0, "calc", {"expression": task.extra["expression"]}),
                 step(1, "note", {"text": task.answer}), step(2, "done", {})]
     if task.family == "lookup":
+        if task.extra.get("seen"):  # the previous episode read this file: answer from state
+            return [step(0, "note", {"text": task.answer}), step(1, "done", {})]
         return [step(0, "read_file", {"path": task.extra["file"]}),
                 step(1, "note", {"text": task.answer}), step(2, "done", {})]
     if task.family == "count":

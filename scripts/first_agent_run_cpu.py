@@ -15,7 +15,13 @@ Everything the agent pillar built is exercised on real weights, in one loop:
                  stream. One episode per row, so every call has its schemas in context.
 3. ``bench``     success on unseen tasks with the executable verifier deciding, before
                  and after; the selection head's accuracy at ``<|call|>``; how many
-                 argument values the copy pointer filled.
+                 argument values the copy pointer filled. ``--carry-bench`` adds the
+                 same bench with the recurrent state carried across episodes.
+
+``--episodes-per-row N`` is the *sequences of episodes* recipe: N consecutive episodes
+share a training row, so an episode learns to start from the state the previous one
+left -- what a carried session state is at inference. One episode per row never shows
+the model such a state, and the carried bench then measures an undefined input.
 
 At seven million parameters nothing here is a capability claim. What it measures is
 whether the mechanics -- anchors, grammar, selection, copy, verifier gates -- let a
@@ -73,13 +79,33 @@ def perfect_trajectory(task) -> list[dict]:
 
 
 def build_rows(tokenizer: ProphetTokenizer, n: int, *, seed: int, seq_len: int,
-               families: list[str] | None = None) -> tuple[list[list[int]], dict]:
-    """Rendered perfect episodes, one per row. ``families=None`` is the original file
-    family of the benchmark; otherwise ``n`` episodes of each named family of
-    ``prophet.agent.tasks``, interleaved."""
+               families: list[str] | None = None, per_row: int = 1,
+               related: bool = False) -> tuple[list[list[int]], dict]:
+    """Rendered perfect episodes. ``families=None`` is the original file family of the
+    benchmark; otherwise ``n`` episodes of each named family of ``prophet.agent.tasks``,
+    interleaved.
+
+    ``per_row`` consecutive episodes share one row, each starting at its ``<|bos|>``
+    exactly as the loop feeds them: the recurrent state an episode starts from is then
+    the one the previous episode left, which is the distribution a *carried* session
+    state is drawn from at inference (``run_bench(carry_session=True)``). With one
+    episode per row that state is never seen in training, and the carried bench
+    measures an undefined input, not the mechanism.
+
+    ``related`` builds the rows from ``prophet.agent.tasks.make_related_tasks``: runs of
+    ``per_row`` lookup episodes where a file already read by the previous episode is
+    answered without reading it again. ``n`` is then the number of episodes overall.
+    """
+    if per_row < 1:
+        raise ValueError("per_row must be at least 1")
     rows, longest, truncated = [], 0, 0
     pad = tokenizer.pad_id
-    if families is None:
+    if related:
+        episodes = [
+            (t.goal, task_families.tools_for(t), task_families.perfect_trajectory(t))
+            for t in task_families.make_related_tasks(max(n // per_row, 1), size=per_row, seed=seed)
+        ]
+    elif families is None:
         episodes = [(task.goal, file_tools(task), perfect_trajectory(task)) for task in make_tasks(n, seed=seed)]
     else:
         per_family = [task_families.make_tasks(n, family=f, seed=seed) for f in families]
@@ -87,15 +113,20 @@ def build_rows(tokenizer: ProphetTokenizer, n: int, *, seed: int, seq_len: int,
             (t.goal, task_families.tools_for(t), task_families.perfect_trajectory(t))
             for group in zip(*per_family, strict=True) for t in group
         ]
+    encoded = []
     for goal, tools, trajectory in episodes:
         text = render_episode(goal, tools, trajectory)
-        ids = tokenizer.encode(text, parse_special=True)
+        ids = [tokenizer.bos_id] + tokenizer.encode(text, parse_special=True)
         longest = max(longest, len(ids))
+        encoded.append(ids)
+    for start in range(0, len(encoded), per_row):
+        ids = [t for episode in encoded[start : start + per_row] for t in episode]
         if len(ids) > seq_len:
             truncated += 1
             ids = ids[:seq_len]
         rows.append(ids + [pad] * (seq_len - len(ids)))
-    return rows, {"episodes": len(rows), "longest": longest, "truncated": truncated}
+    return rows, {"episodes": len(encoded), "rows": len(rows), "per_row": per_row,
+                  "longest": longest, "truncated": truncated}
 
 
 def replay_source(work: Path, tokenizer: ProphetTokenizer, weight: float) -> TokenisedSource:
@@ -124,7 +155,7 @@ def heldout_bpb(work: Path, model, tokenizer: ProphetTokenizer, *, seq_len: int 
     sys.path.insert(0, str(ROOT / "scripts"))
     from first_run_cpu import _batches
 
-    docs = [json.loads(l)["text"] for l in (work / "benchmarks" / "heldout.jsonl").read_text().splitlines() if l.strip()][:max_docs]
+    docs = [json.loads(line)["text"] for line in (work / "benchmarks" / "heldout.jsonl").read_text().splitlines() if line.strip()][:max_docs]
     model.eval()
     with torch.no_grad():
         r = evaluate_bpb(model, _batches(tokenizer, docs, seq_len=seq_len, batch_size=8))
@@ -135,17 +166,41 @@ def agent_config(cfg: ProphetConfig) -> ProphetConfig:
     return dataclasses.replace(cfg, heads=dataclasses.replace(cfg.heads, action_head=True, action_dk=32))
 
 
-def bench(model, tokenizer, *, n_tasks: int, seed: int, family: str | None = None) -> dict:
+def bench(model, tokenizer, *, n_tasks: int, seed: int, family: str | None = None,
+          carry: bool = False, related_size: int = 0) -> dict:
+    """``carry`` starts every episode from the recurrent state the previous one left:
+    the session-carry measurement of ``docs/10_NEXT_ARCHITECTURE.md``. ``related_size``
+    benches the related lookup sequences instead (runs of that many episodes) and
+    reports seen and unseen files apart: tokens, success and how many reads the model
+    still made on a file the previous episode read."""
     cfg = AgentConfig(max_steps=4, think_budget=4, action_budget=64, halt_threshold=None,
                       k_decide=2, tau_done=0.0, tau_act=0.0, tau_ask=0.0)
-    if family is None:
-        report = run_bench(model, tokenizer, make_tasks(n_tasks, seed=seed), cfg)
+    tasks = None
+    if related_size:
+        tasks = task_families.make_related_tasks(max(n_tasks // related_size, 1), size=related_size, seed=seed)
+        report = run_bench(model, tokenizer, tasks, cfg, tools_for=task_families.tools_for,
+                           verifier_for_task=task_families.verifier_for, carry_session=carry)
+    elif family is None:
+        report = run_bench(model, tokenizer, make_tasks(n_tasks, seed=seed), cfg, carry_session=carry)
     else:
         report = run_bench(
             model, tokenizer, task_families.make_tasks(n_tasks, family=family, seed=seed), cfg,
             tools_for=task_families.tools_for, verifier_for_task=task_families.verifier_for,
+            carry_session=carry,
         )
+    by_seen = None
+    if tasks is not None:
+        by_seen = {}
+        for flag, label in ((False, "unseen"), (True, "seen")):
+            eps = [e for t, e in zip(tasks, report.episodes, strict=True) if t.extra["seen"] == flag]
+            by_seen[label] = {
+                "n": len(eps),
+                "success_rate": sum(e.verified for e in eps) / max(len(eps), 1),
+                "mean_tokens": sum(e.tokens for e in eps) / max(len(eps), 1),
+                "reads_per_episode": sum(e.tool_calls for e in eps) / max(len(eps), 1),
+            }
     return {
+        "by_seen": by_seen,
         "tasks": report.n,
         "success_rate": report.success_rate,
         "mean_steps": report.mean_steps,
@@ -179,6 +234,16 @@ def main() -> int:
     ap.add_argument("--bpb", action="store_true", help="measure held-out BPB before and after (what the fine-tune erases)")
     ap.add_argument("--tag", default="agent", help="output directory under --work")
     ap.add_argument("--bpb-docs", type=int, default=400, help="held-out documents scored by --bpb")
+    ap.add_argument("--episodes-per-row", type=int, default=1,
+                    help="consecutive episodes per training row (each at its <|bos|>): above 1, the "
+                         "recurrent state an episode starts from is the previous episode's, the "
+                         "distribution a carried session state comes from")
+    ap.add_argument("--carry-bench", action="store_true",
+                    help="also bench with the session state carried from episode to episode")
+    ap.add_argument("--related", action="store_true",
+                    help="train and bench on related lookup sequences (a file read by the previous "
+                         "episode is answered without reading it again); rows hold --episodes-per-row "
+                         "episodes and the bench is run fresh and carried")
     ap.add_argument("--stage", choices=["train", "bench", "all"], default="all")
     args = ap.parse_args()
     work = Path(args.work)
@@ -200,7 +265,8 @@ def main() -> int:
         else:
             report["init"] = "scratch"
         families = [f for f in args.families.split(",") if f] if args.families else None
-        rows, data_stats = build_rows(tokenizer, args.episodes, seed=1, seq_len=args.seq_len, families=families)
+        rows, data_stats = build_rows(tokenizer, args.episodes, seed=1, seq_len=args.seq_len, families=families,
+                                      per_row=args.episodes_per_row, related=args.related)
         report["episodes"] = data_stats
         report["families"] = families
         if args.bpb:
@@ -242,12 +308,25 @@ def main() -> int:
     if args.stage in ("bench", "all"):
         model.eval()
         families = [f for f in args.families.split(",") if f] if args.families else [None]
+        if args.related:
+            families = []
+            for seed, carry, name in ((7, False, "bench_after_related"), (7, True, "bench_after_related_carried"),
+                                      (11, False, "bench_after_unseen_seed_related"),
+                                      (11, True, "bench_after_unseen_seed_related_carried")):
+                report[name] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=seed, carry=carry,
+                                     related_size=args.episodes_per_row)
+                print(f"{name}:", report[name]["summary"], report[name]["by_seen"], flush=True)
         for family in families:
             key = "" if family is None else f"_{family}"
             report[f"bench_after{key}"] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=7, family=family)
             print(f"after{key}:", report[f"bench_after{key}"]["summary"], flush=True)
             report[f"bench_after_unseen_seed{key}"] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=11, family=family)
             print(f"after (other seed){key}:", report[f"bench_after_unseen_seed{key}"]["summary"], flush=True)
+            if args.carry_bench:
+                for seed, name in ((7, "bench_after_carried"), (11, "bench_after_unseen_seed_carried")):
+                    report[f"{name}{key}"] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=seed,
+                                                   family=family, carry=True)
+                    print(f"{name}{key}:", report[f"{name}{key}"]["summary"], flush=True)
 
     (out_dir / "report.json").write_text(json.dumps(report, indent=2, default=str))
     print(json.dumps(report, indent=2, default=str))
