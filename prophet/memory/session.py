@@ -108,7 +108,9 @@ def model_fingerprint(model: torch.nn.Module, *, n_sampled: int = 8) -> str:
         flat = param.detach().reshape(-1).float()
         if flat.numel():
             step = max(flat.numel() // n_sampled, 1)
-            hasher.update(flat[::step][:n_sampled].numpy().tobytes())
+            # .cpu() first: on a CUDA model .numpy() raises, which made session
+            # extraction CPU-only on exactly the hardware it is meant for.
+            hasher.update(flat[::step][:n_sampled].cpu().numpy().tobytes())
     return hasher.hexdigest()
 
 
@@ -122,6 +124,13 @@ def extract_session(cache: ProphetCache, *, fingerprint: str = "") -> SessionMem
     Only bounded-state slots are kept. Attention KV caches are deliberately dropped: they
     grow with context, so persisting them would reintroduce exactly the linear-memory
     problem the recurrent core exists to avoid.
+
+    **What that means, stated plainly.** After :func:`restore_session` the recurrent
+    core resumes with its accumulated state, but the prelude and coda attention layers --
+    including the sliding-window sinks -- start from an empty cache at position
+    ``tokens_seen``. "Resume where it stopped" holds for the bounded state and not for
+    the attention context. Persisting the (bounded) windowed caches and sinks is the
+    obvious next step and is not done here.
     """
     memory = SessionMemory(model_fingerprint=fingerprint, tokens_seen=cache.position)
     for (section, block, iteration), slot in cache.slots.items():

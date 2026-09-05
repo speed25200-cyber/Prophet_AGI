@@ -92,8 +92,8 @@ def test_moe_layer_placement_skips_leading_dense_blocks():
             "exceeds",
         ),
         (
-            {"memory": MemoryConfig(enabled=True, kind="fast_weight", layers=(999,))},
-            "outside the trunk depth",
+            {"memory": MemoryConfig(enabled=True, kind="product_key", mount="coda", layers=(999,))},
+            "outside the coda",
         ),
         ({"memory": MemoryConfig(enabled=True, kind="none")}, "memory.kind"),
         (

@@ -126,7 +126,7 @@ l'absence de mauvaise allocation :
 
 | Configuration | Total | Actifs | Prof. eff. | Tokens | Tok/actif | Entraînement | Appareil |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **prophet-main** `d1536 p4c4×4o4 e128` | **3.83B** | **408M** | 24 | 22.4B | 25 | 38.5 GB | 2.54 GB (5090) |
+| **prophet-main** `d1536 p4c4×4o4 e128` | **3.83B** | **408M** | 24 | 16.1B | 40 | 47.1 GB | 2.54 GB (5090) |
 | **prophet-mini** `d1280 p3c4×2o3` | **253M** | 236M | 14 | 52.1B | 138 | 3.6 GB | 0.66 GB (iPhone) |
 
 Le rapport de sparsité de 9.4× est ce qui rend la chose intéressante : la capacité de
@@ -245,9 +245,9 @@ Implémentée dans `prophet/convert/`. Résultat mesuré pour Qwen3-1.7B :
 
 | | Donneur | Prophet converti |
 |---|---:|---:|
-| Paramètres | 1.72B | **0.97B** |
+| Paramètres | 1.72B | **1.02B** |
 | Couches | 28 | 12 paramétrées, **28 effectives** (k=5) |
-| Couverture paramétrique | — | **89 %** |
+| Couverture paramétrique | — | **85%** |
 
 - **Prélude et coda** prennent les premières et dernières couches du donneur par **copie directe**. La configuration Prophet est générée *depuis* le donneur (`head_dim`, `n_kv_heads`, largeur, largeur FFN) précisément pour que la copie soit directe et non une interpolation.
 - **Le cœur partagé** est initialisé par la **moyenne** des couches médianes du donneur. Des couches consécutives d'un transformeur entraîné calculent des mises à jour similaires ; leur moyenne est un point de départ défendable pour un bloc appliqué en boucle. C'est une initialisation, pas une équivalence.

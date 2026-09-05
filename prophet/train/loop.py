@@ -10,19 +10,24 @@ uninterrupted one, and :mod:`tests.test_training` asserts exactly that.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 import torch
 from torch import Tensor, nn
 
 from prophet.config import ProphetConfig
 from prophet.data.streaming import LoaderState, StreamingLoader
+from prophet.data.tokenizer import N_BYTES, SPECIAL_TOKENS
+from prophet.modeling.moe import apply_router_updates
 from prophet.train.checkpoint import CheckpointManager
 from prophet.train.loss import compute_loss
 from prophet.train.optim import build_optimizers
 from prophet.train.schedule import WSDSchedule
+
+TOOL_ID = N_BYTES + SPECIAL_TOKENS.index("<|tool|>")
+"""Id of ``<|tool|>``: opens an observation span in the trainer's depth ceilings."""
 
 __all__ = ["TrainConfig", "Trainer", "TrainMetrics"]
 
@@ -60,7 +65,13 @@ class TrainConfig:
 
     seed: int = 0
     device: str = "cpu"
-    dtype: str = "float32"
+    dtype: str = "bfloat16"
+    """Autocast dtype for the forward and loss on CUDA. Parameters stay fp32 -- they
+    *are* the master copy -- and matmuls run in bf16. "float32" disables autocast."""
+    activation_checkpointing: bool = True
+    """Recompute block activations in the backward pass instead of storing them. Set on
+    the model as ``gradient_checkpointing``; honoured by ProphetBlock."""
+    allow_tf32: bool = True
 
 
 @dataclass
@@ -107,6 +118,15 @@ class Trainer:
 
         self.device = torch.device(cfg.device)
         self.model.to(self.device)
+        self.model.gradient_checkpointing = cfg.activation_checkpointing
+        if self.device.type == "cuda" and cfg.allow_tf32:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        self._autocast_dtype = {
+            "bfloat16": torch.bfloat16, "float16": torch.float16,
+        }.get(cfg.dtype)
+        self.stop_requested = False
+        """Set by a signal handler; checked once per step so a polite stop checkpoints."""
 
         self.optimizers, self.param_counts = build_optimizers(
             model,
@@ -168,6 +188,10 @@ class Trainer:
             "tokens_seen": self.tokens_seen,
             "loader": self.loader.state().to_dict(),
             "torch_rng": torch.get_rng_state(),
+            # The recurrent state init draws on the model's device. Without the CUDA
+            # generator, resume was bit-identical on CPU -- where the test runs -- and
+            # not on the A100, where it matters.
+            "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             "config": self.model_config.to_dict() if self.model_config else None,
         }
 
@@ -180,6 +204,8 @@ class Trainer:
         self.loader.load_state(LoaderState.from_dict(state["loader"]))
         if "torch_rng" in state and state["torch_rng"] is not None:
             torch.set_rng_state(state["torch_rng"].cpu().to(torch.uint8))
+        if state.get("cuda_rng") is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all([t.cpu().to(torch.uint8) for t in state["cuda_rng"]])
 
     def maybe_resume(self) -> bool:
         """Restore the newest intact checkpoint, if any. Returns whether it resumed."""
@@ -194,6 +220,36 @@ class Trainer:
     def _batch(self) -> Tensor:
         rows = next(iter(self.loader.batches(1)))
         return torch.tensor(rows, dtype=torch.long, device=self.device)
+
+    def token_depth(self, batch: Tensor, k: int) -> Tensor:
+        """Per-token recurrence ceilings for one micro-batch (``recurrent.token_depth``).
+
+        Every token starts at the sampled depth ``k``. Tool-observation spans -- from a
+        ``<|tool|>`` control token up to the next control token -- drop to
+        ``ingest_depth``, which is how the agent loop will feed them. With probability
+        ``token_depth_random_spans`` a row also gets one random contiguous span at
+        ``ingest_depth``, so that plain text teaches the shallow-then-deep transition
+        too. Draws come from the global generator, which the checkpoint carries, so a
+        resumed run builds the same ceilings.
+        """
+        r = self.model_config.recurrent  # type: ignore[union-attr]
+        b, s = batch.shape
+        depth = torch.full_like(batch, k)
+        shallow = min(r.ingest_depth, k)
+        if shallow < k and s:
+            control = (batch >= N_BYTES) & (batch < N_BYTES + len(SPECIAL_TOKENS))
+            idx = torch.arange(s, device=batch.device).expand(b, s)
+            last_control = torch.cummax(torch.where(control, idx, -1), dim=1).values
+            opened_by = batch.gather(1, last_control.clamp_min(0))
+            in_tool_span = (last_control >= 0) & (opened_by == TOOL_ID)
+            depth = torch.where(in_tool_span, torch.full_like(depth, shallow), depth)
+            if r.token_depth_random_spans > 0:
+                draw = torch.rand(b, device=batch.device) < r.token_depth_random_spans
+                start = torch.randint(0, s, (b,), device=batch.device)
+                length = torch.randint(1, max(2, s // 2), (b,), device=batch.device)
+                span = (idx >= start[:, None]) & (idx < (start + length)[:, None])
+                depth = torch.where(span & draw[:, None], torch.full_like(depth, shallow), depth)
+        return depth
 
     def train(self, *, max_steps: int | None = None) -> list[TrainMetrics]:
         """Run until ``total_steps`` (or ``max_steps`` more, whichever comes first)."""
@@ -213,7 +269,16 @@ class Trainer:
             extra: dict[str, float] = {}
             for _ in range(self.cfg.grad_accum_steps):
                 batch = self._batch()
-                output = self.model(batch)
+                use_autocast = self.device.type == "cuda" and self._autocast_dtype is not None
+                forward_kw: dict[str, Any] = {}
+                if self.model_config is not None and self.model_config.recurrent.token_depth:
+                    k = self.model.sample_loop_k()
+                    forward_kw = dict(loop_k=k, token_depth=self.token_depth(batch, k))
+                with torch.autocast(
+                    device_type="cuda", dtype=self._autocast_dtype or torch.bfloat16,
+                    enabled=use_autocast,
+                ):
+                    output = self.model(batch, **forward_kw)
                 terms = compute_loss(
                     output,
                     batch,
@@ -224,6 +289,9 @@ class Trainer:
                     project=getattr(self.model, "_project", None),
                 )
                 (terms.total / self.cfg.grad_accum_steps).backward()
+                # Loss-free MoE balancing moves the router biases *after* backward, so
+                # a checkpointed block recomputes the routing it saved.
+                apply_router_updates(getattr(output, "router_stats", ()))
                 accumulated += terms.lm.item() / self.cfg.grad_accum_steps
                 extra = {
                     k: v for k, v in terms.metrics.items()
@@ -253,5 +321,7 @@ class Trainer:
             if self.cfg.checkpoint_every and self.step % self.cfg.checkpoint_every == 0:
                 self.ckpt.save(self.state_dict(), self.step,
                                extra={"loss": accumulated, "lr": lr})
+            if self.stop_requested:
+                break
 
         return self.history

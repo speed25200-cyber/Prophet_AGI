@@ -144,6 +144,23 @@ ASKS: list[Ask] = [
     Ask("R02", "long-context extension", 12.0, "production", 3,
         "Costs 1.19x base FLOPs rather than the 7.9x a dense model would pay, because "
         "NoPE and bounded-state layers have nothing positional to relearn."),
+    Ask("A2", "per-token depth ceilings versus one depth per sequence", 4.0, "ablation", 3,
+        "The agent loop reads observations at depth 1 and thinks deep on one cache, "
+        "which is only defined for a model trained with per-token ceilings "
+        "(recurrent.token_depth). Mechanically exact and tested; what is unknown is the "
+        "quality cost. Two matched 100M runs at ~1B tokens, ~2 hours each. If BPB "
+        "degrades by more than 1% the loop runs in its fixed-depth regime instead.",
+        blocks=("A2 agentic training recipe",)),
+    Ask("A4", "depth-disagreement AUROC probe", 1.0, "ablation", 3,
+        "Does disagreement between a shallow and a deep pass predict error? Inference "
+        "only, on the mini checkpoint, over the tier-1 suite. Below 0.65 the signal is "
+        "dropped from the verifier's feature vector."),
+    Ask("A2", "agentic training recipe", 67.0, "production", 3,
+        "Tool-use SFT with omission and null-action negatives, then on-policy "
+        "distillation on executable tasks with the quarantine's promoted episodes as a "
+        "replay stream. The track's own estimate. Unfunded at 300 hours: it would "
+        "displace persistent memory, which an explicit project decision ranks first.",
+        blocks=()),
 
     # --- optional ---------------------------------------------------------------------
     Ask("W4", "depth consolidation", 14.0, "optional", 4,

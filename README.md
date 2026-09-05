@@ -62,7 +62,7 @@ le budget de tokens, la mémoire de l'appareil cible et l'absence de mauvaise al
 
 | | Total | Actifs/token | Prof. effective | Tokens | Cible |
 |---|---:|---:|---:|---:|---|
-| **Prophet-main** | 3.83B | 408M | 24 (k=4) | 22.4B | 5090 / Mac Studio |
+| **Prophet-main** | 3.83B | 408M | 24 (k=4) | 16.1B | 5090 / Mac Studio |
 | **Prophet-mini** | 253M | 236M | 14 (k=2) | 52.1B | iPhone 17 Pro |
 
 Rapport de sparsité 9.4× : la capacité d'un modèle de 3.8B pour le coût par token d'un
@@ -73,7 +73,7 @@ modèle de 408M.
 > **Phase 0 — Recherche et conception terminées. Aucun poids entraîné.**
 > Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le pipeline de
 > données, l'infrastructure d'entraînement, le harnais d'évaluation et le plan
-> d'exécution. **235 tests passent** et la boucle d'entraînement tourne de bout en bout
+> d'exécution. **330 tests passent** et la boucle d'entraînement tourne de bout en bout
 > sur corpus synthétique.
 >
 > Réserve honnête : les identifiants de datasets et le tableau de bord concurrent
@@ -108,7 +108,7 @@ python scripts/verify_datasets.py          # confronte les identifiants au Hub (
 python scripts/verify_donors.py            # confronte les donneurs au Hub (semaine 1)
 python scripts/convert_donor.py --donor qwen3-1.7b --plan-only
 python scripts/train.py --config configs/prophet_tiny_smoke.json --smoke
-python -m pytest tests/ -q                 # 235 tests
+python -m pytest tests/ -q                 # ~330 tests
 ```
 
 Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant
@@ -129,7 +129,7 @@ La réponse retenue n'est pas de choisir un camp, mais de faire les deux sur deu
 Le rapport de coût — 85 heures contre 30 — est le résultat central : la conversion coûte
 un tiers de l'entraînement de zéro pour un modèle quatre fois plus gros, parce qu'elle
 n'achète que l'architecture. Mesuré sur Qwen3-1.7B : 1.72B paramètres et 28 couches
-deviennent 0.97B paramètres et 12 blocs pour **la même profondeur effective de 28**.
+deviennent 1.02B paramètres et 12 blocs pour **la même profondeur effective de 28**.
 
 ```bash
 python scripts/convert_donor.py --donor qwen3-1.7b --plan-only

@@ -124,7 +124,17 @@ constructibles en Hadamard, QK-norm, pas de biais, routeur en FP32), une sonde P
 continue pendant le pré-entraînement pour voir la dégradation arriver, puis un recuit QAT
 sur les derniers ~12 % de tokens.
 
-Entraînement : **BF16 avec poids maîtres FP32**.
+Entraînement : **autocast BF16, paramètres FP32** (ils *sont* la copie maîtresse), TF32
+activé, activations recalculées en arrière (`activation_checkpointing`). Les états
+d'optimiseur sont en FP32 : 4 octets/paramètre pour Muon, 8 pour AdamW — le calcul de
+budget utilise la répartition réelle, pas un optimiseur 8 bits qui n'existe pas.
+
+> **Ce qui n'est pas là.** Le noyau delta fusionné (`flash-linear-attention`) n'a jamais
+> été exécuté dans ce dépôt — pas de GPU. Le scan de référence retient chaque état pour
+> la rétropropagation, ce qui coûte ~144 Go pour 8k tokens sur la config principale.
+> `scripts/train.py` **refuse** un run non-`--smoke` tant que `fla` n'est pas installé,
+> et un test d'équivalence GPU contre `_scan` (sortie *et* état final) est requis avant
+> qu'il ne porte un entraînement.
 
 ---
 

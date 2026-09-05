@@ -53,13 +53,14 @@ prophet/
   kernels/      Réservé aux noyaux Triton/CUDA — vide tant qu'aucun GPU n'a servi
 configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
 scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
-tests/          ~300 tests ; les plus importants sont des tests d'équivalence
+tests/          ~330 tests ; les plus importants sont des tests d'équivalence
 ```
 
 ## Ce que ce dépôt a appris à ses dépens
 
-Six défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
-normalement et aurait produit un modèle fluide et faux :
+Huit défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
+et faux :
 
 | Défaut | Comment il a été trouvé |
 |---|---|
@@ -69,6 +70,8 @@ normalement et aurait produit un modèle fluide et faux :
 | Config livrée avec l'attention **dans** la boucle | track W2 ; désormais `design_warnings()` |
 | Sondes de halte écrivant *k* fois dans le même cache | test d'équivalence avec halte |
 | `nope_layers` réglé, vérifié, documenté — et ignoré par le modèle | revue A1 : grep des champs jamais lus |
+| Biais de routage MoE mis à jour *dans* le forward : sous checkpointing d'activations, le recalcul route autrement et le backward **plante** sur toute config MoE | expérience de comptage d'appels au routeur ; le pas est enregistré et appliqué après le backward |
+| Boucle agentique lisant à *k*=1 puis pensant à *k*=8 sur un cache dont l'état profond n'avait pas vu l'observation | modèle réel branché sur la boucle ; désormais plafonds par token, équivalence testée à 1e-4 |
 
 **Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
 réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par

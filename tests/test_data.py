@@ -237,9 +237,14 @@ def test_short_examples_are_matched_exactly():
     """N-gram containment is meaningless for a three-word answer, so short items fall
     back to exact substring matching rather than being silently skipped."""
     d = Decontaminator(n=13, threshold=0.5)
-    d.add_benchmark("tiny", ["the mitochondria"])
+    d.add_benchmark("tiny", ["the mitochondria is the powerhouse"])
     assert d.is_contaminated("As we know, the mitochondria is the powerhouse of the cell")
     assert not d.is_contaminated("Unrelated text entirely")
+    # Word-boundary match: a longer word containing the item is not a hit.
+    assert not d.is_contaminated("the mitochondrial is the powerhouses of the cell")
+    # Items under min_short_words are not indexed at all: "the mitochondria" would
+    # reject every biology paragraph.
+    assert d.add_benchmark("too_short", ["the mitochondria"]) == 0
 
 
 def test_threshold_governs_partial_overlap():

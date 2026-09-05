@@ -12,7 +12,7 @@ deux origines, une seule architecture :
 | Modèle | Origine | Budget | Rôle |
 |---|---|---:|---|
 | **Prophet-mini** (253M) | Poids aléatoires | 85 h | Preuve honnête de l'architecture. Cible iPhone. |
-| **Prophet-main** (~970M) | Conversion d'un donneur Apache-2.0 | 30 h | Modèle compétitif. 89 % des paramètres hérités. |
+| **Prophet-main** (~1016M) | Conversion d'un donneur Apache-2.0 | 30 h | Modèle compétitif. 85% des paramètres hérités. |
 
 Le rapport de coût — 85 heures contre 30 — est le résultat central : la conversion coûte
 un tiers de l'entraînement de zéro pour un modèle quatre fois plus gros, parce qu'elle
@@ -41,9 +41,9 @@ ablations.
 
 # Compute plan — 300 A100-hours
 
-Requested across all tracks: **470 h**. Available after a 10% reserve: **270 h**. Oversubscribed **1.7x**.
+Requested across all tracks: **542 h**. Available after a 10% reserve: **270 h**. Oversubscribed **2.0x**.
 
-Funded 13 of 23 requests, 270 h allocated, 0 h unspent (added to the reserve), 30 h held for reruns and preemption losses.
+Funded 13 of 26 requests, 270 h allocated, 0 h unspent (added to the reserve), 30 h held for reruns and preemption losses.
 
 Allocation is in strict priority order with no backfill: an item that does not fit stops the line rather than being skipped so that cheaper work behind it can squeeze in.
 
@@ -69,12 +69,15 @@ Allocation is in strict priority order with no backfill: an item that does not f
 
 | Pri | Track | Work | Hours | Why it was cut |
 |---:|---|---|---:|---|
+| 3 | A2 | agentic training recipe | 67 | below the funding line |
 | 3 | R04 | depth ablations | 24 | below the funding line |
 | 3 | R08 | quantisation ladder | 20 | below the funding line |
 | 3 | R02 | interleave and long-context ablations | 20 | below the funding line |
 | 3 | R05 | MoE routing and upcycling | 16 | below the funding line |
 | 3 | W1 | halting: input-dependent depth | 12 | below the funding line |
 | 3 | R02 | long-context extension | 12 | below the funding line |
+| 3 | A2 | per-token depth ceilings versus one depth per sequence | 4 | below the funding line |
+| 3 | A4 | depth-disagreement AUROC probe | 1 | below the funding line |
 | 4 | R09 | confidence head training | 20 | optional; below the funding line |
 | 4 | W4 | depth consolidation | 14 | optional; below the funding line |
 | 5 | R01 | byte-frontend retrofit | 36 | optional; below the funding line |
@@ -132,6 +135,8 @@ déçoit, la voie B produit quand même un modèle.
 | R02 rappel multi-clés | Effondrement sur MK-NIAH | Augmenter le nombre de couches globales — **pas** élargir la fenêtre. |
 | W4 exactitude contre profondeur | Courbe plate | La consolidation de profondeur n'a rien à stocker ; le track ferme avant de coûter quoi que ce soit. |
 | W2 rappel multi-clés contre *k* | Le rappel se dégrade quand *k* monte | Le cadran de profondeur et le budget de rappel sont le même cadran en sens inverse ; plafonner *k* ou ajouter des couches globales. |
+| A2 plafonds de profondeur par token | BPB dégradé de plus de 1 % contre une profondeur par séquence | `recurrent.token_depth` reste hors des configs livrées ; la boucle agentique tourne en régime `fixed` (une profondeur par épisode, la halte ne peut que la baisser). |
+| A4 désaccord de profondeur | AUROC < 0.65 sur la suite Tier-1 | Le signal sort du vecteur de caractéristiques du vérificateur ; le second passage profond n'est plus déclenché. |
 | Conversion de donneur | Couverture paramétrique < 50 % | Refus automatique : c'est du pré-entraînement à départ chaud, à budgéter comme tel. |
 | Vérification des donneurs | Un champ ne correspond pas au Hub | Refus automatique de conversion. Un `head_dim` erroné ne casse pas bruyamment — il laisse des tenseurs en init fraîche et le modèle est simplement moins bon. |
 

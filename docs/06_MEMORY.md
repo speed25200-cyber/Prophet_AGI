@@ -32,7 +32,7 @@ poids — c'est la seule variante qui ne détruit pas ce qui était déjà là.
 
 | Étage | Où | Écrit par | Persistance | Taille (mini) |
 |---|---|---|---|---|
-| **1 — état de session** | Couches à delta gated | La passe avant elle-même | Une conversation, sérialisable | ~0.6 Mo |
+| **1 — état de session** | Couches à delta gated | La passe avant elle-même | Une conversation, sérialisable | ~11 Mo (mesuré, mini) |
 | **2 — le registre** | Une couche à clés-produit | La passe de consolidation hors-ligne | Durable, partagé | ~33 Mo |
 
 La séparation compte parce que les risques diffèrent. L'état de session est bon marché et

@@ -22,6 +22,7 @@ Two details make this affordable rather than merely elegant:
 from __future__ import annotations
 
 import contextlib
+import copy
 import math
 from dataclasses import dataclass, field
 from typing import Any
@@ -41,7 +42,7 @@ from prophet.modeling.layers import (
     SwiGLU,
     build_mixer,
 )
-from prophet.modeling.moe import SparseMoE
+from prophet.modeling.moe import SparseMoE, apply_router_updates
 
 __all__ = ["ProphetBlock", "ProphetCache", "ProphetOutput", "ProphetModel"]
 
@@ -71,6 +72,15 @@ class ProphetCache:
     position: int = 0
     """Number of tokens consumed, which is what positional encoding must use — the
     retained buffer length is not the position once window eviction starts."""
+    loop_k: int | None = None
+    """Depth ceiling of this cache.
+
+    Without ``recurrent.token_depth`` it is exact and may only shrink: a core slot for
+    iteration i is valid only if iteration i ran on every previous token, so a deeper
+    call later would read states that never saw the earlier tokens, while a shallower
+    call (explicit, or a halting early-exit) just retires the deeper slots. With
+    ``token_depth`` the invariant is per token -- iteration i saw every earlier token
+    whose ceiling exceeds i -- and this field only records the deepest slot in use."""
 
     def get(
         self, section: str, block: int, iteration: int, kind: str
@@ -111,13 +121,12 @@ class ProphetBlock(nn.Module):
         *,
         kind: str,
         is_moe: bool,
-        residual_scale: float = 1.0,
         layer_index: int = 0,
         section: str = "trunk",
     ) -> None:
         super().__init__()
         self.kind = kind
-        self.residual_scale = residual_scale
+        self.gradient_checkpointing = False
 
         self.norm1 = RMSNorm(cfg.d_model, cfg.norm_eps)
         self.mixer = build_mixer(kind, cfg, layer_index=layer_index, section=section)
@@ -147,14 +156,34 @@ class ProphetBlock(nn.Module):
         sin: Tensor | None = None,
         cache: AttentionCache | RecurrentState | None = None,
     ) -> Tensor:
+        # Recompute activations in backward when asked. A cached call is stateful and
+        # cannot be replayed, so checkpointing only applies to the cache-free path.
+        if (
+            self.gradient_checkpointing
+            and self.training
+            and cache is None
+            and torch.is_grad_enabled()
+            and x.requires_grad
+        ):
+            return torch.utils.checkpoint.checkpoint(
+                self._forward, x, cos, sin, use_reentrant=False
+            )
+        return self._forward(x, cos, sin, cache)
+
+    def _forward(self, x, cos=None, sin=None, cache=None) -> Tensor:
+        # Residual branches are added unscaled. The 1/sqrt(2*depth) factor the config
+        # names is applied to the *initialisation* of the output projections, where the
+        # docstring always said it was; as a forward-time multiplier it attenuated every
+        # branch by ~0.11 forever and turned a converted donor's x + f(x) into
+        # x + 0.1 f(x) -- the same tensors computing a different function.
         if self.mixer is not None:
             h = self.norm1(x)
             if isinstance(self.mixer, GatedDeltaNet):
                 mixed = self.mixer(h, state=cache)  # type: ignore[arg-type]
             else:
                 mixed = self.mixer(h, cos=cos, sin=sin, cache=cache)  # type: ignore[arg-type]
-            x = x + self.residual_scale * mixed
-        return x + self.residual_scale * self.ffn(self.norm2(x))
+            x = x + mixed
+        return x + self.ffn(self.norm2(x))
 
 
 # --------------------------------------------------------------------------------------
@@ -183,8 +212,10 @@ class ProphetOutput:
     depth that *depends on the input* buys anything asymptotically, and this distribution
     is what makes it depend on the input."""
     hidden_per_step: list[Tensor] | None = None
-    """Coda-applied hidden state after each iteration, needed to compute the ponder loss
-    as an expectation over stopping times."""
+    """Coda-applied, **normalised** hidden state after each iteration -- the same space as
+    ``hidden`` -- so the ponder loss can project it straight through the LM head. The
+    first version stored the pre-norm coda output (rms 0.1 against 1.0 after norm) and
+    scored every stopping point on near-uniform logits."""
 
     def expected_depth(self) -> float | None:
         """Mean number of iterations actually used, weighted by the halting distribution."""
@@ -232,11 +263,6 @@ class ProphetModel(nn.Module):
         )
 
         layout = cfg.section_layout()
-        # 1/sqrt(2 * depth) keeps residual-stream variance bounded. The depth that
-        # matters is the *effective* one: a heavily looped core adds just as much
-        # variance as distinct layers would.
-        depth_for_scale = cfg.effective_depth(cfg.recurrent.train_loop_max)
-        scale = (2.0 * max(depth_for_scale, 1)) ** -0.5 if cfg.residual_scaling else 1.0
 
         sections: dict[str, nn.ModuleList] = {}
         for name in ("prelude", "core", "coda", "trunk"):
@@ -245,7 +271,6 @@ class ProphetModel(nn.Module):
                     cfg,
                     kind=kind,
                     is_moe=cfg.layer_is_moe(self._global_index(layout, sec, idx)),
-                    residual_scale=scale,
                     layer_index=idx,
                     section=sec,
                 )
@@ -259,12 +284,16 @@ class ProphetModel(nn.Module):
         # Persistent memory (track R03). Attached at the trunk indices named in the
         # config, read as a residual addition. It is inert until written, so enabling it
         # cannot change behaviour before anything has been stored.
+        # Keys: "output" for the single output-mounted ledger (the space that
+        # prophet.memory.consolidate addresses), or "coda_<i>" for a per-block ledger. A
+        # ledger keyed by a global index that the section-local read never matched was
+        # a no-op that validated and budgeted parameters.
         self.ledgers = nn.ModuleDict()
         if cfg.memory.enabled and cfg.memory.kind == "product_key":
             from prophet.memory.ledger import LedgerConfig, ProductKeyMemory
 
-            for index in cfg.memory.layers:
-                self.ledgers[str(index)] = ProductKeyMemory(
+            def _ledger() -> ProductKeyMemory:
+                return ProductKeyMemory(
                     LedgerConfig(
                         dim=d,
                         memory_dim=cfg.memory.memory_dim,
@@ -274,13 +303,20 @@ class ProphetModel(nn.Module):
                     )
                 )
 
+            if cfg.memory.mount == "output":
+                self.ledgers["output"] = _ledger()
+            else:
+                for index in cfg.memory.layers:
+                    # Underscore, not dot: nn.ModuleDict forbids '.' in a key.
+                    self.ledgers[f"coda_{index}"] = _ledger()
+
         self.norm_out = RMSNorm(d, cfg.norm_eps)
         self.lm_head = nn.Linear(d, cfg.frontend.vocab_size, bias=False)
         if cfg.frontend.tie_word_embeddings:
             self.lm_head.weight = self.embed.weight
 
         self.mtp_heads = nn.ModuleList(
-            ProphetBlock(cfg, kind="swa", is_moe=False, residual_scale=scale)
+            ProphetBlock(cfg, kind="swa", is_moe=False)
             for _ in range(cfg.heads.n_multi_token_predict)
         )
         self.confidence_head = (
@@ -299,6 +335,31 @@ class ProphetModel(nn.Module):
         )
 
         self.apply(self._init_weights)
+
+        if cfg.residual_scaling:
+            # 1/sqrt(2 * depth) on the output projections at init keeps residual-stream
+            # variance bounded. The depth that matters is the *effective* one: a
+            # heavily looped core adds as much variance as distinct layers would.
+            depth_for_scale = cfg.effective_depth(cfg.recurrent.train_loop_max)
+            scale = (2.0 * max(depth_for_scale, 1)) ** -0.5
+            with torch.no_grad():
+                for name, module in self.named_modules():
+                    if isinstance(module, nn.Linear) and name.rsplit(".", 1)[-1] in (
+                        "o_proj", "down_proj"
+                    ):
+                        module.weight.mul_(scale)
+
+    @property
+    def gradient_checkpointing(self) -> bool:
+        return any(getattr(b, "gradient_checkpointing", False) for s in self.sections.values() for b in s)
+
+    @gradient_checkpointing.setter
+    def gradient_checkpointing(self, value: bool) -> None:
+        for section in self.sections.values():
+            for block in section:
+                block.gradient_checkpointing = bool(value)
+        for head in self.mtp_heads:
+            head.gradient_checkpointing = bool(value)
 
     # -- setup -------------------------------------------------------------------------
 
@@ -340,7 +401,9 @@ class ProphetModel(nn.Module):
         if r.train_loop_dist == "uniform":
             return int(torch.randint(lo, hi + 1, (1,), generator=generator).item())
         if r.train_loop_dist == "poisson":
-            k = int(torch.poisson(torch.tensor(float(r.train_loop_poisson_lambda))).item())
+            k = int(torch.poisson(
+                torch.tensor(float(r.train_loop_poisson_lambda)), generator=generator
+            ).item())
             return max(lo, min(hi, k))
         u = torch.rand(1, generator=generator).item()
         return int(round(math.exp(math.log(lo) + u * (math.log(hi) - math.log(lo)))))
@@ -355,7 +418,19 @@ class ProphetModel(nn.Module):
         loop_k: int | None = None,
         return_mtp: bool = True,
         halt_threshold: float | None = None,
+        generator: torch.Generator | None = None,
+        token_depth: Tensor | None = None,
     ) -> ProphetOutput:
+        """Run the model.
+
+        ``token_depth`` (``(batch, seq)`` long) gives each token its own recurrence
+        ceiling; it requires ``recurrent.token_depth`` and is what the trainer passes
+        when that switch is on. At iteration ``i`` the core runs on the compacted
+        subsequence of tokens whose ceiling exceeds ``i``; the others keep the hidden
+        state they exited with, and neither the recurrent state nor the causal
+        convolution of the deeper iterations ever sees them -- which is exactly what an
+        incremental decode that ran them shallow would have produced.
+        """
         cfg = self.cfg
         b, s = input_ids.shape
         offset = cache.position if cache is not None else 0
@@ -377,31 +452,89 @@ class ProphetModel(nn.Module):
         halt_logits: list[Tensor] = []
         hidden_per_step: list[Tensor] = []
 
-        def run(section: str, iteration: int, h: Tensor, *, use_cache: bool = True) -> Tensor:
+        def run(
+            section: str, iteration: int, h: Tensor, *, use_cache: bool = True,
+            probe: bool = False, token_mask: Tensor | None = None,
+        ) -> Tensor:
+            """Apply one section.
+
+            ``probe`` marks a halting probe pass: it reads the cache through a shallow
+            copy of each slot -- so the coda sees its real context -- and discards the
+            copy, and it suppresses MoE stats and bias updates. The first version ran
+            probes cache-free, so at decode time the halting decision was made by a coda
+            that saw only the current token. ``token_mask`` marks the real rows of a
+            compacted core pass; padding rows are kept out of the router statistics.
+            """
             for idx, block in enumerate(self.sections[section]):
-                slot = (
-                    cache.get(section, idx, iteration, block.kind)
-                    if cache is not None and use_cache
-                    else None
-                )
+                slot = None
+                if cache is not None and use_cache:
+                    real = cache.get(section, idx, iteration, block.kind)
+                    slot = copy.copy(real) if probe else real
+                moe = block.ffn if isinstance(block.ffn, SparseMoE) else None
+                if moe is not None:
+                    moe.probe_mode = probe
+                    moe.token_mask = token_mask
                 h = block(h, cos=cos, sin=sin, cache=slot)
-                if isinstance(block.ffn, SparseMoE) and block.ffn.last_stats is not None:
-                    router_stats.append(block.ffn.last_stats)
-                    aux_terms.append(block.ffn.last_stats.aux_loss)
-                key = str(idx)
-                if section in ("trunk", "coda") and key in self.ledgers:
+                if moe is not None:
+                    moe.probe_mode = False
+                    moe.token_mask = None
+                    if not probe and moe.last_stats is not None:
+                        router_stats.append(moe.last_stats)
+                        aux_terms.append(moe.last_stats.aux_loss)
+                key = f"{section}_{idx}"
+                if section == "coda" and key in self.ledgers:
                     # Residual read: the ledger contributes nothing until written.
                     h = h + self.ledgers[key](h)
             return h
 
         if not cfg.recurrent.enabled:
+            if token_depth is not None:
+                raise ValueError("token_depth needs a recurrent core")
             k = 1
             x = run("trunk", 0, x)
         else:
             r = cfg.recurrent
-            k = loop_k if loop_k is not None else (
-                self.sample_loop_k() if self.training else r.default_loop_k
-            )
+            if token_depth is not None:
+                if not r.token_depth:
+                    raise ValueError(
+                        "token_depth was given but recurrent.token_depth is off: a "
+                        "model trained at one depth per sequence has no defined "
+                        "behaviour for a depth that varies within it"
+                    )
+                if tuple(token_depth.shape) != (b, s):
+                    raise ValueError(f"token_depth must be shaped {(b, s)}, got {tuple(token_depth.shape)}")
+                token_depth = token_depth.to(device=input_ids.device, dtype=torch.long)
+                deepest = int(token_depth.max().item()) if s else 1
+                if int(token_depth.min().item()) < 1:
+                    raise ValueError("every token needs a ceiling of at least 1")
+                k = loop_k if loop_k is not None else deepest
+                if deepest > k:
+                    raise ValueError(f"token_depth reaches {deepest}, above loop_k={k}")
+            else:
+                k = loop_k if loop_k is not None else (
+                    self.sample_loop_k(generator)
+                    if self.training
+                    else (
+                        cache.loop_k
+                        if cache is not None and cache.loop_k is not None
+                        else r.default_loop_k
+                    )
+                )
+            if cache is not None:
+                if r.token_depth:
+                    # Per-token invariant: any depth is defined. Record the deepest slot.
+                    cache.loop_k = max(cache.loop_k or 0, k)
+                elif cache.loop_k is None:
+                    cache.loop_k = k
+                elif k > cache.loop_k:
+                    raise ValueError(
+                        f"this cache's depth ceiling is {cache.loop_k}; a call at "
+                        f"loop_k={k} would read core states that never saw the earlier "
+                        "tokens. Without recurrent.token_depth a cache's depth can only "
+                        "shrink."
+                    )
+                else:
+                    cache.loop_k = k  # shallower is exact: the deeper slots retire
             x = run("prelude", 0, x)
             injected = x
 
@@ -410,7 +543,11 @@ class ProphetModel(nn.Module):
             # ``RecurrentCoreConfig.eval_state_init``).
             init_mode = r.state_init if self.training else r.eval_state_init
             if init_mode == "randn":
-                h = torch.randn_like(x) * cfg.init_std
+                noise = (
+                    torch.randn(x.shape, generator=generator, device=x.device, dtype=x.dtype)
+                    if generator is not None else torch.randn_like(x)
+                )
+                h = noise * cfg.init_std
             elif init_mode == "prelude":
                 h = x
             else:
@@ -424,31 +561,57 @@ class ProphetModel(nn.Module):
                 ctx = contextlib.nullcontext() if grad_on else torch.no_grad()
                 with ctx:
                     step_in = h + injected if r.inject_input_each_step else h
-                    h = run("core", i, step_in)
+                    if token_depth is None:
+                        h = run("core", i, step_in)
+                    else:
+                        h = self._run_core_compacted(
+                            run, i, step_in, h, token_depth > i, cached=cache is not None
+                        )
                 if not grad_on:
                     h = h.detach()
 
                 if self.halt_head is not None:
                     # Each candidate stopping point needs a real read-out to be scored
-                    # against, so the coda is applied per iteration. These probe passes
-                    # are deliberately **cache-free**: they share one cache slot, so
-                    # writing to it would append the same positions k times and silently
-                    # corrupt incremental decoding. The real, cached coda runs once below.
-                    step_out = run("coda", 0, h, use_cache=False)
+                    # against, so the coda is applied per iteration as a *probe*: it
+                    # reads the cache through disposable copies of the slots (so it sees
+                    # its context) and never writes to them (so it cannot append the same
+                    # positions k times). The real, cached coda runs once below.
+                    step_out = self.norm_out(run("coda", 0, h, probe=True))
                     hidden_per_step.append(step_out)
-                    halt_logits.append(self.halt_head(step_out).squeeze(-1))
+                    logit = self.halt_head(step_out).squeeze(-1)
+                    if token_depth is not None:
+                        # A ceiling is a forced stop: all remaining mass halts at the
+                        # token's last iteration. Earlier iterations keep the learned
+                        # logit, so the head still learns where stopping *sooner* would
+                        # have been fine.
+                        last = token_depth - 1
+                        logit = torch.where(
+                            last == i, logit.new_full((), 30.0),
+                            torch.where(last > i, logit, logit.new_full((), -30.0)),
+                        )
+                    halt_logits.append(logit)
 
                     if not self.training and halt_threshold is not None:
                         survived = torch.stack(
                             [1 - torch.sigmoid(l) for l in halt_logits]
                         ).prod(dim=0)
-                        if float((1.0 - survived).mean().item()) >= halt_threshold:
+                        # Per sequence and per position: stop only when *every* one has
+                        # crossed the threshold. Conservative on purpose -- a batch mean
+                        # let one confident sequence cut off another's thinking.
+                        if bool(((1.0 - survived) >= halt_threshold).all()):
+                            k = i + 1
+                            if cache is not None and not r.token_depth:
+                                cache.loop_k = k  # pin: later steps must not go deeper
                             break
 
             x = run("coda", 0, h)
 
         hidden = self.norm_out(x)
-        logits = self._project(hidden)
+        # Output-mounted memory: read on the normalised, ledger-free hidden state and
+        # added only for the projection. ``hidden`` stays ledger-free, which is what
+        # ``prophet.memory.consolidate`` addresses and targets.
+        read = hidden + self.ledgers["output"](hidden) if "output" in self.ledgers else hidden
+        logits = self._project(read)
 
         mtp_logits: list[Tensor] = []
         if return_mtp and len(self.mtp_heads):
@@ -479,7 +642,7 @@ class ProphetModel(nn.Module):
         return ProphetOutput(
             logits=logits,
             hidden=hidden,
-            loop_k=k,
+            loop_k=k,  # iterations actually run, after any halting exit
             mtp_logits=mtp_logits,
             confidence=confidence,
             aux_loss=aux,
@@ -487,6 +650,42 @@ class ProphetModel(nn.Module):
             halt_probs=halt_probs,
             hidden_per_step=hidden_per_step or None,
         )
+
+    @staticmethod
+    def _run_core_compacted(
+        run, iteration: int, step_in: Tensor, h: Tensor, active: Tensor, *, cached: bool
+    ) -> Tensor:
+        """One core iteration over only the tokens whose ceiling exceeds ``iteration``.
+
+        Active tokens are gathered left-aligned per row, run as a shorter sequence, and
+        scattered back; inactive tokens keep ``h``. Rows with fewer active tokens are
+        padded at the *end*, which is exact in a cache-free pass -- the core is causal
+        and its final state is discarded -- and would poison a cached recurrent state,
+        so a cached call insists on equal counts (in practice: one sequence at a time).
+        """
+        if bool(active.all()):
+            return run("core", iteration, step_in)
+        if not bool(active.any()):
+            return h
+        b, s, d = step_in.shape
+        counts = active.sum(dim=1)
+        length = int(counts.max().item())
+        if cached and b > 1 and not bool((counts == length).all()):
+            raise ValueError(
+                "per-token depth on a cache needs every row to have the same number of "
+                "active tokens at each iteration; padding would enter the recurrent "
+                "state. Decode such rows one sequence at a time."
+            )
+        # Stable sort on "inactive" puts active positions first, in order.
+        order = torch.argsort((~active).to(torch.int8), dim=1, stable=True)[:, :length]
+        index = order.unsqueeze(-1).expand(b, length, d)
+        gathered_in = torch.gather(step_in, 1, index)
+        gathered_h = torch.gather(h, 1, index)
+        valid = torch.arange(length, device=active.device).unsqueeze(0) < counts.unsqueeze(1)
+        out = run("core", iteration, gathered_in, token_mask=valid)
+        # Padding rows write their own ``h`` back to the inactive positions they borrowed.
+        src = torch.where(valid.unsqueeze(-1), out, gathered_h)
+        return h.scatter(1, index, src)
 
     def _project(self, hidden: Tensor) -> Tensor:
         logits = self.lm_head(hidden)
@@ -496,6 +695,15 @@ class ProphetModel(nn.Module):
         return logits
 
     # -- convenience -------------------------------------------------------------------
+
+    @staticmethod
+    def apply_router_updates(output: ProphetOutput) -> int:
+        """Apply the loss-free balancing steps recorded during ``output``'s forward.
+
+        Call it after ``backward()``: the routers must not move between a checkpointed
+        forward and its recompute. Returns the number of routers updated.
+        """
+        return apply_router_updates(output.router_stats)
 
     def num_parameters(self, *, trainable_only: bool = False) -> int:
         return sum(

@@ -167,18 +167,27 @@ def _seed_gdn_from_attention(
         if current is not None:
             factor = current.shape[0] // expanded.shape[0]
             if factor >= 1 and current.shape[0] == expanded.shape[0] * factor:
-                # Tile across the expansion, halving so the summed magnitude is preserved.
-                assign(
-                    "mixer.v_proj.weight",
-                    expanded.repeat(factor, 1) / factor,
-                )
+                # Tile **per head** along the value-expansion axis, so GDN head h's
+                # widened value rows all come from donor head h. Whole-matrix tiling
+                # paired head h's queries with heads 2h and 2h+1's values -- a scramble
+                # that the "close to the donor's attention" claim did not survive.
+                in_f = expanded.shape[1]
+                per_head = expanded.view(n_heads, head_dim, in_f)
+                tiled = per_head.repeat_interleave(factor, dim=1).reshape(-1, in_f)
+                assign("mixer.v_proj.weight", tiled / factor)
     if o is not None:
         current = target.get(f"{prefix}.mixer.o_proj.weight")
         if current is not None and current.shape[1] >= o.shape[1]:
+            factor = current.shape[1] // o.shape[1]
             widened = torch.zeros_like(current)
-            widened[:, : o.shape[1]] = o.to(current.dtype)
-            # Zeros in the widened half: the extra capacity starts inert, so the layer's
-            # initial function stays as close to the donor's attention as possible.
+            # Per head as well: donor head h's output columns land in the *first* slot
+            # of GDN head h's widened block; the remaining slots stay zero so the extra
+            # capacity starts inert.
+            out_f = o.shape[0]
+            per_head = o.view(out_f, n_heads, head_dim)
+            block = torch.zeros(out_f, n_heads, head_dim * factor, dtype=current.dtype)
+            block[:, :, :head_dim] = per_head.to(current.dtype)
+            widened = block.reshape(out_f, -1)
             assign("mixer.o_proj.weight", widened)
 
 

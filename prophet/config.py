@@ -203,6 +203,28 @@ class RecurrentCoreConfig:
     halting_loss_weight: float = 0.01
     halting_target_steps: float = 4.0
 
+    token_depth: bool = False
+    """Train with a per-token depth *ceiling* so that inference may vary depth per call
+    and per token on one cache.
+
+    Without this, a cache's depth is fixed for its lifetime (it may only shrink by
+    halting): iteration ``i``'s core state must have seen every earlier token, or it
+    reads a state that skipped part of the context. With it, the invariant becomes
+    "iteration ``i`` saw every earlier token whose ceiling exceeds ``i``": at each
+    iteration the core runs on the compacted subsequence of tokens still active, and the
+    model is trained that way, so a tool observation ingested at depth 1 followed by a
+    think span at depth 8 is in-distribution rather than undefined. This is what the
+    agent loop's "ingest cheap, think deep" schedule needs (docs/08_AGENT.md). Unvalidated:
+    an ablation against constant-depth training is required before it carries a run."""
+    ingest_depth: int = 1
+    """Ceiling applied, when ``token_depth`` is on, to tool-observation spans (from
+    ``<|tool|>`` to the next control token) and to the random shallow spans below."""
+    token_depth_random_spans: float = 0.25
+    """Probability that a training sequence gets one random contiguous span at
+    ``ingest_depth``. Pretraining text has no ``<|tool|>`` spans, and the model must
+    still meet the shallow-then-deep transition there or the agent loop's first
+    observation is its first sight of one. A guess, pending the ablation above."""
+
 
 # --------------------------------------------------------------------------------------
 # 4. Feed-forward / sparsity (track R05)
@@ -257,14 +279,28 @@ class MemoryConfig:
 
     enabled: bool = False
     kind: Literal["none", "fast_weight", "product_key"] = "none"
+    mount: Literal["output", "coda"] = "output"
+    """Where the ledger reads and writes.
+
+    ``"output"``: one ledger on the normalised final hidden state, added before the LM
+    head. This is the space every function in ``prophet.memory.consolidate`` addresses
+    and targets, so a ledger consolidated offline can be mounted and read by the model
+    without translation. ``"coda"``: one ledger per index in ``layers``, reading each
+    coda block's residual output -- a different space, unsupported by consolidation, and
+    kept only as an ablation arm."""
     layers: tuple[int, ...] = ()
-    """Trunk indices carrying a memory module. Sparse placement — memory is expensive."""
+    """Coda block indices carrying a ledger when ``mount == "coda"``. Ignored otherwise.
+    Validated against the coda's actual length, not the global depth: a ledger declared
+    at a global index the model never reads was a no-op that budgeted parameters."""
 
     memory_dim: int = 512
     n_slots: int = 4096
     update_rule: Literal["delta", "hebbian", "surprise_gated"] = "delta"
-    write_lr: float = 0.01
-    decay: float = 0.999
+    write_lr: float = 1.0
+    """Fraction of the exact local write step. Aligned with ``LedgerConfig``: every
+    number in ``docs/06_MEMORY.md`` was measured at 1.0, and the model once built its
+    ledger at 0.01 -- one percent of the step the docs describe."""
+    decay: float = 1.0
     """Forgetting factor per write; without it the memory saturates and stops discriminating."""
     surprise_threshold: float = 1.0
     """In ``surprise_gated`` mode, only write when the token's loss exceeds this — memory
@@ -495,6 +531,21 @@ class ProphetConfig:
                 )
             if r.truncated_backprop_steps < 1:
                 errors.append("recurrent.truncated_backprop_steps must be >= 1")
+            if r.token_depth:
+                if not (1 <= r.ingest_depth <= r.train_loop_max):
+                    errors.append(
+                        f"recurrent.ingest_depth ({r.ingest_depth}) must lie in "
+                        f"[1, train_loop_max={r.train_loop_max}]"
+                    )
+                if not (0.0 <= r.token_depth_random_spans <= 1.0):
+                    errors.append("recurrent.token_depth_random_spans must be a probability")
+                core = r.core_pattern or self.mixer.pattern
+                if any(kind in ("full_attn", "swa") for kind in core):
+                    errors.append(
+                        "recurrent.token_depth compacts the active tokens at each "
+                        "iteration, which a recurrent core supports and an attention "
+                        "core does not (its positions would have to be gathered too)"
+                    )
 
         if self.ffn.kind == "moe":
             f = self.ffn
@@ -507,12 +558,25 @@ class ProphetConfig:
                 errors.append("n_experts_per_token must be >= 1")
 
         if self.memory.enabled:
-            depth = self.parameterised_depth()
-            bad = [i for i in self.memory.layers if not 0 <= i < depth]
-            if bad:
-                errors.append(f"memory.layers {bad} are outside the trunk depth {depth}")
             if self.memory.kind == "none":
                 errors.append("memory.enabled is True but memory.kind is 'none'")
+            if self.memory.kind == "fast_weight":
+                errors.append(
+                    "memory.kind='fast_weight' is declared but not implemented: it "
+                    "validated, was budgeted, and built nothing. Use 'product_key'."
+                )
+            if self.memory.mount == "coda":
+                n_coda = (
+                    self.recurrent.coda_layers if self.recurrent.enabled else self.n_layers
+                )
+                bad = [i for i in self.memory.layers if not 0 <= i < n_coda]
+                if bad:
+                    errors.append(
+                        f"memory.layers {bad} are outside the coda ({n_coda} blocks); "
+                        "indices are coda-local, not global"
+                    )
+                if not self.memory.layers:
+                    errors.append("memory.mount='coda' needs at least one index in layers")
 
         if self.frontend.mode == "byte_patch" and self.frontend.patch_max_bytes < 1:
             errors.append("frontend.patch_max_bytes must be >= 1")

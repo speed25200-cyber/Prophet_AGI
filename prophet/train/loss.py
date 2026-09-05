@@ -42,17 +42,24 @@ class LossTerms:
     metrics: dict[str, float] = field(default_factory=dict)
 
 
-def _shifted_cross_entropy(logits: Tensor, targets: Tensor, offset: int) -> Tensor:
+def _shifted_cross_entropy(
+    logits: Tensor, targets: Tensor, offset: int, *, per_token: bool = False
+) -> Tensor:
     """Cross entropy predicting the token ``offset`` positions ahead.
 
     ``offset=1`` is ordinary next-token prediction; ``offset=2`` is what the first
-    multi-token-prediction head learns.
+    multi-token-prediction head learns. ``per_token`` returns the ``(batch, seq-offset)``
+    matrix instead of the mean, which the ponder loss needs.
     """
     if offset >= logits.shape[1]:
-        return logits.new_zeros(())
+        return logits.new_zeros(()) if not per_token else logits.new_zeros(logits.shape[:2])
     pred = logits[:, :-offset].reshape(-1, logits.shape[-1])
     gold = targets[:, offset:].reshape(-1)
-    return F.cross_entropy(pred.float(), gold, ignore_index=-100)
+    ce = F.cross_entropy(pred.float(), gold, ignore_index=-100, reduction="none")
+    if per_token:
+        return ce.view(logits.shape[0], logits.shape[1] - offset)
+    mask = gold != -100
+    return ce[mask].mean() if mask.any() else ce.sum() * 0.0
 
 
 def _geometric_prior(n_steps: int, target_steps: float, device, dtype) -> Tensor:
@@ -129,16 +136,20 @@ def compute_loss(
     if ponder_weight and output.halt_probs is not None:
         p = output.halt_probs.float()
 
-        # Expected language-modelling loss over stopping times. Each candidate stopping
-        # point is scored on its own read-out, so the halting head learns which
-        # iterations were actually good enough to stop at -- not merely how many there
-        # were. Requires ``project`` to turn per-step hidden states into logits.
+        # Expected language-modelling loss over stopping times, **per token**. Each
+        # candidate stopping point is scored on its own read-out, and the halting
+        # probability at position t weights the loss at position t. The first version
+        # multiplied two batch means -- mean(p_i) * mean(loss_i) -- whose gradient with
+        # respect to p is the same number at every position, so the head could only
+        # ever learn one constant distribution for the whole batch. Measured: one unique
+        # gradient value across ten positions. Input-dependent depth was unlearnable by
+        # construction, while ponder/expected_depth moved and looked learned.
         expected = lm.new_zeros(())
         if project is not None and output.hidden_per_step:
             for i, hidden in enumerate(output.hidden_per_step):
-                step_loss = _shifted_cross_entropy(project(hidden), targets, 1)
-                weight = p[..., i].mean()
-                expected = expected + weight * step_loss
+                ce_i = _shifted_cross_entropy(project(hidden), targets, 1, per_token=True)
+                # p is (batch, seq, steps); the loss at position t predicts t+1.
+                expected = expected + (p[:, : ce_i.shape[1], i] * ce_i).mean()
 
         prior = _geometric_prior(p.shape[-1], ponder_target_steps, p.device, p.dtype)
         kl = (p * ((p + 1e-9).log() - prior.log())).sum(-1).mean()

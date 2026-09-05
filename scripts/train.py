@@ -34,18 +34,22 @@ from prophet.data.streaming import StreamingLoader, sources_from_iterables  # no
 from prophet.modeling.model import ProphetModel  # noqa: E402
 from prophet.train.loop import TrainConfig, Trainer  # noqa: E402
 
-_STOP = False
+_TRAINER = None
 
 
 def _handle_signal(signum, frame) -> None:
     """Checkpoint and exit cleanly if the platform gives us any warning at all.
 
     Colab usually does not, which is why the checkpoint rotation has to survive being
-    killed mid-write regardless. This just makes the polite case tidy.
+    killed mid-write regardless. This just makes the polite case tidy. The flag lives on
+    the trainer and is read once per step; the first version set a module global that
+    nothing read, which also swallowed KeyboardInterrupt -- Ctrl-C did nothing.
     """
-    global _STOP
     print(f"\n[signal {signum}] finishing the current step, then checkpointing.", flush=True)
-    _STOP = True
+    if _TRAINER is not None:
+        _TRAINER.stop_requested = True
+    else:
+        raise KeyboardInterrupt
 
 
 def synthetic_sources(vocab_size: int, *, n_docs: int = 4000, doc_len: int = 256):
@@ -87,8 +91,11 @@ def main() -> int:
     # Budget check before anything expensive. A configuration that cannot fit should fail
     # in a second, not after an hour of downloading.
     params = count_parameters(cfg)
-    mem = training_memory(cfg, batch_tokens=args.batch_size * args.seq_len,
-                          optimizer_bytes_per_param=2.0)
+    # The gate estimates with the trainer's real policy: fp32 params (the master copy
+    # under bf16 autocast), fp32 grads, Muon/AdamW state from the actual split. It once
+    # assumed an 8-bit optimiser that nothing implements and said "fits" for a run that
+    # did not.
+    mem = training_memory(cfg, batch_tokens=args.batch_size * args.seq_len)
     print(f"config           {cfg.name}")
     print(f"parameters       {params.total / 1e6:.1f}M total / "
           f"{params.active_per_token / 1e6:.1f}M active per token")
@@ -102,6 +109,17 @@ def main() -> int:
         print("\nRefusing to start: the configuration does not fit. Reduce d_model, "
               "batch size, or sequence length.", file=sys.stderr)
         return 1
+
+    from prophet.modeling.layers import HAS_FLA
+    if not args.smoke and not HAS_FLA:
+        print(
+            "\nRefusing a real run without flash-linear-attention: the reference delta-rule "
+            "scan is a Python loop over every token of every core iteration, and autograd "
+            "retains each state -- roughly 144 GB of activations for 8k tokens on the main "
+            "config. Install `fla` (pinned in pyproject) and run the GPU equivalence test first.",
+            file=sys.stderr,
+        )
+        return 3
 
     if args.smoke:
         args.steps = min(args.steps, 60)
@@ -139,6 +157,8 @@ def main() -> int:
         device=args.device,
     )
     trainer = Trainer(model, loader, train_cfg, model_config=cfg)
+    global _TRAINER
+    _TRAINER = trainer
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)

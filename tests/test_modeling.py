@@ -30,7 +30,7 @@ from prophet.modeling.layers import (
     apply_rotary,
 )
 from prophet.modeling.model import ProphetCache, ProphetModel
-from prophet.modeling.moe import SparseMoE
+from prophet.modeling.moe import SparseMoE, apply_router_updates
 
 torch.manual_seed(0)
 
@@ -286,6 +286,8 @@ def test_moe_bias_balancing_reduces_expert_collapse():
         moe(x)
         if first is None:
             first = moe.last_stats.max_share
+        # The forward records the step; the trainer applies it after backward.
+        assert apply_router_updates([moe.last_stats]) == 1
     assert moe.last_stats.max_share < first
 
 

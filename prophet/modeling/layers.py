@@ -104,8 +104,11 @@ class RotaryEmbedding(nn.Module):
         self.position_dims = position_dims
         self.section = head_dim // position_dims
 
+        self.position_divisor = 1.0
         if scaling == "linear" and scaling_factor > 1.0:
-            theta = theta * scaling_factor
+            # Position interpolation: compress positions into the trained range. Scaling
+            # theta instead would be NTK/base scaling, a different recipe.
+            self.position_divisor = float(scaling_factor)
         elif scaling == "yarn" and scaling_factor > 1.0:
             # NTK-by-parts: stretch the base so low frequencies span the longer context
             # while high frequencies, which carry local ordering, stay intact.
@@ -129,7 +132,7 @@ class RotaryEmbedding(nn.Module):
             raise ValueError(
                 f"expected {self.position_dims} position dims, got {positions.shape[-1]}"
             )
-        freqs = positions.float().unsqueeze(-1) * self.inv_freq  # (b, s, pdims, section/2)
+        freqs = (positions.float() / self.position_divisor).unsqueeze(-1) * self.inv_freq
         freqs = freqs.flatten(-2)  # (b, s, head_dim/2)
         return torch.cat([freqs, freqs], -1).cos(), torch.cat([freqs, freqs], -1).sin()
 
@@ -182,41 +185,58 @@ class AttentionCache:
     ``sink_tokens`` keeps a short always-attended prefix, without which windowed
     attention collapses at long context because the softmax has nowhere to dump
     probability mass.
+
+    The cache keeps the **absolute position** of every retained key. Masks are built on
+    those positions, never on buffer indices: once eviction has started the two differ,
+    and a mask on buffer indices silently attends to the wrong keys. That was the bug
+    that made every prompt longer than the window wrong in every windowed layer.
     """
 
     keys: Tensor | None = None
     values: Tensor | None = None
+    positions: Tensor | None = None
+    """Absolute position of each retained key, shape ``(kv_len,)``."""
     window: int | None = None
     sink_tokens: int = 0
     seen: int = 0
-    """Total tokens ever written, which is what positions must be derived from — the
-    buffer length is not the position once eviction has started."""
+    """Total tokens ever written -- what positions derive from, not the buffer length."""
 
-    def append(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
+    def append(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        """Append a chunk and return the *un-evicted* keys, values and positions.
+
+        Eviction happens in :meth:`evict`, after attention has been computed: the chunk
+        being processed must see every key inside its own window, including keys that
+        will be evicted once the chunk is done.
+        """
+        s = k.shape[2]
+        new_pos = torch.arange(self.seen, self.seen + s, device=k.device)
         if self.keys is None:
-            self.keys, self.values = k, v
+            self.keys, self.values, self.positions = k, v, new_pos
         else:
             self.keys = torch.cat([self.keys, k], dim=2)
             self.values = torch.cat([self.values, v], dim=2)
-        self.seen += k.shape[2]
+            self.positions = torch.cat([self.positions, new_pos])
+        self.seen += s
+        return self.keys, self.values, self.positions
 
-        if self.window is not None:
-            limit = self.window + self.sink_tokens
-            length = self.keys.shape[2]
-            if length > limit:
-                if self.sink_tokens:
-                    self.keys = torch.cat(
-                        [self.keys[:, :, : self.sink_tokens], self.keys[:, :, -self.window :]],
-                        dim=2,
-                    )
-                    self.values = torch.cat(
-                        [self.values[:, :, : self.sink_tokens], self.values[:, :, -self.window :]],
-                        dim=2,
-                    )
-                else:
-                    self.keys = self.keys[:, :, -self.window :]
-                    self.values = self.values[:, :, -self.window :]
-        return self.keys, self.values
+    def evict(self) -> None:
+        """Trim to the window plus the sinks. A no-op for full attention."""
+        if self.window is None or self.keys is None:
+            return
+        limit = self.window + self.sink_tokens
+        length = self.keys.shape[2]
+        if length <= limit:
+            return
+        if self.sink_tokens:
+            keep = torch.cat([
+                torch.arange(self.sink_tokens, device=self.keys.device),
+                torch.arange(length - self.window, length, device=self.keys.device),
+            ])
+        else:
+            keep = torch.arange(length - self.window, length, device=self.keys.device)
+        self.keys = self.keys.index_select(2, keep)
+        self.values = self.values.index_select(2, keep)
+        self.positions = self.positions.index_select(0, keep)
 
     def n_bytes(self) -> int:
         if self.keys is None:
@@ -318,35 +338,49 @@ class CausalSelfAttention(nn.Module):
         if cache is not None:
             cache.window = self.window
             cache.sink_tokens = self.sink_tokens
-            k, v = cache.append(k, v)
+            q_pos = torch.arange(cache.seen, cache.seen + s, device=x.device)
+            k, v, k_pos = cache.append(k, v)
+        else:
+            q_pos = torch.arange(s, device=x.device)
+            k_pos = q_pos
 
         if self.n_rep > 1:
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
 
-        kv_len = k.shape[2]
-        # A single decode step attends to everything retained in the cache, so no mask is
-        # needed; eviction has already enforced the window.
-        if s == 1 and cache is not None:
-            attn_mask, is_causal = None, False
-        elif self.window is None:
+        # With a cache, always mask on absolute positions -- including the single-token
+        # decode step. Attention now runs *before* eviction (a continuation chunk must
+        # see every key inside its window), so at decode time the retained tail holds
+        # window + 1 keys and the oldest is out of range for the new query. The old
+        # "one token needs no mask" shortcut was only true when eviction came first.
+        # A fresh cache-free full-attention pass keeps the fused causal kernel.
+        if cache is None and self.window is None:
             attn_mask, is_causal = None, True
         else:
-            attn_mask, is_causal = self._windowed_mask(s, kv_len, x.device), False
+            attn_mask, is_causal = self._position_mask(q_pos, k_pos), False
 
         out = F.scaled_dot_product_attention(
             q, k, v, attn_mask=attn_mask, is_causal=is_causal, scale=self.scale
         )
+        if cache is not None:
+            cache.evict()
         return self.o_proj(out.transpose(1, 2).reshape(b, s, -1))
 
-    def _windowed_mask(self, q_len: int, kv_len: int, device: torch.device) -> Tensor:
-        """Boolean mask (True = attend) for sliding-window attention with sinks."""
-        offset = kv_len - q_len
-        q_pos = torch.arange(q_len, device=device).unsqueeze(1) + offset
-        k_pos = torch.arange(kv_len, device=device).unsqueeze(0)
-        mask = (k_pos <= q_pos) & (q_pos - k_pos < self.window)
-        if self.sink_tokens:
-            mask = mask | ((k_pos < self.sink_tokens) & (k_pos <= q_pos))
+    def _position_mask(self, q_pos: Tensor, k_pos: Tensor) -> Tensor:
+        """Boolean mask (True = attend) on absolute positions.
+
+        Causality, the sliding window and the sinks are all expressed in positions, so
+        the same function is right for a fresh prefill, a continuation chunk appended to a
+        cache, and a prompt long enough that the cache has already evicted.
+        """
+        q = q_pos.unsqueeze(1)
+        k = k_pos.unsqueeze(0)
+        mask = k <= q
+        if self.window is not None:
+            in_window = (q - k) < self.window
+            if self.sink_tokens:
+                in_window = in_window | (k < self.sink_tokens)
+            mask = mask & in_window
         return mask.unsqueeze(0).unsqueeze(0)
 
 
@@ -437,6 +471,12 @@ class GatedDeltaNet(nn.Module):
         # layer untrainable, since gradients never reach far back.
         nn.init.constant_(self.a_proj.bias, 3.0)
         nn.init.constant_(self.b_proj.bias, 0.0)
+        # ProphetModel._init_weights zeroes every Linear bias it does not know about.
+        # These two are set deliberately: a forget gate that starts at sigmoid(0)=0.5
+        # gives the state a half-life of one token and the layer never recovers. The
+        # attribute is the contract that makes the model leave them alone.
+        self.a_proj._prophet_keep_bias = True
+        self.b_proj._prophet_keep_bias = True
 
     # -- helpers ----------------------------------------------------------------------
 
@@ -476,12 +516,19 @@ class GatedDeltaNet(nn.Module):
         beta = self.beta_max * torch.sigmoid(self.b_proj(x).float())
 
         if self.allow_fused and HAS_FLA and x.is_cuda:  # pragma: no cover
-            out, new_state = _fla_gated_delta(
-                q=q, k=k, v=v, g=alpha.log(), beta=beta,
-                initial_state=None if state is None else state.state,
-                output_final_state=state is not None,
-                head_first=False,
+            # flash-linear-attention's chunked kernel. Layout contract, made explicit
+            # because getting it wrong transposes the state silently: inputs are
+            # (batch, seq, heads, dim); its state is (batch, heads, K, V) while the
+            # reference scan keeps (batch, heads, V, K). ``scale=1.0`` because the scan
+            # applies no query scaling. This path has not been executed in this
+            # repository -- no GPU, no ``fla`` -- and a GPU equivalence test against
+            # ``_scan`` (output *and* final state) is required before it carries a run.
+            init = None if state is None or state.state is None else state.state.transpose(-1, -2).contiguous()
+            out, fla_state = _fla_gated_delta(
+                q=q, k=k, v=v, g=alpha.log().to(q.dtype), beta=beta.to(q.dtype), scale=1.0,
+                initial_state=init, output_final_state=state is not None,
             )
+            new_state = None if fla_state is None else fla_state.transpose(-1, -2).contiguous()
         else:
             out, new_state = self._scan(q, k, v, alpha, beta, state)
 

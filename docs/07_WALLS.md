@@ -132,6 +132,20 @@ pas un changement de classe. Pour que la boucle achète réellement de la profon
 de la complexité, il faut que *k* dépende de l'entrée — donc un mécanisme de halte
 entraîné, pas un cadran fixé par l'appelant.
 
+**Réserve sur la réserve — trouvée en branchant l'agent.** « *k* dépend de l'entrée » est
+facile à écrire et a un coût caché sur un cache : l'état récurrent de l'itération *i* n'est
+défini que pour les tokens qui l'ont exécutée. Une halte *par token* — ou une boucle
+agentique qui lit une observation à *k*=1 et pense à *k*=8 — fait lire à un token profond
+un état qui n'a jamais vu ses prédécesseurs peu profonds. Notre modèle refusait cet appel,
+et il avait raison : rien dans l'entraînement à une profondeur par séquence ne définit ce
+cas. La halte apprise n'est donc *cohérente* qu'à deux conditions : soit la profondeur ne
+fait que **baisser** au fil du cache (régime `fixed`, exact), soit le modèle est entraîné
+avec des **plafonds par token** — à l'itération *i* le cœur tourne sur la sous-séquence
+compactée des tokens encore actifs, et l'inférence fait la même chose
+(`recurrent.token_depth`, [`08_AGENT.md`](08_AGENT.md) §2.1). Ce que W1 posait comme une
+exigence de complexité est aussi une exigence de *cohérence de cache*, et les deux se
+règlent par la même mécanique.
+
 **Ce que nous avions surestimé — et un bug d'un caractère.** Notre pile est
 majoritairement à état borné. W2 a trouvé que notre implémentation était *strictement plus
 faible que la famille qu'elle prétend implémenter*, pour une raison d'une ligne.

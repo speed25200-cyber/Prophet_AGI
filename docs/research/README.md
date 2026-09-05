@@ -71,6 +71,28 @@ d'entre eux étaient des **défauts du code** :
 
 ---
 
+## Troisième vague : le pilier agentique (A1–A4)
+
+Une revue complète du dépôt, puis trois tracks sur ce qui sépare un modèle qui répond
+d'un agent qui accomplit. La synthèse et ce qui en est construit sont dans
+[`../08_AGENT.md`](../08_AGENT.md).
+
+| Track | Verdict en une ligne | Effet sur le code |
+|---|---|---|
+| [A1 — Revue du code](A1_codebase_review.md) | 23 défauts, dont 7 silencieux : biais d'oubli remis à zéro par l'init, gradient de halte identique à toutes les positions, amortissement résiduel ×0.11 à l'exécution détruisant toute copie de donneur, `nope_layers` jamais lu, estimateur de paramètres 10 % trop bas. | Tous corrigés, chacun avec un test comportemental (`tests/test_review_fixes.py`). L'estimateur colle au modèle réel à 1e-4. |
+| [A2 — Compétence agentique](A2_agentic_competence.md) | Les échecs d'un agent à 1–4B sont l'**omission** et la **perte de contexte long**, pas la syntaxe ; compacter par résumé fait passer les violations de 0 % à 30–59 %. | Boucle à fil unique : préfixe épinglé, fenêtre d'observations verbatim, éviction sans réécriture, retour arrière O(1). |
+| [A3 — Action structurée](A3_structured_action.md) | La grammaire supprime le formatage (déjà rare) ; les têtes d'action (pointeur sur les ancres de schéma, copie de span) visent les vraies erreurs. | Grammaire préfixe et décodeur contraint construits ; têtes non construites, derrière `heads.action_head`. |
+| [A4 — Auto-vérification](A4_self_verification.md) | Une tête de confiance peut porter le *agir*, jamais le *retenir* ; un désaccord entre profondeurs est un signal gratuit à mesurer. | Tiers de vérification, quarantaine à provenance, promotion/révocation. AUROC du désaccord de profondeur : expérience A4-0 non lancée. |
+
+### Ce que le branchement a trouvé, que les rapports n'avaient pas vu
+
+| # | Trouvaille | Conséquence |
+|---|---|---|
+| 7 | Lire une observation à *k*=1 puis penser à *k*=8 **sur le même cache** n'est pas défini pour un modèle entraîné à une profondeur par séquence : l'état de l'itération 8 n'a jamais vu l'observation. | `recurrent.token_depth` : plafonds de profondeur par token, cœur exécuté sur la sous-séquence compactée à chaque itération, en entraînement comme en inférence. Équivalence passe complète / décodage incrémental testée à 1e-4. Non ablaté ; hors des configs livrées. |
+| 8 | Le biais de routage MoE était mis à jour **dans** le forward. Sous checkpointing d'activations — activé par défaut — le recalcul du backward route autrement et **plante** (`CheckpointError`) : aucune config MoE ne pouvait s'entraîner. | Le pas de rééquilibrage est enregistré dans les statistiques et appliqué **après** le backward, une fois par appel. Test de régression. |
+
+---
+
 ## Verdicts par track
 
 | Track | Verdict en une ligne | Effet sur la conception |

@@ -17,13 +17,15 @@ Two choices here are deliberate and worth stating:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
 from prophet.modeling.layers import SwiGLU
 
-__all__ = ["MoERouter", "SparseMoE", "RouterStats"]
+__all__ = ["MoERouter", "SparseMoE", "RouterStats", "apply_router_updates"]
 
 
 class RouterStats:
@@ -33,7 +35,7 @@ class RouterStats:
     curve, so these are logged every step rather than computed on demand.
     """
 
-    __slots__ = ("expert_counts", "max_share", "entropy", "aux_loss")
+    __slots__ = ("expert_counts", "max_share", "entropy", "aux_loss", "bias_step", "router")
 
     def __init__(
         self,
@@ -41,11 +43,33 @@ class RouterStats:
         max_share: float,
         entropy: float,
         aux_loss: Tensor,
+        bias_step: Tensor | None = None,
+        router: MoERouter | None = None,
     ) -> None:
         self.expert_counts = expert_counts
         self.max_share = max_share
         self.entropy = entropy
         self.aux_loss = aux_loss
+        self.bias_step = bias_step
+        """The balancing update this call asks for, ``sign(share - 1/n)``, or ``None``
+        when balancing is off or the call was a probe. It is *recorded* here rather than
+        applied in the forward pass because activation checkpointing replays the forward
+        during backward: an in-place bias change between the two runs changed the
+        routing, and the recompute no longer matched the saved graph (a hard
+        ``CheckpointError`` on every MoE config). :func:`apply_router_updates` applies
+        the recorded steps once, after backward."""
+        self.router = router
+
+
+def apply_router_updates(stats: Iterable[RouterStats]) -> int:
+    """Apply the recorded balancing steps. Returns how many routers moved."""
+    moved = 0
+    with torch.no_grad():
+        for st in stats:
+            if st.bias_step is not None and st.router is not None:
+                st.router.expert_bias -= st.router.bias_update_rate * st.bias_step
+                moved += 1
+    return moved
 
 
 class MoERouter(nn.Module):
@@ -77,11 +101,15 @@ class MoERouter(nn.Module):
         # Not a parameter: updated by a rule, never by a gradient.
         self.register_buffer("expert_bias", torch.zeros(n_experts))
 
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor, RouterStats]:
+    def forward(
+        self, x: Tensor, *, update_bias: bool = True, valid: Tensor | None = None
+    ) -> tuple[Tensor, Tensor, RouterStats]:
         """Route ``(tokens, dim)`` to experts.
 
         Returns ``(indices, weights, stats)`` where ``indices`` and ``weights`` are
-        ``(tokens, top_k)``.
+        ``(tokens, top_k)``. ``valid`` (``(tokens,)`` bool) restricts the statistics --
+        counts, balancing update, auxiliary losses -- to real tokens; the per-token
+        depth path pads compacted batches and the pads must not steer the router.
         """
         logits = F.linear(x.to(self.router_dtype), self.weight.to(self.router_dtype))
         scores = torch.sigmoid(logits)
@@ -93,26 +121,31 @@ class MoERouter(nn.Module):
         weights = torch.gather(scores, -1, indices)
         weights = weights / weights.sum(-1, keepdim=True).clamp_min(1e-9)
 
-        counts = torch.bincount(indices.flatten(), minlength=self.n_experts).float()
+        stat_indices = indices if valid is None else indices[valid]
+        stat_logits = logits if valid is None else logits[valid]
+        stat_scores = scores if valid is None else scores[valid]
+        counts = torch.bincount(stat_indices.flatten(), minlength=self.n_experts).float()
         share = counts / counts.sum().clamp_min(1.0)
 
         aux = logits.new_zeros(())
-        if self.z_loss_weight:
+        if self.z_loss_weight and stat_logits.shape[0]:
             # Keeps router logits from drifting to large magnitudes, which is the usual
             # precursor to instability in low precision.
-            aux = aux + self.z_loss_weight * torch.logsumexp(logits, dim=-1).pow(2).mean()
-        if self.load_balance_loss_weight:
-            probs = scores.mean(0)
+            aux = aux + self.z_loss_weight * torch.logsumexp(stat_logits, dim=-1).pow(2).mean()
+        if self.load_balance_loss_weight and stat_scores.shape[0]:
+            probs = stat_scores.mean(0)
             aux = aux + self.load_balance_loss_weight * self.n_experts * (share * probs).sum()
 
-        if self.bias_balancing and self.training:
+        bias_step = None
+        if self.bias_balancing and self.training and update_bias:
             with torch.no_grad():
                 target = 1.0 / self.n_experts
                 # Under-used experts get a positive nudge, over-used a negative one.
-                self.expert_bias -= self.bias_update_rate * torch.sign(share - target)
+                # Recorded, not applied: see ``RouterStats.bias_step``.
+                bias_step = torch.sign(share - target)
 
         entropy = -(share.clamp_min(1e-9) * share.clamp_min(1e-9).log()).sum()
-        stats = RouterStats(counts, share.max().item(), entropy.item(), aux)
+        stats = RouterStats(counts, share.max().item(), entropy.item(), aux, bias_step, self)
         return indices, weights.to(x.dtype), stats
 
 
@@ -146,18 +179,32 @@ class SparseMoE(nn.Module):
             load_balance_loss_weight=load_balance_loss_weight,
         )
         self.experts = nn.ModuleList(SwiGLU(dim, expert_hidden) for _ in range(n_experts))
+        self.probe_mode = False
+        """Set by the model around halting probe passes. In probe mode the router does
+        not nudge its balancing bias and no stats or aux loss are recorded: the coda
+        runs once per core iteration to score stopping points, and counting each of
+        those as a training step balanced the coda's routers k times faster than the
+        prelude's and let them dominate the aux loss."""
         self.shared = (
             SwiGLU(dim, shared_hidden or expert_hidden * max(n_shared, 1))
             if n_shared
             else None
         )
         self.last_stats: RouterStats | None = None
+        self.token_mask: Tensor | None = None
+        """``(batch, seq)`` bool set by the model around a compacted core pass: rows
+        that are padding still get routed (shapes must hold) but are excluded from the
+        router statistics and the balancing update."""
 
     def forward(self, x: Tensor) -> Tensor:
         b, s, d = x.shape
         flat = x.reshape(-1, d)
-        indices, weights, stats = self.router(flat)
-        self.last_stats = stats
+        valid = None if self.token_mask is None else self.token_mask.reshape(-1)
+        indices, weights, stats = self.router(
+            flat, update_bias=not self.probe_mode, valid=valid
+        )
+        if not self.probe_mode:
+            self.last_stats = stats
 
         out = torch.zeros_like(flat)
         # Gather-scatter per expert. Correct and simple; a grouped-GEMM kernel replaces

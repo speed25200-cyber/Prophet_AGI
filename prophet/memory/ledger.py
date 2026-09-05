@@ -109,8 +109,14 @@ class ProductKeyMemory(nn.Module):
         if cfg.top_k > cfg.n_slots:
             raise ValueError(f"top_k={cfg.top_k} exceeds n_slots={cfg.n_slots}")
 
-        self.query = nn.Linear(cfg.dim, cfg.n_heads * cfg.memory_dim, bias=False)
-        self.query_norm = nn.LayerNorm(cfg.memory_dim)
+        # Addressing is **frozen**: a random projection and a non-affine normalisation,
+        # registered as buffers so no optimiser can move them. The class promises that
+        # keys never drift; a trainable query projection broke that promise from the
+        # other side -- training moved every stored association's address.
+        query = torch.empty(cfg.n_heads * cfg.memory_dim, cfg.dim)
+        nn.init.normal_(query, std=cfg.dim**-0.5)
+        self.register_buffer("query_weight", query, persistent=True)
+        self.query_norm = nn.LayerNorm(cfg.memory_dim, elementwise_affine=False)
 
         # Frozen sub-key codebooks.
         keys = torch.randn(2, cfg.n_heads, side, self.sub_dim) / math.sqrt(self.sub_dim)
@@ -134,7 +140,7 @@ class ProductKeyMemory(nn.Module):
         flat = x.reshape(-1, cfg.dim)
         n = flat.shape[0]
 
-        q = self.query(flat).view(n, cfg.n_heads, cfg.memory_dim)
+        q = F.linear(flat, self.query_weight).view(n, cfg.n_heads, cfg.memory_dim)
         q = self.query_norm(q)
         q1, q2 = q.split(self.sub_dim, dim=-1)
 
