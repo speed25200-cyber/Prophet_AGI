@@ -108,6 +108,9 @@ python scripts/verify_datasets.py          # confronte les identifiants au Hub (
 python scripts/verify_donors.py            # confronte les donneurs au Hub (semaine 1)
 python scripts/convert_donor.py --donor qwen3-1.7b --plan-only
 python scripts/train.py --config configs/prophet_tiny_smoke.json --smoke
+python scripts/train_tokenizer.py --data-root corpus/ --out tokenizer.json   # puis :
+python scripts/train.py --config configs/prophet_mini.json --tokenizer tokenizer.json \
+    --data-root corpus/ --benchmarks benchmarks/ --tokens 16.1e9        # run réel
 python -m pytest tests/ -q                 # ~330 tests
 ```
 

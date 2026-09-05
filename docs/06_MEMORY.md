@@ -84,6 +84,20 @@ de 65 536**.
 
 ---
 
+### Deux gardes sur l'écriture
+
+**Plafond de vie.** `memory.max_writes` borne le nombre de tokens qu'un registre accepte
+sur toute sa vie ; au-delà, `write()` refuse et le dit (`WriteStats.accepted`), sans rien
+appliquer. Un agent qui écrirait à chaque pas ne peut pas baratter un registre qu'une
+session a mis des heures à construire.
+
+**Écriture sur surprise.** `memory.update_rule = "surprise_gated"` n'écrit qu'un token dont
+la perte *sans contexte* dépasse `surprise_threshold` (en nats) : ce que les poids
+prédisent déjà ne vaut pas un slot. Le premier token d'une requête n'a pas de prédicteur
+et compte comme infiniment surprenant. La consolidation lit cette politique dans la
+config du modèle par défaut et peut la surcharger par appel ; le rapport compte les tokens
+écrits, filtrés et refusés. Non ablaté : c'est un interrupteur, pas une recommandation.
+
 ## 4. La consolidation, ou « sommeil »
 
 Pendant une session, le modèle voit des choses qu'il ne peut pas garder. La passe de

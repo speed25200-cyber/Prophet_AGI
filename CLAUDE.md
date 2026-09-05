@@ -43,7 +43,8 @@ prophet/
   plan.py       Allocation du compute entre les tracks (ordre strict, sans remplissage)
   modeling/     Couches (attention GQA/SWA/NoPE, delta gated), MoE, modèle à
                 profondeur récurrente avec halte apprise
-  data/         Tokenizer Prophet-Tok v1, mélanges, décontamination, streaming reprenable
+  data/         Tokenizer Prophet-Tok v1, mélanges, décontamination, streaming reprenable,
+                corpus réels (fichiers/Hub, phases, plafond d'époques au tirage)
   train/        Muon + AdamW, planning WSD, checkpointing atomique, boucle, pertes
   eval/         Métriques (BPB) et harnais à trois niveaux
   memory/       Registre à clés-produit (écriture en forme close), état de session,
@@ -53,7 +54,7 @@ prophet/
   kernels/      Réservé aux noyaux Triton/CUDA — vide tant qu'aucun GPU n'a servi
 configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
 scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
-tests/          ~330 tests ; les plus importants sont des tests d'équivalence
+tests/          ~410 tests ; les plus importants sont des tests d'équivalence
 ```
 
 ## Ce que ce dépôt a appris à ses dépens

@@ -51,19 +51,15 @@ class FrontendConfig:
     vocab_size: int = 49152
     tie_word_embeddings: bool = True
 
-    # --- "byte_patch" / "hybrid" ---
+    # --- "byte_patch" / "hybrid": sizing only. Neither mode is built (validate()
+    # refuses them); these fields let prophet.budget cost the R01 retrofit and nothing
+    # else. Its runtime knobs (patch size, entropy threshold, local window) were removed
+    # until the component exists: a field nothing reads is a bug, not a reservation.
     byte_vocab_size: int = 260  # 256 bytes + BOS/EOS/PAD/MASK
-    patch_target_bytes: float = 4.5
-    """Average bytes per patch the entropy router is calibrated to produce."""
-    patch_max_bytes: int = 16
-    patch_entropy_threshold: float | None = None
-    """Absolute entropy threshold in nats; ``None`` calibrates it to hit ``patch_target_bytes``."""
     local_encoder_layers: int = 2
     local_decoder_layers: int = 3
     local_dim: int = 512
     local_heads: int = 8
-    local_window: int = 128
-    """Byte-level attention window inside the local encoder/decoder."""
     hash_ngram_sizes: tuple[int, ...] = (3, 4, 5, 6)
     hash_ngram_buckets: int = 32768
     """Hash-embedding buckets *per n-gram size*, giving byte n-gram context cheaply.
@@ -295,7 +291,11 @@ class MemoryConfig:
 
     memory_dim: int = 512
     n_slots: int = 4096
-    update_rule: Literal["delta", "hebbian", "surprise_gated"] = "delta"
+    update_rule: Literal["delta", "surprise_gated"] = "delta"
+    """``delta`` writes every consolidated token. ``surprise_gated`` writes only tokens
+    whose next-token loss without context exceeds ``surprise_threshold``: what the
+    weights already predict is not worth a slot. Read by ``prophet.memory.consolidate``
+    as the default policy."""
     write_lr: float = 1.0
     """Fraction of the exact local write step. Aligned with ``LedgerConfig``: every
     number in ``docs/06_MEMORY.md`` was measured at 1.0, and the model once built its
@@ -303,11 +303,13 @@ class MemoryConfig:
     decay: float = 1.0
     """Forgetting factor per write; without it the memory saturates and stops discriminating."""
     surprise_threshold: float = 1.0
-    """In ``surprise_gated`` mode, only write when the token's loss exceeds this — memory
-    capacity is spent on what the weights did not already know."""
+    """In ``surprise_gated`` mode, only write when the token's loss (nats) exceeds this —
+    memory capacity is spent on what the weights did not already know."""
 
-    persist_across_sessions: bool = True
-    max_persisted_writes: int = 1_000_000
+    max_writes: int | None = 1_000_000
+    """Tokens the ledger accepts over its lifetime; further writes are refused and
+    reported, not applied. A runaway agent writing every step must not be able to churn
+    a ledger that took a session to build. ``None`` disables the cap."""
 
 
 # --------------------------------------------------------------------------------------
@@ -345,11 +347,6 @@ class ModalityConfig:
     """A learned per-modality bias added to inputs, so modality is a first-class signal."""
     position_dims: int = 1
     """1 for text; 3 reserves (t, y, x) so 2-D position encodings work for images later."""
-    bidirectional_spans: bool = True
-    """Allow marked spans to attend bidirectionally — required for image patches, and
-    useful for text infilling in the meantime."""
-    adapter_mount_points: bool = True
-    """Emit per-layer hooks where modality LoRA adapters can attach."""
 
 
 # --------------------------------------------------------------------------------------
@@ -369,6 +366,7 @@ class ProphetConfig:
     recurrent core (see :meth:`effective_depth`)."""
     norm_eps: float = 1e-5
     norm_kind: Literal["rmsnorm", "layernorm"] = "rmsnorm"
+    """Normalisation in every block and head (``prophet.modeling.layers.make_norm``)."""
     residual_scaling: bool = True
     """Scale residual branches by 1/sqrt(2 * depth) at init — keeps activation variance
     bounded in deep or heavily looped stacks."""
@@ -376,7 +374,10 @@ class ProphetConfig:
     z_loss_weight: float = 1e-4
 
     max_seq_len: int = 4096
+    """Longest sequence a training run may use; the trainer refuses a longer one."""
     dropout: float = 0.0
+    """Residual dropout on both branches of every block. Off by default: a single-epoch
+    run at our budget has nothing to over-fit."""
 
     frontend: FrontendConfig = field(default_factory=FrontendConfig)
     mixer: MixerConfig = field(default_factory=MixerConfig)
@@ -578,8 +579,9 @@ class ProphetConfig:
                 if not self.memory.layers:
                     errors.append("memory.mount='coda' needs at least one index in layers")
 
-        if self.frontend.mode == "byte_patch" and self.frontend.patch_max_bytes < 1:
-            errors.append("frontend.patch_max_bytes must be >= 1")
+        # frontend.mode other than "bpe" is *costed* here (prophet.budget sizes the R01
+        # retrofit from it) and *refused* at model build (ProphetModel raises
+        # NotImplementedError), so validation stays permissive on purpose.
 
         if errors:
             raise ValueError(

@@ -33,6 +33,7 @@ from torch import Tensor, nn
 
 from prophet.config import ProphetConfig
 from prophet.modeling.layers import (
+    make_norm,
     AttentionCache,
     CausalSelfAttention,
     GatedDeltaNet,
@@ -128,9 +129,10 @@ class ProphetBlock(nn.Module):
         self.kind = kind
         self.gradient_checkpointing = False
 
-        self.norm1 = RMSNorm(cfg.d_model, cfg.norm_eps)
+        self.norm1 = make_norm(cfg.norm_kind, cfg.d_model, cfg.norm_eps)
         self.mixer = build_mixer(kind, cfg, layer_index=layer_index, section=section)
-        self.norm2 = RMSNorm(cfg.d_model, cfg.norm_eps)
+        self.norm2 = make_norm(cfg.norm_kind, cfg.d_model, cfg.norm_eps)
+        self.dropout = nn.Dropout(cfg.dropout) if cfg.dropout > 0 else nn.Identity()
 
         if is_moe:
             f = cfg.ffn
@@ -182,8 +184,8 @@ class ProphetBlock(nn.Module):
                 mixed = self.mixer(h, state=cache)  # type: ignore[arg-type]
             else:
                 mixed = self.mixer(h, cos=cos, sin=sin, cache=cache)  # type: ignore[arg-type]
-            x = x + mixed
-        return x + self.ffn(self.norm2(x))
+            x = x + self.dropout(mixed)
+        return x + self.dropout(self.ffn(self.norm2(x)))
 
 
 # --------------------------------------------------------------------------------------
@@ -300,6 +302,7 @@ class ProphetModel(nn.Module):
                         n_slots=cfg.memory.n_slots,
                         write_lr=cfg.memory.write_lr,
                         decay=cfg.memory.decay,
+                        max_writes=cfg.memory.max_writes,
                     )
                 )
 
@@ -310,7 +313,7 @@ class ProphetModel(nn.Module):
                     # Underscore, not dot: nn.ModuleDict forbids '.' in a key.
                     self.ledgers[f"coda_{index}"] = _ledger()
 
-        self.norm_out = RMSNorm(d, cfg.norm_eps)
+        self.norm_out = make_norm(cfg.norm_kind, d, cfg.norm_eps)
         self.lm_head = nn.Linear(d, cfg.frontend.vocab_size, bias=False)
         if cfg.frontend.tie_word_embeddings:
             self.lm_head.weight = self.embed.weight
@@ -320,7 +323,7 @@ class ProphetModel(nn.Module):
             for _ in range(cfg.heads.n_multi_token_predict)
         )
         self.confidence_head = (
-            nn.Sequential(RMSNorm(d, cfg.norm_eps), nn.Linear(d, 1))
+            nn.Sequential(make_norm(cfg.norm_kind, d, cfg.norm_eps), nn.Linear(d, 1))
             if cfg.heads.confidence_head
             else None
         )
@@ -329,7 +332,7 @@ class ProphetModel(nn.Module):
         # thinking?". Cheap to add, and it is the only mechanism that makes recurrence
         # depth a function of the input rather than a constant chosen by the caller.
         self.halt_head = (
-            nn.Sequential(RMSNorm(d, cfg.norm_eps), nn.Linear(d, 1))
+            nn.Sequential(make_norm(cfg.norm_kind, d, cfg.norm_eps), nn.Linear(d, 1))
             if cfg.recurrent.enabled and cfg.recurrent.halting == "ponder"
             else None
         )

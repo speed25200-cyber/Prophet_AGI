@@ -60,6 +60,11 @@ class ConsolidationReport:
     clipped_fraction: float
     occupancy: dict[str, float] = field(default_factory=dict)
     replayed: int = 0
+    tokens_written: int = 0
+    tokens_gated: int = 0
+    """Query tokens skipped by surprise gating: the weights already predicted them."""
+    writes_refused: int = 0
+    """Writes the ledger refused under its lifetime cap."""
 
     @property
     def improvement(self) -> float:
@@ -85,6 +90,32 @@ def _hidden_for(model: nn.Module, ids: Tensor, *, last_n: int) -> Tensor:
 
 
 @torch.no_grad()
+def _surprise(model: nn.Module, ids: Tensor, *, last_n: int) -> Tensor:
+    """Per-token next-token loss (nats) of the last ``last_n`` positions, predicted
+    *without* any context: what the weights alone know. The first token of a sequence
+    has no predictor and counts as infinitely surprising."""
+    out = model(ids, return_mtp=False)
+    logits = out.logits[:, :-1].float()
+    targets = ids[:, 1:]
+    ce = torch.nn.functional.cross_entropy(
+        logits.reshape(-1, logits.shape[-1]), targets.reshape(-1), reduction="none"
+    ).view(ids.shape[0], -1)
+    ce = torch.cat([ce.new_full((ids.shape[0], 1), float("inf")), ce], dim=1)
+    return ce[:, -last_n:]
+
+
+def _write_policy(model: nn.Module, surprise_threshold: float | None | str) -> float | None:
+    """Resolve the gating threshold: an explicit number, ``None`` for no gating, or
+    ``"auto"`` to follow ``model.cfg.memory`` (the config is the default policy)."""
+    if surprise_threshold != "auto":
+        return surprise_threshold  # type: ignore[return-value]
+    memory = getattr(getattr(model, "cfg", None), "memory", None)
+    if memory is None or memory.update_rule != "surprise_gated":
+        return None
+    return float(memory.surprise_threshold)
+
+
+@torch.no_grad()
 def consolidate(
     model: nn.Module,
     ledger: ProductKeyMemory,
@@ -97,14 +128,23 @@ def consolidate(
     lr: float | None = None,
     seed: int = 0,
     on_step: Callable[[int, float], None] | None = None,
+    surprise_threshold: float | None | str = "auto",
 ) -> ConsolidationReport:
     """Write the contribution of each episode's context into the ledger.
 
     ``replay`` should hold previously consolidated episodes. A fraction of them is
     interleaved so that consolidating new material does not quietly displace old.
+
+    ``surprise_threshold`` gates writes per query token on the model's own loss without
+    context: below it the weights already knew, and the slot is saved. ``"auto"`` takes
+    the policy from ``model.cfg.memory`` (``update_rule``/``surprise_threshold``).
     """
     model.eval()
     rng = random.Random(seed)
+    threshold = _write_policy(model, surprise_threshold)
+    tokens_written = 0
+    tokens_gated = 0
+    writes_refused = 0
 
     schedule: list[Episode] = []
     replayed = 0
@@ -133,7 +173,20 @@ def consolidate(
         # Absolute target: what the ledger should output, not how far it should move.
         target = lam * (h_plus - h_minus)
 
+        if threshold is not None:
+            keep = _surprise(model, episode.query, last_n=n_query)[0] >= threshold
+            tokens_gated += int((~keep).sum().item())
+            if not bool(keep.any()):
+                if on_step is not None:
+                    on_step(step, residual_end)
+                continue
+            h_minus, target = h_minus[:, keep], target[:, keep]
+
         stats = ledger.write(h_minus, target, lr=lr)
+        if stats.accepted:
+            tokens_written += int(h_minus.shape[1])
+        else:
+            writes_refused += 1
         if step < len(episodes):
             residual_start += stats.residual_before / max(len(episodes), 1)
         residual_end = stats.residual_after
@@ -152,6 +205,9 @@ def consolidate(
         clipped_fraction=sum(clipped) / max(len(clipped), 1),
         occupancy=ledger.occupancy(),
         replayed=replayed,
+        tokens_written=tokens_written,
+        tokens_gated=tokens_gated,
+        writes_refused=writes_refused,
     )
 
 

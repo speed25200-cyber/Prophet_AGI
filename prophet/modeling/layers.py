@@ -23,6 +23,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 __all__ = [
+    "make_norm",
     "RMSNorm",
     "RotaryEmbedding",
     "apply_rotary",
@@ -47,6 +48,15 @@ except Exception:  # pragma: no cover
 # --------------------------------------------------------------------------------------
 # Normalisation
 # --------------------------------------------------------------------------------------
+
+
+def make_norm(kind: str, dim: int, eps: float) -> nn.Module:
+    """The block/head normalisation named by ``ProphetConfig.norm_kind``."""
+    if kind == "rmsnorm":
+        return RMSNorm(dim, eps)
+    if kind == "layernorm":
+        return nn.LayerNorm(dim, eps=eps)
+    raise ValueError(f"unknown norm_kind {kind!r}")
 
 
 class RMSNorm(nn.Module):

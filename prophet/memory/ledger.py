@@ -65,6 +65,10 @@ class LedgerConfig:
     decay: float = 1.0
     """Multiplicative decay applied to values on each write. Below 1.0 the ledger
     forgets slowly, which bounds drift over a long deployment."""
+    max_writes: int | None = None
+    """Lifetime cap on written tokens. Past it :meth:`ProductKeyMemory.write` refuses
+    (``WriteStats.accepted`` is False) instead of applying: a bound on how much a
+    runaway writer can churn."""
 
 
 @dataclass
@@ -74,6 +78,8 @@ class WriteStats:
     clipped_fraction: float
     residual_before: float
     residual_after: float
+    accepted: bool = True
+    """False when the write was refused by ``max_writes``; nothing was applied."""
 
     @property
     def improvement(self) -> float:
@@ -126,6 +132,7 @@ class ProductKeyMemory(nn.Module):
         # never by an optimiser.
         self.register_buffer("values", torch.zeros(cfg.n_slots, cfg.dim), persistent=True)
         self.register_buffer("write_counts", torch.zeros(cfg.n_slots), persistent=True)
+        self.register_buffer("tokens_written", torch.zeros((), dtype=torch.long), persistent=True)
 
     # -- reading -----------------------------------------------------------------------
 
@@ -197,6 +204,10 @@ class ProductKeyMemory(nn.Module):
         residual = current - flat_t                      # (tokens, dim)
         residual_before = residual.norm(dim=-1).mean().item()
 
+        if cfg.max_writes is not None and int(self.tokens_written.item()) >= cfg.max_writes:
+            return WriteStats(0, 0.0, 0.0, residual_before, residual_before, accepted=False)
+        self.tokens_written += flat_x.shape[0]
+
         # The read is ``sum_i a_i V[i]`` with ``a_i = w_i / n_heads``, so moving the
         # output by ``-residual`` is an underdetermined linear system. Its minimum-norm
         # solution is ``dV[i] = -a_i / ||a||^2 * residual``: distributing the correction
@@ -246,6 +257,7 @@ class ProductKeyMemory(nn.Module):
     def reset(self) -> None:
         self.values.zero_()
         self.write_counts.zero_()
+        self.tokens_written.zero_()
 
     def occupancy(self) -> dict[str, float]:
         """How much of the ledger is in use, and how evenly.

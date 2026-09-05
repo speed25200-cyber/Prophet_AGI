@@ -44,6 +44,39 @@ d'être ignorés. Le rapport par benchmark est destiné à la carte du modèle.
 La contamination ne se signale pas : la perte d'entraînement baisse normalement et le
 score **monte**. C'est précisément le signal qu'on aurait envie de célébrer.
 
+## Le chemin réel : des fichiers au chargeur reprenable
+
+`prophet/data/corpus.py` relie le mélange ci-dessous au chargeur de
+`prophet/data/streaming.py`, qui ne sait rien de l'origine des documents — et c'est ce qui
+le rend testable hors ligne et reprenable à l'identique. Quatre propriétés, chacune une
+décision :
+
+| Propriété | Mécanisme | Ce qui aurait cassé sans |
+|---|---|---|
+| **Reprise en O(1)** | Un index d'offsets par ligne, construit une fois et mis en cache à côté du fichier ; `open(start)` est un `seek`. Un flux Hub ne sait pas chercher : `open(start)` y est un `skip`, en O(start), et le dit. | Rejouer 40 000 pas de flux à chaque reprise. |
+| **Le rejet ne décale pas le flux** | Un document contaminé produit une liste de tokens **vide** au lieu d'être sauté : le curseur compte les documents bruts, le packer ignore les vides. | Un curseur dépendant du filtre : reprendre avec un jeu de benchmarks ré-indexé aurait lu un autre corpus, sans erreur. |
+| **Plafond d'époques au tirage** | `Mixture.validate()` vérifie le plan ; `TokenisedSource` vérifie le run. Son curseur ne revient jamais à zéro, donc `curseur / n_documents` est le nombre d'époques et une source tirée au-delà de 4 **lève** au lieu de se répéter. Une source de taille inconnue (Hub) ne peut pas être plafonnée et est déclarée telle. | Une répétition silencieuse là où elle cesse de payer. |
+| **Les phases sont un planning de chargeurs** | Une phase = ses sources et ses poids = son `StreamingLoader` ; `PhasedLoader` bascule au pas que le budget de tokens implique et sauvegarde chaque sous-chargeur. | Une interruption en phase C reprenant en phase A. |
+
+Le script d'entraînement l'assemble :
+
+```bash
+python scripts/train_tokenizer.py --data-root corpus/ --out tokenizer.json
+python scripts/train.py --config configs/prophet_mini.json --tokenizer tokenizer.json \
+    --data-root corpus/ --benchmarks benchmarks/ --tokens 16.1e9 ...
+```
+
+où `corpus/` contient `<source>.jsonl` ou `<source>/*.jsonl` nommés comme les sources du
+mélange, et `benchmarks/` un `<nom>.jsonl` par jeu de test. `--hub` autorise le streaming
+des sources absentes en local — après `scripts/verify_datasets.py`, jamais avant. Sans
+`--benchmarks`, le script refuse de partir ; `--benchmarks ''` est le seul moyen de
+courir non décontaminé, et il faut l'écrire. Vérifié de bout en bout sur CPU avec un
+corpus minuscule : trois phases, checkpoint, reprise dans la phase en cours.
+
+Une seule longueur de séquence sert toutes les phases : la croissance de contexte par
+phase du plan R06 est l'extension longue R02, non financée, et changer la forme du batch
+en cours de run changerait la mémoire contre laquelle le budget a été vérifié.
+
 ---
 
 # Data mixture — prophet-v1

@@ -138,6 +138,23 @@ budget utilise la répartition réelle, pas un optimiseur 8 bits qui n'existe pa
 
 ---
 
+## 5 bis. Lancer un run réel
+
+```bash
+python scripts/train_tokenizer.py --data-root corpus/ --out tokenizer.json
+python scripts/train.py --config configs/prophet_mini.json \
+    --tokenizer tokenizer.json --data-root corpus/ --benchmarks benchmarks/ \
+    --tokens 16.1e9 --batch-size 16 --seq-len 4096 --grad-accum 4 \
+    --checkpoint-dir checkpoints/mini --max-steps-this-session 2000
+```
+
+Le script vérifie dans l'ordre : la config, le budget mémoire, la présence de `fla`, le
+tokenizer (ses ids doivent tenir dans `vocab_size`), les benchmarks à décontaminer, puis
+construit le chargeur phasé depuis `prophet_v1_mixture` mis à l'échelle de `--tokens`
+([`02_DATA.md`](02_DATA.md), « Le chemin réel »). `--steps` est alors déduit du budget
+de tokens et de la forme du batch ; le planning WSD se cale dessus. Relancer la même
+commande reprend au dernier checkpoint intact, dans la phase de données en cours.
+
 ## 6. Ce qui reste à valider
 
 | Élément | Statut |

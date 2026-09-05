@@ -18,7 +18,7 @@ import torch
 from torch import Tensor, nn
 
 from prophet.config import ProphetConfig
-from prophet.data.streaming import LoaderState, StreamingLoader
+from prophet.data.streaming import StreamingLoader
 from prophet.data.tokenizer import N_BYTES, SPECIAL_TOKENS
 from prophet.modeling.moe import apply_router_updates
 from prophet.train.checkpoint import CheckpointManager
@@ -116,6 +116,13 @@ class Trainer:
         self.model_config = model_config
         self.on_log = on_log or (lambda m: print(m.format()))
 
+        actual_seq_len = int(getattr(loader, "seq_len", cfg.seq_len))
+        if model_config is not None and actual_seq_len > model_config.max_seq_len:
+            raise ValueError(
+                f"seq_len={actual_seq_len} exceeds the model's max_seq_len="
+                f"{model_config.max_seq_len}; raise the config field deliberately (it "
+                "is what the rotary table and the budget were sized for)"
+            )
         self.device = torch.device(cfg.device)
         self.model.to(self.device)
         self.model.gradient_checkpointing = cfg.activation_checkpointing
@@ -201,7 +208,7 @@ class Trainer:
             opt.load_state_dict(opt_state)
         self.step = int(state["step"])
         self.tokens_seen = int(state["tokens_seen"])
-        self.loader.load_state(LoaderState.from_dict(state["loader"]))
+        self.loader.restore(state["loader"])
         if "torch_rng" in state and state["torch_rng"] is not None:
             torch.set_rng_state(state["torch_rng"].cpu().to(torch.uint8))
         if state.get("cuda_rng") is not None and torch.cuda.is_available():
