@@ -142,3 +142,21 @@ d'existant. Le premier chiffre agentique du projet est un chiffre de mécanique,
 sur ses propres outils, avec son intervalle.
 
 Reproduire : `python scripts/first_agent_run_cpu.py --work /tmp/prophet-first-run --minutes 22 --seq-len 320`.
+
+---
+
+## Troisième mesure : la boucle contre *k* = 1
+
+Même corpus, même tokenizer, même graine, même planning, mêmes 2.40M tokens, mêmes
+paramètres (à la tête de halte près, 513) : le premier run bouclait le cœur *k* ∈ {1..4}
+fois (log-uniforme, E[k] = 2.14, halte apprise) ; `runs/k1` le traverse une fois.
+
+| | Bits/octet tenus à l'écart | nats/token |
+|---|---:|---:|
+| bouclé, *k* ∈ {1..4} | 2.184 | 4.192 |
+| *k* = 1 | **2.179** | 4.183 |
+
+La boucle n'a rien acheté à 7M paramètres et 2.4M tokens, pour 2.1× le calcul du cœur.
+Ce n'est pas la réfutation du pari central — R04 prédit ce résultat en dessous de ~360M —
+c'est la démonstration qu'il ne se teste pas ici, et que la porte du plan (≥ 350M) est au
+bon endroit. Un faux négatif pas cher vaut mieux qu'un faux négatif à 24 heures d'A100.

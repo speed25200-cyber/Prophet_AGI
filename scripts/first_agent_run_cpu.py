@@ -102,8 +102,10 @@ def replay_source(work: Path, tokenizer: ProphetTokenizer, weight: float) -> Tok
     """The first run's prose and code as one language-modelling source, so the agentic
     fine-tune keeps seeing what the base model was trained on."""
     class _Both:
-        name, weight = "replay", weight
+        # A class body does not see the enclosing function's names; bind them in __init__.
         def __init__(self) -> None:
+            self.name = "replay"
+            self.weight = weight
             self.parts = [LocalTextSource.from_root(work / "corpus", n, 1.0) for n in ("prose", "code")]
         def n_documents(self) -> int:
             return sum(p.n_documents() for p in self.parts)

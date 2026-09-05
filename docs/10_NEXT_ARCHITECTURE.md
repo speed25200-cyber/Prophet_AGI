@@ -64,10 +64,19 @@ courbe par bloc pour les voir plier — ou pas.
 
 **(a) À l'entraînement.** Le pari central — la profondeur bouclée achète de la profondeur
 sans paramètres — n'avait jamais été mesuré par le projet. À iso-paramètres, iso-tokens
-(2.4M), iso-données et iso-planning : profondeur bouclée *k* ∈ {1..4} log-uniforme
-contre *k* = 1 constant. **[CPU, 7M] en cours** (`runs/k1`). Le résultat honnête attendu
-est petit ou nul : R04 place le gain de la récurrence au-delà de ~360M paramètres, et
-c'est pourquoi la porte R04 du plan est à ≥ 350M.
+(2.4M), iso-données, iso-graine et iso-planning **[CPU, 7M]** :
+
+| Profondeur du cœur | E[k] | Passes de cœur par token | Bits/octet tenus à l'écart |
+|---|---:|---:|---:|
+| bouclée, *k* ∈ {1..4} log-uniforme, halte apprise | 2.14 | 2.14 × 2 blocs | 2.184 |
+| constante, *k* = 1 | 1 | 1 × 2 blocs | **2.179** |
+
+À cette échelle la boucle n'achète **rien** et coûte 2.1× les FLOPs du cœur : l'écart
+(0.005 bits/octet) est dans le bruit, dans le mauvais sens. C'est le résultat que R04
+annonçait — la récurrence sous-performe une pile simple à 135M et ne gagne qu'à partir de
+~360M — et la raison pour laquelle la porte R04 du plan est à ≥ 350M. Le pari central
+reste un pari ; ce nombre dit seulement qu'il ne se gagne pas petit, et qu'un run qui le
+testerait en dessous de l'échelle où il peut gagner produirait exactement ce faux négatif.
 
 **(b) À l'inférence.** Un agent qui *copie* un argument le paie un pas au lieu de douze,
 et un agent qui appelle un outil au lieu de raisonner en tokens paie l'appel. Le benchmark
