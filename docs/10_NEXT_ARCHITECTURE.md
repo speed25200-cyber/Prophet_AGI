@@ -183,8 +183,24 @@ conditionnée à l'état, pas à la position. À l'état porté — le seul cas 
 aurait un sens — tout s'effondre, fichiers vus et non vus, 45 % d'appels malformés :
 entraîné sur des lignes où l'attention voit l'épisode précédent, ce modèle s'appuie sur
 elle et rien d'autre, et l'état seul lui est étranger. Même cause que la ligne du bras à
-trois épisodes ci-dessus, en plus fort ; même remède, en file : le masque par épisode
-(`--related --segment-attention`).
+trois épisodes ci-dessus, en plus fort. Avec le masque par épisode
+(`--related --segment-attention`), même budget :
+
+| Banc | Succès | Fichiers non vus : succès, lectures/épisode | Fichiers vus : succès, lectures/épisode |
+|---|---:|---:|---:|
+| état vierge | 97.4 % | 100 %, 1.0 | 91.7 %, 1.0 |
+| état porté | **10.3 %** (0 malformé) | 11.1 %, **0.04** | 8.3 %, **0.0** |
+
+Le masque a fait son travail : plus un appel malformé, et la décision de ne pas relire est
+prise **sur l'état seul** — dès qu'un état est porté, le modèle saute la lecture (0.04
+lecture par épisode). Mais il la saute pour *tous* les fichiers, vus ou non, et répond
+faux : l'état borné du cœur delta, à 7M paramètres et 500 pas, porte le fait qu'une lecture
+a eu lieu, pas son contenu, ni le nom du fichier qui permettrait de distinguer « ce
+fichier » d'« un autre ». Le gain de tokens qu'il achèterait est visible (218 contre 226
+par épisode) et inutile tant que la réponse est fausse. C'est le nombre honnête de la
+mémoire de travail entre épisodes à cette échelle : la **mécanique** (masque, état porté,
+décision conditionnée) est prouvée, la **capacité** ne l'est pas, et c'est elle que
+l'échelle et le registre de sortie (absent de la config CPU) doivent apporter.
 
 ## 3. Économie de tokens
 
