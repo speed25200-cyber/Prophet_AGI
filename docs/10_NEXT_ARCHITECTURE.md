@@ -352,6 +352,35 @@ bits/octet (§3a) ni en composition ; il ne se joue qu'au-dessus de la porte R04
 et tout ce dépôt peut faire d'ici là est de garder la boucle réversible (elle l'est :
 `train_loop_min = train_loop_max = 1`, `halting = "none"`) et le test prêt.
 
+**(a″) La chaîne latente : deux ingrédients de la chaîne déplacés dans la profondeur.**
+Pourquoi la chaîne compose-t-elle et pas la boucle ? Deux différences visibles : la chaîne
+reçoit un signal **par pas** (chaque valeur intermédiaire est une cible) là où la boucle
+n'est corrigée qu'à la fin ; et chaque pas de la chaîne *sait où il en est*, parce que ses
+propres tokens émis le lui disent, là où le cœur partagé reçoit la même entrée à chaque
+passe. Les deux sont câblés comme interrupteurs — `recurrent.iteration_readout` (lecture
+coda + norme après chaque itération, cible par itération, un seul token émis) et
+`recurrent.iteration_embedding` (un vecteur appris par itération ajouté à l'entrée du
+cœur), testés (k états, le dernier égal à la sortie ; lignes nulles = modèle inchangé ;
+décodage exact au-delà de la table) — et mesurés à 12 000 pas, deux opérations, une
+itération par opération **[CPU, 150k]** :
+
+| Bras (2 opérations, 12 000 pas) | Tokens émis | Exactitude |
+|---|---:|---:|
+| boucle, réponse directe | 1 | 45.2 % / 30.2 % (deux runs) |
+| boucle + cibles par itération | 1 | 46.6 % |
+| boucle + cibles par itération + embedding d'itération | 1 | **46.1 %** |
+| chaîne émise | 2 | **100 %** |
+
+Ni le signal par pas, ni l'index d'itération, ni les deux ne font composer la boucle. Ce
+qui reste à la chaîne et manque au cœur bouclé est alors structurel : à chaque pas, la
+chaîne **attend** à ses propres tokens et retrouve l'opération suivante par sa position ;
+le cœur de Prophet est un mélangeur à état borné, sans attention (l'invariant D1 :
+l'attention dans la boucle multiplie le cache KV par *k*), et un état borné ne retrouve pas
+« la *i*-ème opération » par index. L'ablation qui le tranche — la même chaîne latente
+avec de l'attention **dans** le cœur, ce que D1 refuse — est **en cours** ; si elle
+compose à 100 %, le prix de la composition sans tokens est connu : un cache KV par
+itération, et la question devient un budget mémoire, pas un pari.
+
 **(b) À l'inférence.** Un agent qui *copie* un argument le paie un pas au lieu de douze,
 et un agent qui appelle un outil au lieu de raisonner en tokens paie l'appel. Le benchmark
 compte chaque token traité par épisode et rapporte **tokens par succès**. Un modèle de 7M
