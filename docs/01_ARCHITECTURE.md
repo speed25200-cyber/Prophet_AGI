@@ -331,7 +331,7 @@ main assurent la spéculation sans modèle externe.
 | D1 | Cœur bouclé récurrent uniquement, attention hors boucle | R02, R04 | **Acquis** (test) |
 | D2 | ≤ 4B total / ~370M actifs | R07, planificateur | **Acquis** (mémoire) |
 | D3 | Hybride GDN 3:1 avec SWA + globale NoPE | R02 | **Acquis** |
-| D3b | Attention globale à fenêtre + registre borné des KV évincés (mémoire constante en contexte) | interne, R02/R03 | **Non acquis** — mémoire constante prouvée ; sur rappel synthétique à 165k paramètres le registre *nuit* à son hôte dans la fenêtre (12.6 % → 4.9 %) et n'aide pas au-delà ([`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §1). Reste à `"none"` ; l'ablation à 100M décide. |
+| D3b | Attention globale à fenêtre + registre borné des KV évincés (mémoire constante en contexte) | interne, R02/R03 | **Non acquis** — mémoire constante prouvée ; sur rappel synthétique à 165k paramètres, protocole corrigé (le premier avait un contrôle qui n'apprenait pas : logit borné par QK-norm), le registre ne coûte rien dans la fenêtre et reste à parité au-delà, parce qu'à 6 paires l'état borné du cœur suffit ; le test à 24 paires est en cours ([`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §1). Reste à `"none"` ; l'ablation à 100M décide. |
 | D4 | Profondeur réglable à l'exécution | R04 | **[ABLATION A1] à ≥ 350M** |
 | D4b | Halte entraînée, pour une profondeur dépendant de l'entrée | W1 | **Requis** — sans elle, la boucle n'achète qu'un facteur constant (§2ter) |
 | D1b | Bloc-notes latent persistant, pour réparer ce que D1 a coûté | W1 | **Candidat** — non implémenté (§2bis) |

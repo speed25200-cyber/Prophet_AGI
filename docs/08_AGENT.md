@@ -239,7 +239,7 @@ Pas sur SWE-bench ou GAIA en ensemble ouvert. Sur deux terrains :
 | AUROC du désaccord de profondeur comme prédicteur d'erreur | **non mesurée** — A4-0 |
 | Têtes d'action typées : sélection, copie, porte, cibles depuis le flux, sélection et copie au décodage | **construites, entraînées une fois à 7M paramètres** |
 | Chemin quarantaine → corpus (rendu, source, cibles) | **construit, exercé : les 600 épisodes du premier run agentique y sont passés** |
-| État de session porté d'un épisode à l'autre (R03 appliqué à l'agent) | **construit, mesuré : 57.5 % → 0 % sur un modèle qui n'a jamais vu d'état porté à l'entraînement ([`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §2)** |
-| Benchmark à vérificateurs et courbe d'apprentissage (`prophet/eval/agent_bench.py`) | **construit ; premier chiffre à 7M paramètres : 0 % → 55 % / 32.5 % de succès sur tâches inédites, copie d'arguments = +40 points ([`09_FIRST_RUN.md`](09_FIRST_RUN.md))** |
+| État de session porté d'un épisode à l'autre (R03 appliqué à l'agent) | **construit, mesuré : 95 % vierge → 87.5 % / 90 % porté sur 40 épisodes avec la recette corrigée (0 % avec l'ancienne) ; épisodes concaténés à l'entraînement : pire (82.5 % / 75 %, décroissant) ; masque d'attention par épisode câblé et testé à 1e-4, mesure en cours ([`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §2)** |
+| Benchmark à vérificateurs et courbe d'apprentissage (`prophet/eval/agent_bench.py`) | **construit ; à 7M paramètres : 0 % → 55 % / 32.5 % avec deux décalages train/boucle, 0 % → 95 % / 97.5 % sans (279 tokens par épisode, 285–294 par succès) ([`09_FIRST_RUN.md`](09_FIRST_RUN.md))** |
 | Scoreur entraîné, recette d'entraînement agentique (~67 h-A100, A2 §8), chemin par slots fermés | **non construits** |
 | Plafonds de profondeur par token (`recurrent.token_depth`) : mécanique exacte, entraînement câblé | **construit, non ablaté** |
