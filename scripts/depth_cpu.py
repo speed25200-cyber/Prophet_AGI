@@ -18,6 +18,11 @@ Arms (identical parameter count, same data, same steps):
 - ``k1-cot``   -- one pass, but after ``=`` the model emits the running value after each
                   operation and the last one is the answer: the chain of thought, one
                   token per step, decoded greedily at evaluation.
+- ``kN-sup``   -- N passes of the core, **one token emitted**, and each iteration read
+                  out (``recurrent.iteration_readout``) and trained on the running value
+                  after the matching operation: the chain's per-step signal moved into
+                  the depth dimension. ``kops`` / ``kops-sup`` set N to the number of
+                  operations of the block.
 
 Reported per arm: accuracy, tokens emitted per answer (1, or ``ops``), and core passes
 per emitted token. The claim under test is exact: does latent depth (``k4``, one token)
@@ -69,9 +74,11 @@ def make_example(rng: random.Random, *, ops: int) -> tuple[list[int], list[int]]
     return ids, running
 
 
-def batch(rng: random.Random, *, n: int, ops: int, cot: bool):
+def batch(rng: random.Random, *, n: int, ops: int, cot: bool, sup: bool = False):
     """Rows padded to one length; ``targets`` holds the ids to predict at ``positions``
-    (one answer, or the ``ops`` running values)."""
+    (one answer, or the ``ops`` running values). ``sup`` keeps the direct form (no chain
+    in the input) but returns every running value: the per-iteration targets, all read
+    at the single ``=`` position."""
     rows, targets, positions = [], [], []
     for _ in range(n):
         ids, running = make_example(rng, ops=ops)
@@ -80,6 +87,10 @@ def batch(rng: random.Random, *, n: int, ops: int, cot: bool):
             full = ids + [DIGIT0 + r for r in running]
             targets.append([DIGIT0 + r for r in running])
             positions.append(list(range(prompt_len - 1, prompt_len - 1 + ops)))
+        elif sup:
+            full = ids + [DIGIT0 + running[-1]]
+            targets.append([DIGIT0 + r for r in running])
+            positions.append([prompt_len - 1])
         else:
             full = ids + [DIGIT0 + running[-1]]
             targets.append([DIGIT0 + running[-1]])
@@ -90,9 +101,10 @@ def batch(rng: random.Random, *, n: int, ops: int, cot: bool):
     return torch.tensor(rows), torch.tensor(targets), torch.tensor(positions)
 
 
-def config(k: int, *, length: int, qk_norm: bool = False) -> ProphetConfig:
+def config(k: int, *, length: int, qk_norm: bool = False, readout: bool = False) -> ProphetConfig:
     """``qk_norm`` off by default: at head_dim 16 it caps the attention logit at 4 (see
-    ``scripts/needle_cpu.py`` and ``ProphetConfig.design_warnings``)."""
+    ``scripts/needle_cpu.py`` and ``ProphetConfig.design_warnings``). ``readout`` turns on
+    the per-iteration read-out the ``-sup`` arms train on."""
     return ProphetConfig(
         name=f"depth-k{k}", d_model=64, n_layers=4, max_seq_len=256,
         frontend=FrontendConfig(vocab_size=VOCAB, tie_word_embeddings=True),
@@ -104,7 +116,7 @@ def config(k: int, *, length: int, qk_norm: bool = False) -> ProphetConfig:
         recurrent=RecurrentCoreConfig(enabled=True, prelude_layers=1, core_layers=1, coda_layers=2,
                                       train_loop_min=k, train_loop_max=k, default_loop_k=k,
                                       halting="none", core_pattern=["gdn"], coda_pattern=["swa", "full_attn"],
-                                      truncated_backprop_steps=k),
+                                      truncated_backprop_steps=k, iteration_readout=readout),
         heads=HeadsConfig(n_multi_token_predict=0),
     )
 
@@ -117,9 +129,9 @@ def lr_at(step: int, *, steps: int, peak: float, warmup: int) -> float:
 
 
 def train(k: int, *, cot: bool, ops: int, steps: int, minutes: float, seed: int, lr: float, warmup: int,
-          log, qk_norm: bool = False) -> tuple[ProphetModel, dict]:
+          log, qk_norm: bool = False, sup: bool = False) -> tuple[ProphetModel, dict]:
     torch.manual_seed(seed)
-    cfg = config(k, length=2 * ops + 2 + ops, qk_norm=qk_norm)
+    cfg = config(k, length=2 * ops + 2 + ops, qk_norm=qk_norm, readout=sup)
     cfg.validate()
     model = ProphetModel(cfg).train()
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
@@ -127,10 +139,24 @@ def train(k: int, *, cot: bool, ops: int, steps: int, minutes: float, seed: int,
     started = time.time()
     losses = []
     for step in range(steps):
-        ids, targets, positions = batch(rng, n=32, ops=ops, cot=cot)
-        logits = model(ids, loop_k=k).logits
-        picked = logits[torch.arange(32).unsqueeze(1), positions]  # (32, m, vocab)
-        loss = torch.nn.functional.cross_entropy(picked.float().flatten(0, 1), targets.flatten())
+        ids, targets, positions = batch(rng, n=32, ops=ops, cot=cot, sup=sup)
+        out = model(ids, loop_k=k)
+        logits = out.logits
+        if sup:
+            # Iteration i answers the running value after operation min(i, ops-1); the
+            # last iteration always answers the final one, which is also what the real
+            # read-out predicts (the last probe equals the output, tested).
+            pos = positions[:, 0]
+            rows = torch.arange(32)
+            loss = torch.nn.functional.cross_entropy(logits[rows, pos].float(), targets[:, -1])
+            for i, h in enumerate(out.hidden_per_step):
+                target_index = ops - 1 if i == k - 1 else min(i, ops - 1)
+                step_logits = model.lm_head(h[rows, pos])
+                loss = loss + torch.nn.functional.cross_entropy(step_logits.float(), targets[:, target_index])
+            loss = loss / (len(out.hidden_per_step) + 1)
+        else:
+            picked = logits[torch.arange(32).unsqueeze(1), positions]  # (32, m, vocab)
+            loss = torch.nn.functional.cross_entropy(picked.float().flatten(0, 1), targets.flatten())
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -195,11 +221,14 @@ def main() -> int:
     for ops in ops_list:
         report[str(ops)] = {}
         for arm in arms:
-            k = int(arm.split("-")[0][1:])
+            head = arm.split("-")[0]
+            k = ops if head == "kops" else int(head[1:])
             cot = arm.endswith("-cot")
+            sup = arm.endswith("-sup")
             model, stats = train(k, cot=cot, ops=ops, steps=args.steps, minutes=args.minutes, seed=args.seed,
-                                 lr=args.lr, warmup=args.warmup, log=log, qk_norm=args.qk_norm)
+                                 lr=args.lr, warmup=args.warmup, log=log, qk_norm=args.qk_norm, sup=sup)
             acc = accuracy(model, k, random.Random(args.seed + 100), cot=cot, ops=ops, n=args.eval_n)
+            acc["core_passes_per_token"] = k
             report[str(ops)][arm] = {"train": stats, **acc}
             log(f"[ops={ops} {arm}] {stats} {acc}")
         (out / "report.json").write_text(json.dumps(report, indent=2))

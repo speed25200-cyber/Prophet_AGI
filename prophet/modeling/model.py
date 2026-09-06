@@ -680,14 +680,17 @@ class ProphetModel(nn.Module):
                 if not grad_on:
                     h = h.detach()
 
-                if self.halt_head is not None:
+                if self.halt_head is not None or r.iteration_readout:
                     # Each candidate stopping point needs a real read-out to be scored
                     # against, so the coda is applied per iteration as a *probe*: it
                     # reads the cache through disposable copies of the slots (so it sees
                     # its context) and never writes to them (so it cannot append the same
-                    # positions k times). The real, cached coda runs once below.
+                    # positions k times). The real, cached coda runs once below. With
+                    # ``recurrent.iteration_readout`` the same probe serves per-iteration
+                    # targets, halting or not.
                     step_out = self.norm_out(run("coda", 0, h, probe=True))
                     hidden_per_step.append(step_out)
+                if self.halt_head is not None:
                     logit = self.halt_head(step_out).squeeze(-1)
                     if token_depth is not None:
                         # A ceiling is a forced stop: all remaining mass halts at the

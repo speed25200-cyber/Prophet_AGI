@@ -245,6 +245,12 @@ class RecurrentCoreConfig:
     """Ceiling applied, when ``token_depth`` is on, to tool-observation spans (from
     ``<|tool|>`` to the next control token) and to the random shallow spans below."""
     token_depth_random_spans: float = 0.25
+    iteration_readout: bool = False
+    """Read the model out (coda, then norm) after *every* core iteration and return the
+    states as ``ProphetOutput.hidden_per_step`` even without halting. What it is for:
+    per-iteration targets -- iteration *i* trained to answer the *i*-th step of a chain
+    of thought while a single token is emitted, the signal density of a chain in the
+    depth dimension. Costs one coda pass per iteration in training; unread at decode."""
     """Probability that a training sequence gets one random contiguous span at
     ``ingest_depth``. Pretraining text has no ``<|tool|>`` spans, and the model must
     still meet the shallow-then-deep transition there or the agent loop's first
