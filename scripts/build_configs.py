@@ -27,6 +27,7 @@ from prophet.config import (  # noqa: E402
     FeedForwardConfig,
     FrontendConfig,
     HeadsConfig,
+    MemoryConfig,
     MixerConfig,
     ProphetConfig,
     RecurrentCoreConfig,
@@ -48,8 +49,17 @@ def build(
     head_dim: int = 128,
     vocab_size: int = 32_768,
     moe: dict | None = None,
+    loop: bool = True,
+    global_memory: str = "none",
+    memory: dict | None = None,
 ) -> ProphetConfig:
-    """One configuration, with every architectural invariant made explicit."""
+    """One configuration, with every architectural invariant made explicit.
+
+    ``loop=False`` is the plain-depth arm of the R04 gate: the same blocks run once
+    (``train_loop_min = train_loop_max = 1``, no halting), so the comparison is at equal
+    FLOPs per token and unequal parameters -- which is the bet. ``global_memory`` is the
+    D3b switch on the global attention layers; ``memory`` the R03 output-mounted memory.
+    """
     ffn = (
         FeedForwardConfig(kind="moe", **moe)
         if moe
@@ -74,6 +84,8 @@ def build(
             linear_expand=2.0,
             linear_beta_max=2.0,   # negative transition eigenvalues; parity needs them
             nope_layers=(1,),      # the global layer runs position-free
+            global_memory=global_memory,
+            global_window=4096,
         ),
         recurrent=RecurrentCoreConfig(
             enabled=True,
@@ -81,16 +93,17 @@ def build(
             core_layers=core,
             coda_layers=coda,
             core_pattern=["gdn"],  # D1: no attention inside the loop
-            default_loop_k=loop_k,
+            default_loop_k=loop_k if loop else 1,
             train_loop_min=1,
-            train_loop_max=max(2 * loop_k, 2),
-            truncated_backprop_steps=3,
-            halting="ponder",      # input-dependent depth; a constant k buys no class
-            halting_loss_weight=0.05,
+            train_loop_max=max(2 * loop_k, 2) if loop else 1,
+            truncated_backprop_steps=3 if loop else 1,
+            halting="ponder" if loop else "none",  # input-dependent depth; a constant k buys no class
+            halting_loss_weight=0.05 if loop else 0.0,
             halting_target_steps=float(loop_k),
         ),
         ffn=ffn,
         heads=HeadsConfig(n_multi_token_predict=1, confidence_head=True),
+        **({"memory": MemoryConfig(**memory)} if memory else {}),
     )
 
 
@@ -115,6 +128,36 @@ CONFIGS: dict[str, ProphetConfig] = {
     "prophet_cpu_first_run.json": build(
         "prophet-cpu-first-run", d_model=256, prelude=2, core=2, coda=2, loop_k=2,
         n_heads=4, n_kv_heads=2, head_dim=64, vocab_size=4096,
+    ),
+    # --- the plan's first A100 runs, as matched pairs (prophet.plan) ------------------
+    # R04 gate (24 h): looped depth against plain depth at equal FLOPs per token. Both
+    # arms run 20 blocks per token; the looped one carries 221M parameters, the plain
+    # one 498M. If the loop does not beat the plain stack here, the central bet is dead.
+    "prophet_r04_loop.json": build(
+        "prophet-r04-loop", d_model=1280, prelude=2, core=4, coda=2, loop_k=4,
+        n_heads=10, n_kv_heads=2,
+    ),
+    "prophet_r04_plain.json": build(
+        "prophet-r04-plain", d_model=1280, prelude=2, core=16, coda=2, loop_k=1,
+        n_heads=10, n_kv_heads=2, loop=False,
+    ),
+    # D3b (6 h): ledger attention against exact global attention on real text, ~86M,
+    # identical but for the switch. Failure criterion: held-out BPB worse by 0.5% or
+    # recall at chance beyond the 4k window, and the ledger stays "none".
+    "prophet_d3b_ledger.json": build(
+        "prophet-d3b-ledger", d_model=768, prelude=3, core=2, coda=3, loop_k=2,
+        n_heads=6, n_kv_heads=2, global_memory="ledger",
+    ),
+    "prophet_d3b_none.json": build(
+        "prophet-d3b-none", d_model=768, prelude=3, core=2, coda=3, loop_k=2,
+        n_heads=6, n_kv_heads=2,
+    ),
+    # R03 (20 h): the output-mounted product-key memory on the mini stack; the control
+    # is prophet_mini.json itself.
+    "prophet_r03_memory.json": build(
+        "prophet-r03-memory", d_model=1280, prelude=3, core=4, coda=3, loop_k=2,
+        n_heads=10, n_kv_heads=2,
+        memory=dict(enabled=True, kind="product_key", mount="output"),
     ),
 }
 

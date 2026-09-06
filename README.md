@@ -84,7 +84,8 @@ modèle de 408M.
 > [`docs/10_NEXT_ARCHITECTURE.md`](docs/10_NEXT_ARCHITECTURE.md)). Aucun modèle compétitif.**
 > Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le chemin de
 > données réel (fichiers ou Hub, décontamination dans le flux, phases reprenables),
-> l'infrastructure d'entraînement, le harnais d'évaluation, le pilier agentique
+> l'infrastructure d'entraînement (les paires de configurations des trois premiers runs
+> A100 du plan sont générées et budgétées : R04, D3b, R03), le harnais d'évaluation, le pilier agentique
 > (actions typées, vérification à tiers, quarantaine, et le chemin des épisodes promus
 > vers le corpus) et le plan d'exécution. **~500 tests passent** ; la boucle
 > d'entraînement tourne de bout en bout sur corpus synthétique et sur un corpus local

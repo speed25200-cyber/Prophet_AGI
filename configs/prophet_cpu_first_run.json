@@ -37,6 +37,12 @@
     "qk_norm": true,
     "sliding_window": 2048,
     "attention_sink_tokens": 1,
+    "global_memory": "none",
+    "global_ledger_rope": false,
+    "global_window": 4096,
+    "global_ledger_slots": 16384,
+    "global_ledger_top_k": 32,
+    "global_ledger_heads": 1,
     "kv_compression": "none",
     "kv_lora_rank": 512,
     "linear_heads": 4,
@@ -76,7 +82,9 @@
     "halting_target_steps": 2.0,
     "token_depth": false,
     "ingest_depth": 1,
-    "token_depth_random_spans": 0.25
+    "token_depth_random_spans": 0.25,
+    "iteration_embedding": false,
+    "iteration_readout": false
   },
   "ffn": {
     "kind": "dense",
