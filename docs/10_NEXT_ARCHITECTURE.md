@@ -161,8 +161,22 @@ pas de registre.
 **Ce que l'état porté peut acheter : ne pas relire.** Des suites de tâches `lookup` sur le
 même fichier (`make_related_tasks`) où un fichier lu par l'épisode précédent est répondu
 sans le relire — moins de tokens à succès égal si l'état retient ce qu'il a lu, réponse
-fausse sinon — **en cours** (`--related`, bancs vierge et porté, fichiers vus et non vus
-séparés).
+fausse sinon. Entraîné trois épisodes par ligne, **concaténés** (sans masque), 500 pas,
+39 tâches inédites **[CPU, 7M]** :
+
+| Banc | Succès | Fichiers non vus : succès, lectures/épisode | Fichiers vus : succès, lectures/épisode |
+|---|---:|---:|---:|
+| état vierge | 97.4 % | 100 %, 1.0 | 91.7 %, 0.92 |
+| état porté | **5.1 %** (45 % de malformés) | 7.4 %, 1.0 | 0 %, 1.0 |
+
+À l'état vierge, le modèle **relit** un fichier « vu » (0.92 lecture par épisode, et la
+seule fois où il ne relit pas, il se trompe) : la décision de ne pas relire est bien
+conditionnée à l'état, pas à la position. À l'état porté — le seul cas où ne pas relire
+aurait un sens — tout s'effondre, fichiers vus et non vus, 45 % d'appels malformés :
+entraîné sur des lignes où l'attention voit l'épisode précédent, ce modèle s'appuie sur
+elle et rien d'autre, et l'état seul lui est étranger. Même cause que la ligne du bras à
+trois épisodes ci-dessus, en plus fort ; même remède, en file : le masque par épisode
+(`--related --segment-attention`).
 
 ## 3. Économie de tokens
 
