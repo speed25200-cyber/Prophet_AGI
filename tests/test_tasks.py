@@ -183,3 +183,19 @@ def test_related_lookup_sequences_share_files_and_skip_the_read_when_seen():
     for i, task in enumerate(a[1:], 1):
         if task.extra["position"] > 0 and not task.extra["seen"]:
             assert task.extra["file"] != a[i - 1].extra["file"]
+
+
+def test_related_sequences_with_a_lag_reuse_the_file_read_two_episodes_earlier():
+    tasks = make_related_tasks(8, size=4, seed=3, lag=2)
+    seen = [i for i, t in enumerate(tasks) if t.extra["seen"]]
+    assert seen and all(tasks[i].extra["position"] >= 2 for i in seen)
+    for i in seen:
+        assert tasks[i].files == tasks[i - 2].files and tasks[i].extra["file"] != tasks[i - 1].extra["file"]
+        assert [s["action"]["name"] for s in perfect_trajectory(tasks[i])] == ["note", "done"]
+    # Within a run, files never collide by name unless deliberately reused.
+    for row in range(8):
+        run = tasks[row * 4 : (row + 1) * 4]
+        names = [t.extra["file"] for t in run if not t.extra["seen"]]
+        assert len(names) == len(set(names))
+    with pytest.raises(ValueError, match="lag"):
+        make_related_tasks(1, lag=0)

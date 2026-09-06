@@ -138,37 +138,48 @@ def make_tasks(n: int, *, family: str, seed: int = 0) -> list[Task]:
     return [FAMILIES[family](rng, i, seed) for i in range(n)]
 
 
-def make_related_tasks(n_rows: int, *, size: int = 3, seed: int = 0, p_same: float = 0.5) -> list[Task]:
+def make_related_tasks(n_rows: int, *, size: int = 3, seed: int = 0, p_same: float = 0.5,
+                       lag: int = 1) -> list[Task]:
     """Lookup tasks in *sequences*, flat and in order: ``n_rows`` runs of ``size``
-    episodes. The first episode of a run opens a new file; each later one asks another
-    field of the same file with probability ``p_same`` (``extra["seen"]`` is True) or
-    opens a new file. A seen file's perfect trajectory notes the answer without reading
-    it again -- what an agent whose session state carries the file should do -- and an
-    unseen one reads first. Trained on rows of ``size`` such episodes and benched with
-    the session carried, the pair measures whether the recurrent state holds what the
-    previous episode read: fewer tokens at the same success, or a wrong answer.
+    episodes. The first ``lag`` episodes of a run open new files; each later one asks
+    another field of the file read ``lag`` episodes earlier with probability ``p_same``
+    (``extra["seen"]`` is True) or opens a new file. A seen file's perfect trajectory
+    notes the answer without reading it again -- what an agent whose session carries the
+    file should do -- and an unseen one reads first.
+
+    ``lag`` is what decides *which* memory is tested. At 1 the file was read one episode
+    ago, a few hundred tokens back: inside a ledger layer's window, so never evicted,
+    never written, and the only carrier is the recurrent state. At 2 the reading sits
+    beyond the window (one whole episode in between): under the segment mask nothing
+    but the ledger can reach it, in training and at decode alike.
     """
-    rng = random.Random(f"lookup-seq-{seed}")
+    if lag < 1:
+        raise ValueError("lag must be at least 1")
+    rng = random.Random(f"lookup-seq-{seed}" if lag == 1 else f"lookup-seq-{seed}-lag{lag}")
     tasks: list[Task] = []
     for row in range(n_rows):
-        fields: dict[str, str] = {}
-        name = ""
-        keys_left: list[str] = []
+        history: list[tuple[str, dict[str, str], list[str]]] = []  # (name, fields, keys left)
         for position in range(size):
-            same = position > 0 and keys_left and rng.random() < p_same
-            if not same:
-                previous = name
-                while name == previous:
+            source = history[position - lag] if position >= lag else None
+            same = source is not None and bool(source[2]) and rng.random() < p_same
+            if same:
+                name, fields, keys_left = source
+            else:
+                taken = {h[0] for h in history}
+                name = f"{rng.choice(_WORDS)}_{rng.choice(_WORDS)}.json"
+                while name in taken:
                     name = f"{rng.choice(_WORDS)}_{rng.choice(_WORDS)}.json"
                 fields = {"city": rng.choice(["Lyon", "Oslo", "Kyoto", "Quito", "Perth"]),
                           "year": str(rng.randrange(1900, 2030)), "code": rng.choice(_WORDS)}
                 keys_left = list(fields)
                 rng.shuffle(keys_left)
             key = keys_left.pop()
+            history.append((name, fields, keys_left))
             goal = f"Read {name} and note the value of the field {key}, then finish."
             tasks.append(Task(f"lookup-seq-{seed}-{row}-{position}", "lookup", goal, fields[key],
                               {name: json.dumps(fields, separators=(",", ":"))},
-                              {"key": key, "file": name, "seen": bool(same), "row": row, "position": position}))
+                              {"key": key, "file": name, "seen": bool(same), "row": row, "position": position,
+                               "lag": lag}))
     return tasks
 
 

@@ -80,7 +80,7 @@ def perfect_trajectory(task) -> list[dict]:
 
 def build_rows(tokenizer: ProphetTokenizer, n: int, *, seed: int, seq_len: int,
                families: list[str] | None = None, per_row: int = 1,
-               related: bool = False) -> tuple[list[list[int]], dict]:
+               related: bool = False, related_lag: int = 1) -> tuple[list[list[int]], dict]:
     """Rendered perfect episodes. ``families=None`` is the original file family of the
     benchmark; otherwise ``n`` episodes of each named family of ``prophet.agent.tasks``,
     interleaved.
@@ -103,7 +103,8 @@ def build_rows(tokenizer: ProphetTokenizer, n: int, *, seed: int, seq_len: int,
     if related:
         episodes = [
             (t.goal, task_families.tools_for(t), task_families.perfect_trajectory(t))
-            for t in task_families.make_related_tasks(max(n // per_row, 1), size=per_row, seed=seed)
+            for t in task_families.make_related_tasks(max(n // per_row, 1), size=per_row, seed=seed,
+                                                      lag=related_lag)
         ]
     elif families is None:
         episodes = [(task.goal, file_tools(task), perfect_trajectory(task)) for task in make_tasks(n, seed=seed)]
@@ -178,7 +179,8 @@ def agent_config(cfg: ProphetConfig, *, ledger_window: int | None = None) -> Pro
 
 
 def bench(model, tokenizer, *, n_tasks: int, seed: int, family: str | None = None,
-          carry: bool = False, related_size: int = 0, ledger_write: str = "all") -> dict:
+          carry: bool = False, related_size: int = 0, ledger_write: str = "all",
+          related_lag: int = 1) -> dict:
     """``carry`` starts every episode from the recurrent state the previous one left:
     the session-carry measurement of ``docs/10_NEXT_ARCHITECTURE.md``. ``related_size``
     benches the related lookup sequences instead (runs of that many episodes) and
@@ -188,7 +190,8 @@ def bench(model, tokenizer, *, n_tasks: int, seed: int, family: str | None = Non
                       k_decide=2, tau_done=0.0, tau_act=0.0, tau_ask=0.0, ledger_write=ledger_write)
     tasks = None
     if related_size:
-        tasks = task_families.make_related_tasks(max(n_tasks // related_size, 1), size=related_size, seed=seed)
+        tasks = task_families.make_related_tasks(max(n_tasks // related_size, 1), size=related_size, seed=seed,
+                                                 lag=related_lag)
         report = run_bench(model, tokenizer, tasks, cfg, tools_for=task_families.tools_for,
                            verifier_for_task=task_families.verifier_for, carry_session=carry)
     elif family is None:
@@ -260,6 +263,9 @@ def main() -> int:
     ap.add_argument("--ledger-write", choices=["all", "tool"], default="all",
                     help="what a ledger layer keeps of what leaves its window: every token, or the "
                          "tokens of tool observations only (train and bench agree)")
+    ap.add_argument("--related-lag", type=int, default=1,
+                    help="in related sequences, how many episodes back the reread file was read "
+                         "(2 puts it beyond a 256-token ledger window: only the ledger can reach it)")
     ap.add_argument("--related", action="store_true",
                     help="train and bench on related lookup sequences (a file read by the previous "
                          "episode is answered without reading it again); rows hold --episodes-per-row "
@@ -286,7 +292,8 @@ def main() -> int:
             report["init"] = "scratch"
         families = [f for f in args.families.split(",") if f] if args.families else None
         rows, data_stats = build_rows(tokenizer, args.episodes, seed=1, seq_len=args.seq_len, families=families,
-                                      per_row=args.episodes_per_row, related=args.related)
+                                      per_row=args.episodes_per_row, related=args.related,
+                                      related_lag=args.related_lag)
         report["episodes"] = data_stats
         report["families"] = families
         if args.bpb:
@@ -310,6 +317,7 @@ def main() -> int:
         report["segment_attention"] = args.segment_attention
         report["ledger_window"] = args.ledger_window
         report["ledger_write"] = args.ledger_write
+        report["related_lag"] = args.related_lag
         trainer = Trainer(model, loader, tc, model_config=cfg, tokenizer=tokenizer)
         started = time.time()
         history = trainer.train()
@@ -339,7 +347,8 @@ def main() -> int:
                                       (11, False, "bench_after_unseen_seed_related"),
                                       (11, True, "bench_after_unseen_seed_related_carried")):
                 report[name] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=seed, carry=carry,
-                                     related_size=args.episodes_per_row, ledger_write=args.ledger_write)
+                                     related_size=args.episodes_per_row, ledger_write=args.ledger_write,
+                                     related_lag=args.related_lag)
                 print(f"{name}:", report[name]["summary"], report[name]["by_seen"], flush=True)
         for family in families:
             key = "" if family is None else f"_{family}"
