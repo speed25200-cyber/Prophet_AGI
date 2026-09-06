@@ -376,10 +376,17 @@ qui reste à la chaîne et manque au cœur bouclé est alors structurel : à cha
 chaîne **attend** à ses propres tokens et retrouve l'opération suivante par sa position ;
 le cœur de Prophet est un mélangeur à état borné, sans attention (l'invariant D1 :
 l'attention dans la boucle multiplie le cache KV par *k*), et un état borné ne retrouve pas
-« la *i*-ème opération » par index. L'ablation qui le tranche — la même chaîne latente
-avec de l'attention **dans** le cœur, ce que D1 refuse — est **en cours** ; si elle
-compose à 100 %, le prix de la composition sans tokens est connu : un cache KV par
-itération, et la question devient un budget mémoire, pas un pari.
+« la *i*-ème opération » par index. L'ablation qui devait le trancher — la même chaîne
+latente avec de l'attention **dans** le cœur, ce que D1 refuse — a tranché contre cette
+explication aussi : **45.5 %** à deux opérations, 31.1 % à trois. Cinq variantes de
+profondeur latente (directe ; cibles par itération ; + index d'itération ; + attention
+dans le cœur ; à 3 000 et 12 000 pas) donnent le même nombre, et la chaîne émise 100 %.
+Ce qu'elle a et qu'aucune n'a : le résultat intermédiaire **ré-encodé comme un symbole
+discret** à l'entrée du pas suivant. À cette échelle, composer deux consultations de
+table en espace continu ne s'optimise pas ; émettre le symbole entre les deux, si. C'est
+le résultat de R04 sur un test de raisonnement : le pari « la profondeur latente
+remplace les tokens de chaîne » n'a **aucun support** sous la porte de 350M, et chacune
+de ses variantes reste un interrupteur à `false` avec son test.
 
 **(b) À l'inférence.** Un agent qui *copie* un argument le paie un pas au lieu de douze,
 et un agent qui appelle un outil au lieu de raisonner en tokens paie l'appel. Le benchmark
@@ -421,7 +428,7 @@ Les trois propriétés, au terme de deux journées de mesures à 7M paramètres 
 |---|---|---|
 | Contexte infini | mémoire constante (34 Go → 62 Mo à 8M tokens) ; le registre ne coûte rien dans la fenêtre et rend **+5.2 ± 1.2 points** au-delà (trois graines, apparié, hôte NoPE) quand l'état est saturé | un rappel au-delà de la fenêtre qui approche l'attention complète (22 % contre 38 %) |
 | Apprentissage continu | la recette agentique corrigée (95–100 % sur tâches inédites, 276–294 tokens par succès) ; un état porté sur 40 épisodes à 83–93 % sans décroissance sous le masque par épisode ; l'oubli mesuré et son cadran (rejeu) | un état borné qui retienne *ce* qu'il a lu (la décision de ne pas relire est conditionnée à l'état, la réponse est fausse) |
-| Économie de tokens | 55 % → 95–100 % à tokens égaux par correction des décalages ; le span de réflexion se ferme en un token | la profondeur latente : à 150k paramètres, quatre passes du cœur n'apprennent pas la composition que deux tokens de chaîne apprennent à 100 % |
+| Économie de tokens | 55 % → 95–100 % à tokens égaux par correction des décalages ; le span de réflexion se ferme en un token | la profondeur latente : à 150k paramètres, cinq variantes (cibles par itération, index d'itération, attention dans le cœur comprises) restent à 30–46 % là où deux tokens de chaîne composent à 100 % |
 
 Ce dépôt n'a pas d'architecture inédite validée : il a une architecture réversible dont
 chaque pari est un interrupteur, une recette agentique qui marche, seize défauts
