@@ -193,7 +193,7 @@ def test_a_rope_ledger_layer_is_a_rope_windowed_layer_inside_the_window():
     with torch.no_grad():
         for _t in range(12, 40):
             ledger(torch.randn(1, 1, 32), cache=cache)
-    assert int(ledger.ledger.tokens_written) == 40 - 12 and cache.keys.shape[2] == 13
+    assert int(ledger.ledger.tokens_written) == 40 - 12 and cache.keys.shape[2] == 12
 
 
 def test_memory_per_context_is_bounded_with_the_ledger_and_not_without():

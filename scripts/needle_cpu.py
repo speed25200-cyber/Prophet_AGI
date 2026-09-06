@@ -16,6 +16,9 @@ it, both with a global window of ``window`` tokens:
                clean control, since it differs from ``ledger`` by the read term only.
 - ``ledger`` -- the global layer writes evicted keys and values into a bounded ledger
                and reads it back (``mixer.global_memory``).
+- ``closed-rope`` / ``ledger-rope`` -- the same two on a RoPE host: the ledger layer
+               rotates at attention time and addresses the ledger with unrotated keys
+               (``mixer.global_ledger_rope``).
 
 Accuracy is then measured **by distance** between the asked pair and the question,
 inside and beyond the window. The unwindowed answer is known: a full-attention model
@@ -155,17 +158,20 @@ def config(arm: str, *, window: int, slots: int, length: int, qk_norm: bool = Fa
     adds the pairs must exceed the state -- and shrinking the state keeps the control
     learnable, where 64 keys and 24 pairs were not in 4 000 steps.
     """
-    memory = "ledger" if arm in ("ledger", "closed") else "none"
-    global_window = length if arm == "full" else window
+    rope = arm.endswith("-rope")  # the ledger layer keeps RoPE (mixer.global_ledger_rope)
+    base = arm[: -len("-rope")] if rope else arm
+    memory = "ledger" if base in ("ledger", "closed") else "none"
+    global_window = length if base == "full" else window
     # "none": the global layer becomes a plain sliding-window layer (same window as the
     # ledger arm, no ledger), which is what a bounded stack without the mechanism is.
-    pattern = ["swa", "swa"] if arm == "none" else ["swa", "full_attn"]
+    pattern = ["swa", "swa"] if base == "none" else ["swa", "full_attn"]
     return ProphetConfig(
         name=f"needle-{arm}", d_model=64, n_layers=4, max_seq_len=1024,
         frontend=FrontendConfig(vocab_size=VOCAB, tie_word_embeddings=True),
         mixer=MixerConfig(
             pattern=pattern, n_heads=4, n_kv_heads=2, sliding_window=global_window, qk_norm=qk_norm,
-            attention_sink_tokens=1, nope_layers=(1,), global_memory=memory,
+            attention_sink_tokens=1, nope_layers=() if rope else (1,), global_memory=memory,
+            global_ledger_rope=rope,
             global_window=global_window, global_ledger_slots=slots, global_ledger_top_k=8,
             linear_heads=linear_heads, linear_head_dim=linear_head_dim,
         ),
@@ -212,7 +218,7 @@ def train(memory: str, *, window: int, slots: int, steps: int, minutes: float, s
                  linear_heads=linear_heads, linear_head_dim=linear_head_dim)
     cfg.validate()
     model = ProphetModel(cfg).train()
-    if memory == "closed":
+    if memory.startswith("closed"):
         from prophet.modeling.layers import LedgerAttention
 
         for layer in model.modules():
