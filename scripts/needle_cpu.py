@@ -59,9 +59,19 @@ from prophet.config import (  # noqa: E402
 from prophet.modeling.model import ProphetModel  # noqa: E402
 
 N_KEYS, N_VALUES = 16, 16
-FILLER = 128  # one filler token id band
 KEY0, VAL0, FILL0, EQ, QMARK, SEP = 1, 1 + N_KEYS, 1 + N_KEYS + N_VALUES, 200, 201, 202
 VOCAB = 256
+
+
+def set_vocab(n_keys: int, n_values: int) -> None:
+    """Rebind the key and value bands (``--keys``, ``--values``); the filler band and the
+    control ids follow. More keys than a bounded state can hold is what separates a
+    ledger from the core's own recall."""
+    global N_KEYS, N_VALUES, KEY0, VAL0, FILL0
+    if n_keys + n_values + 8 > EQ:
+        raise ValueError(f"keys + values must leave room below {EQ}")
+    N_KEYS, N_VALUES = n_keys, n_values
+    KEY0, VAL0, FILL0 = 1, 1 + N_KEYS, 1 + N_KEYS + N_VALUES
 
 
 def make_example(rng: random.Random, *, n_pairs: int, max_gap: int, window: int | None = None,
@@ -249,7 +259,12 @@ def main() -> int:
     ap.add_argument("--questions", type=int, default=None,
                     help="keys asked at the end of each sequence (default: all the pairs)")
     ap.add_argument("--qk-norm", action="store_true", help="normalise queries and keys (bounds the logit)")
+    ap.add_argument("--keys", type=int, default=16, help="size of the key vocabulary (pairs are drawn from it)")
+    ap.add_argument("--values", type=int, default=16, help="size of the value vocabulary")
     args = ap.parse_args()
+    set_vocab(args.keys, args.values)
+    if args.pairs > args.keys:
+        raise SystemExit("--pairs cannot exceed --keys (keys are distinct within a sequence)")
     n_ask = args.pairs if args.questions is None else args.questions
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -259,7 +274,8 @@ def main() -> int:
 
     report: dict = {"window": args.window, "slots": args.slots, "pairs": args.pairs, "max_gap": args.max_gap,
                     "lr": args.lr, "warmup": args.warmup, "inside_fraction": args.inside_fraction, "form": args.form,
-                    "steps": args.steps, "questions": n_ask, "qk_norm": args.qk_norm}
+                    "steps": args.steps, "questions": n_ask, "qk_norm": args.qk_norm, "keys": args.keys,
+                    "values": args.values, "length": args.length}
     for memory in [a for a in args.arms.split(",") if a]:
         model, stats = train(memory, window=args.window, slots=args.slots, steps=args.steps, minutes=args.minutes,
                              seed=args.seed, length=args.length, n_pairs=args.pairs, max_gap=args.max_gap, log=log,
