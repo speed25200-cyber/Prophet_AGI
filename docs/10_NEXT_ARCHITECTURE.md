@@ -128,12 +128,23 @@ requête non tournée où qu'elle soit (dans la fenêtre, égale à la couche Ro
 | 1 à 2 fenêtres | 18.8 % | 15.2 % | **22.5 %** |
 | > 2 fenêtres | 19.4 % | 14.2 % | **23.8 %** |
 
-Sur l'hôte RoPE, le terme de lecture rend **8 à 10 points** au-delà de la fenêtre à son
-jumeau à porte clouée (23.8 contre 14.2) et 2.6 dedans, et le bras à registre devient le
-meilleur bras borné, devant la fenêtre seule (19.4) — à 64 % de l'attention complète
-(37.5 %). L'écart-type de graine de ces bras n'est pas encore mesuré (deux graines de plus
-**en cours** sur les quatre bras) ; il conditionne le mot « significatif ». Verdict D3b à
-cette échelle : **mécanisme vivant, gain réel, hôte RoPE nécessaire**. Il reste à `"none"` ;
+Sur cette graine, l'hôte RoPE semblait rendre 8 à 10 points au-delà de la fenêtre (23.8
+contre 14.2). Trois graines ont tranché — et tranché contre cette lecture. Exactitude
+au-delà de deux fenêtres, **différence appariée** registre − porte clouée sur la même
+graine (n ≈ 3 000 questions par cellule) :
+
+| Hôte | graine 0 | graine 1 | graine 2 | moyenne | niveaux absolus (porte clouée / registre) |
+|---|---:|---:|---:|---:|---|
+| NoPE | +4.3 | +6.5 | +4.8 | **+5.2 ± 1.2** | 11–23 % / 15–28 % (± 6 points d'une graine à l'autre) |
+| RoPE | +9.6 | +0.8 | −4.6 | +1.9 ± 7.2 | 10–19 % / 11–24 % |
+
+Le gain du registre sur l'hôte NoPE est **reproductible** : positif sur chaque graine,
++5.2 points en moyenne, écart-type 1.2 — quand les niveaux absolus bougent de ± 6 points
+d'une graine à l'autre, seule la différence appariée a un sens à cette échelle. Le gain
+sur l'hôte RoPE **ne l'est pas** : la graine 0 était une bonne graine. `global_ledger_rope`
+reste câblé et testé, à `false`. Verdict D3b à cette échelle : **mécanisme vivant, gain
+réel et reproductible sur l'hôte NoPE (+5 points, hasard à 6, attention complète à 38),
+insuffisant**. Il reste à `"none"` ;
 l'ablation sur texte réel (deux runs de 100M, BPB et rappel multi-clés à 32k, dans
 `prophet.plan`) décide, avec son critère d'échec : BPB dégradé de plus de 0.5 % ou rappel
 au hasard au-delà de la fenêtre, et le registre reste à `"none"`.
@@ -379,7 +390,7 @@ Les trois propriétés, au terme de deux journées de mesures à 7M paramètres 
 
 | Propriété | Ce qui est prouvé | Ce qui ne l'est pas |
 |---|---|---|
-| Contexte infini | mémoire constante (34 Go → 62 Mo à 8M tokens) ; le registre ne coûte rien dans la fenêtre et, sur hôte RoPE, rend 8 à 10 points au-delà quand l'état est saturé — meilleur bras borné (24 % contre 19 % pour la fenêtre seule) | un rappel au-delà de la fenêtre qui approche l'attention complète (24 % contre 38 %) ; l'écart-type de graine |
+| Contexte infini | mémoire constante (34 Go → 62 Mo à 8M tokens) ; le registre ne coûte rien dans la fenêtre et rend **+5.2 ± 1.2 points** au-delà (trois graines, apparié, hôte NoPE) quand l'état est saturé | un rappel au-delà de la fenêtre qui approche l'attention complète (22 % contre 38 %) |
 | Apprentissage continu | la recette agentique corrigée (95–100 % sur tâches inédites, 276–294 tokens par succès) ; un état porté sur 40 épisodes à 83–93 % sans décroissance sous le masque par épisode ; l'oubli mesuré et son cadran (rejeu) | un état borné qui retienne *ce* qu'il a lu (la décision de ne pas relire est conditionnée à l'état, la réponse est fausse) |
 | Économie de tokens | 55 % → 95–100 % à tokens égaux par correction des décalages ; le span de réflexion se ferme en un token | la profondeur latente : à 150k paramètres, quatre passes du cœur n'apprennent pas la composition que deux tokens de chaîne apprennent à 100 % |
 
