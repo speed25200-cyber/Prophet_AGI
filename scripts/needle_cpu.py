@@ -139,7 +139,8 @@ def batch(rng: random.Random, *, n: int, n_pairs: int, max_gap: int, length: int
     )
 
 
-def config(arm: str, *, window: int, slots: int, length: int, qk_norm: bool = False) -> ProphetConfig:
+def config(arm: str, *, window: int, slots: int, length: int, qk_norm: bool = False,
+           linear_heads: int = 2, linear_head_dim: int = 16) -> ProphetConfig:
     """``full``: exact global attention (window = the whole sequence); ``none``: the
     global layer windowed; ``ledger``: windowed plus the ledger.
 
@@ -147,6 +148,12 @@ def config(arm: str, *, window: int, slots: int, length: int, qk_norm: bool = Fa
     logit is bounded by sqrt(head_dim) times the learned gains -- 4 at head_dim 16 --
     so one key among 160 can take at most e^4 / (e^4 + 159) = 26% of the mass. That
     is the plateau the first three protocols hit (24-25% with full attention).
+
+    ``linear_heads`` and ``linear_head_dim`` size the delta core's state: an associative
+    memory of roughly ``head_dim`` pairs per head. With 6 pairs in the default 2 x 16 it
+    recalls beyond the window as well as full attention does, so to see what a ledger
+    adds the pairs must exceed the state -- and shrinking the state keeps the control
+    learnable, where 64 keys and 24 pairs were not in 4 000 steps.
     """
     memory = "ledger" if arm in ("ledger", "closed") else "none"
     global_window = length if arm == "full" else window
@@ -160,7 +167,7 @@ def config(arm: str, *, window: int, slots: int, length: int, qk_norm: bool = Fa
             pattern=pattern, n_heads=4, n_kv_heads=2, sliding_window=global_window, qk_norm=qk_norm,
             attention_sink_tokens=1, nope_layers=(1,), global_memory=memory,
             global_window=global_window, global_ledger_slots=slots, global_ledger_top_k=8,
-            linear_heads=2, linear_head_dim=16,
+            linear_heads=linear_heads, linear_head_dim=linear_head_dim,
         ),
         ffn=FeedForwardConfig(kind="dense", hidden_mult=2.0),
         recurrent=RecurrentCoreConfig(enabled=True, prelude_layers=1, core_layers=1, coda_layers=2,
@@ -198,9 +205,11 @@ def lr_at(step: int, *, steps: int, peak: float, warmup: int) -> float:
 def train(memory: str, *, window: int, slots: int, steps: int, minutes: float, seed: int, length: int,
           n_pairs: int, max_gap: int, log, lr: float = 1e-3, warmup: int = 100,
           inside_fraction: float = -1.0, form: str = "plain", n_ask: int = 1,
-          qk_norm: bool = False) -> tuple[ProphetModel, dict]:
+          qk_norm: bool = False, linear_heads: int = 2,
+          linear_head_dim: int = 16) -> tuple[ProphetModel, dict]:
     torch.manual_seed(seed)
-    cfg = config(memory, window=window, slots=slots, length=length, qk_norm=qk_norm)
+    cfg = config(memory, window=window, slots=slots, length=length, qk_norm=qk_norm,
+                 linear_heads=linear_heads, linear_head_dim=linear_head_dim)
     cfg.validate()
     model = ProphetModel(cfg).train()
     if memory == "closed":
@@ -261,6 +270,8 @@ def main() -> int:
     ap.add_argument("--qk-norm", action="store_true", help="normalise queries and keys (bounds the logit)")
     ap.add_argument("--keys", type=int, default=16, help="size of the key vocabulary (pairs are drawn from it)")
     ap.add_argument("--values", type=int, default=16, help="size of the value vocabulary")
+    ap.add_argument("--state-heads", type=int, default=2, help="delta-core heads (the state is ~head_dim pairs per head)")
+    ap.add_argument("--state-dim", type=int, default=16, help="delta-core head dimension")
     args = ap.parse_args()
     set_vocab(args.keys, args.values)
     if args.pairs > args.keys:
@@ -275,12 +286,14 @@ def main() -> int:
     report: dict = {"window": args.window, "slots": args.slots, "pairs": args.pairs, "max_gap": args.max_gap,
                     "lr": args.lr, "warmup": args.warmup, "inside_fraction": args.inside_fraction, "form": args.form,
                     "steps": args.steps, "questions": n_ask, "qk_norm": args.qk_norm, "keys": args.keys,
-                    "values": args.values, "length": args.length}
+                    "values": args.values, "length": args.length, "state_heads": args.state_heads,
+                    "state_dim": args.state_dim}
     for memory in [a for a in args.arms.split(",") if a]:
         model, stats = train(memory, window=args.window, slots=args.slots, steps=args.steps, minutes=args.minutes,
                              seed=args.seed, length=args.length, n_pairs=args.pairs, max_gap=args.max_gap, log=log,
                              lr=args.lr, warmup=args.warmup, inside_fraction=args.inside_fraction, form=args.form,
-                             n_ask=n_ask, qk_norm=args.qk_norm)
+                             n_ask=n_ask, qk_norm=args.qk_norm, linear_heads=args.state_heads,
+                             linear_head_dim=args.state_dim)
         acc = accuracy_by_distance(model, random.Random(args.seed + 100), n=args.eval_n, n_pairs=args.pairs,
                                    max_gap=args.max_gap, length=args.length, window=args.window,
                                    inside_fraction=args.inside_fraction, form=args.form, n_ask=n_ask)

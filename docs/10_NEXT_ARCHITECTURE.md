@@ -95,8 +95,11 @@ loin du hasard). Le registre **ne coûte rien** dans la fenêtre : le « coût �
 du cœur delta qui rappelle, pas la fenêtre — la tâche tient dans l'état, et rien ne peut
 départager un registre d'un état qui suffit. La fenêtre RoPE seule, elle, perd 12 points
 partout : la couche NoPE est le meilleur hôte. Le test qui compte est donc celui où la
-tâche **dépasse l'état** : 64 clés, 24 paires (l'état delta de cette config en tient ~16
-par tête), même fenêtre — **en cours** (`--keys 64 --pairs 24`). Le verdict D3b reste
+tâche **dépasse l'état**. Grossir la tâche ne marche pas : à 64 clés et 24 paires, le
+contrôle à attention complète est au hasard après 4 000 pas (8.7 / 10.7 / 12.0 %, perte
+2.69 pour 2.77 au hasard), comme au tout premier protocole. Rétrécir l'état, si : cœur
+delta à une tête de 8 dimensions (~8 paires) contre 12 paires de 16 clés, même fenêtre,
+6 000 pas — **en cours** (`--state-heads 1 --state-dim 8 --pairs 12`). Le verdict D3b reste
 suspendu à ce nombre et à l'ablation sur texte réel (deux runs de 100M, BPB et rappel
 multi-clés à 32k, dans `prophet.plan`) avec son critère d'échec : BPB dégradé de plus de
 0.5 % ou rappel au hasard au-delà de la fenêtre, et le registre reste à `"none"`.
