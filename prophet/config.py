@@ -258,6 +258,16 @@ class RecurrentCoreConfig:
     per-iteration targets -- iteration *i* trained to answer the *i*-th step of a chain
     of thought while a single token is emitted, the signal density of a chain in the
     depth dimension. Costs one coda pass per iteration in training; unread at decode."""
+    iteration_requantize: Literal["none", "soft", "hard"] = "none"
+    """Feed each iteration's read-out back into the next as a *symbol*: the per-iteration
+    logits are turned into a distribution over the vocabulary, embedded through the input
+    embedding, and added to the injected input of the next iteration (``soft``: the
+    expected embedding; ``hard``: the argmax embedding with a straight-through gradient).
+    The one thing a chain of thought has that no latent loop had on sequential tasks --
+    per-step targets and a step index did not help -- is that its intermediate result
+    is re-encoded as a discrete token before the next step reads it. Requires
+    ``iteration_readout`` and ``inject_input_each_step``; costs one vocabulary product per
+    iteration."""
     """Probability that a training sequence gets one random contiguous span at
     ``ingest_depth``. Pretraining text has no ``<|tool|>`` spans, and the model must
     still meet the shallow-then-deep transition there or the agent loop's first
@@ -584,6 +594,12 @@ class ProphetConfig:
             r = self.recurrent
             if r.core_layers < 1:
                 errors.append("recurrent.core_layers must be >= 1 when recurrence is enabled")
+            if r.iteration_requantize != "none" and not (r.iteration_readout and r.inject_input_each_step):
+                raise ValueError(
+                    "recurrent.iteration_requantize needs iteration_readout (the symbol comes "
+                    "from the per-iteration read-out) and inject_input_each_step (it is added "
+                    "to the injected input)"
+                )
             if r.train_loop_min < 1 or r.train_loop_max < r.train_loop_min:
                 errors.append(
                     f"require 1 <= train_loop_min ({r.train_loop_min}) "

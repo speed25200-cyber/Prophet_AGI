@@ -699,6 +699,17 @@ class ProphetModel(nn.Module):
                     # targets, halting or not.
                     step_out = self.norm_out(run("coda", 0, h, probe=True))
                     hidden_per_step.append(step_out)
+                    if r.iteration_requantize != "none" and i + 1 < k:
+                        # The read-out becomes a symbol before the next iteration sees it:
+                        # what a chain of thought does with its emitted token.
+                        probs = torch.softmax(self._project(step_out).float(), dim=-1)
+                        if r.iteration_requantize == "hard":
+                            hard = torch.nn.functional.one_hot(
+                                probs.argmax(-1), probs.shape[-1]
+                            ).to(probs.dtype)
+                            probs = hard + probs - probs.detach()  # straight-through
+                        symbol = probs.to(self.embed.weight.dtype) @ self.embed.weight
+                        injected = x + symbol.to(x.dtype)
                 if self.halt_head is not None:
                     logit = self.halt_head(step_out).squeeze(-1)
                     if token_depth is not None:
