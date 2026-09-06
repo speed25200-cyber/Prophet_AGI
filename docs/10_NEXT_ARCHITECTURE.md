@@ -262,9 +262,11 @@ l'entraînement, le contenu qu'on lui demande à l'inférence : défaut de proto
 mécanisme. La suite corrigée fait porter la relecture sur le fichier d'**il y a deux
 épisodes** (`--related-lag 2`, un épisode entier entre la lecture et la question, donc
 au-delà de la fenêtre) : sous le masque, le registre est la seule voie vers la réponse,
-à l'entraînement comme au décodage. Mesuré (lignes de quatre épisodes, 40 tâches) :
-vierge **100 %**, porté **5.0 %** (fichiers vus 10 %, non vus 3.3 %, lectures sautées
-partout, 16 % de malformés) — le témoin sans registre est **en cours**. Six variantes
+à l'entraînement comme au décodage. Mesuré (lignes de quatre épisodes, 40 tâches, deux
+graines) : vierge **100 % / 100 %**, porté **5.0 % / 2.5 %** (fichiers vus 10 % / 0 %,
+lectures sautées partout, 16–25 % de malformés) ; le témoin sans registre, même recette :
+vierge 100 % / 100 %, porté 7.5 % / 17.5 % — le registre ne se distingue pas de son
+absence. Six variantes
 de la mémoire entre épisodes (état seul, concaténé, masqué ; registre écrivant tout,
 registre écrivant les outils, à un puis deux épisodes de distance) donnent le même
 nombre : sous un état porté, le modèle apprend la *décision* (ne pas relire) et jamais le
