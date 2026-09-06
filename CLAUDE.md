@@ -63,7 +63,7 @@ tests/          ~500 tests ; les plus importants sont des tests d'équivalence
 
 ## Ce que ce dépôt a appris à ses dépens
 
-Seize défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+Dix-huit défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
 normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
 et faux :
 
@@ -85,6 +85,8 @@ et faux :
 | Position de requête du pointeur de copie : entraînée au token du guillemet ouvrant, interrogée un token plus tôt (après `"clé":`) au décodage — un checkpoint survivait par marge (55 %), le suivant tombait à 0 % avec des pointeurs exacts en forçage | sonde forçage contre décodage incrémental sur le même checkpoint ; cible déplacée là où la grammaire tire, test d'accord train/décodage |
 | Span de réflexion jamais rendu dans les trajectoires parfaites, ouvert par la boucle à chaque pas : un token de contrôle inconnu au décodage, rempli de fragments d'appel — **100 % → 0 %** sur les mêmes poids selon que la boucle l'ouvre ou non | banc avec et sans span sur le même checkpoint ; le rendu émet le span (vide) à chaque pas |
 | Masque d'attention par segment posé sur les couches pendant le forward et effacé à la sortie : sous checkpointing d'activations, le recalcul du backward ne le voit plus et PyTorch refuse — plantage au premier pas | le premier run à masque ; le masque reste posé jusqu'au forward suivant (qui le réécrit toujours), test sous checkpointing |
+| Registres d'attention jamais emportés par la session de l'agent (`extract_session` / `restore_session` appelés sans le modèle) : un état porté sans son registre, silencieusement | premier branchement du registre sur la boucle ; le modèle est passé, test de session avec registre |
+| Registres de la couche portés par les *tampons du module* : un épisode sans session héritait de ceux du précédent — fuite d'un épisode à l'autre par les poids, invisible au banc | même branchement ; remise à zéro à chaque épisode sans session, testée |
 
 **Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
 réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par
