@@ -474,6 +474,13 @@ class ProphetModel(nn.Module):
         so a training row of several episodes under this mask is the decode
         distribution, not an approximation of it (tested to 1e-4). With a cache the
         argument is refused: the cache reset is the boundary there.
+
+        The segments stay on the layers until the next call rewrites them (every call
+        does, with ``None`` when absent): under activation checkpointing the forward is
+        recomputed during ``backward``, after this method has returned, and a mask
+        cleared on the way out would make that recompute differ from the forward --
+        which PyTorch refuses, and which is the same trap the MoE router bias fell
+        into (``CLAUDE.md``).
         """
         if segment_ids is not None:
             if kw.get("cache") is not None:
@@ -485,12 +492,7 @@ class ProphetModel(nn.Module):
             segment_ids = segment_ids.to(input_ids.device)
         for layer in self._attention_layers():
             layer.segment_ids = segment_ids
-        try:
-            return self._forward(input_ids, **kw)
-        finally:
-            if segment_ids is not None:
-                for layer in self._attention_layers():
-                    layer.segment_ids = None
+        return self._forward(input_ids, **kw)
 
     def _attention_layers(self) -> list[CausalSelfAttention]:
         return [m for m in self.modules() if isinstance(m, CausalSelfAttention)]
@@ -689,7 +691,7 @@ class ProphetModel(nn.Module):
 
                     if not self.training and halt_threshold is not None:
                         survived = torch.stack(
-                            [1 - torch.sigmoid(l) for l in halt_logits]
+                            [1 - torch.sigmoid(logit) for logit in halt_logits]
                         ).prod(dim=0)
                         # Per sequence and per position: stop only when *every* one has
                         # crossed the threshold. Conservative on purpose -- a batch mean

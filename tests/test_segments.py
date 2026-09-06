@@ -87,5 +87,27 @@ def test_segments_are_derived_at_bos_and_refused_with_a_cache():
         model(batch[:1], segment_ids=torch.zeros(1, 6, dtype=torch.long), cache=ProphetCache())
     with pytest.raises(ValueError, match="shaped"):
         model(batch[:1], segment_ids=torch.zeros(1, 5, dtype=torch.long))
-    # A refused call leaves no segment behind on the layers.
+    # A refused call leaves no segment behind on the layers, and a plain call clears them.
     assert all(layer.segment_ids is None for layer in model._attention_layers())
+    model(batch[:1], segment_ids=torch.zeros(1, 6, dtype=torch.long))
+    assert all(layer.segment_ids is not None for layer in model._attention_layers())
+    model(batch[:1])
+    assert all(layer.segment_ids is None for layer in model._attention_layers())
+
+
+def test_segment_mask_survives_activation_checkpointing():
+    """The forward is recomputed during backward under checkpointing; the mask must be
+    the same then, or PyTorch refuses the recompute (the trap that crashed the first
+    segment-masked run at its first step)."""
+    model = _model(True).train()
+    g = torch.Generator().manual_seed(4)
+    row = torch.randint(0, VOCAB, (2, 24), generator=g)
+    segments = torch.tensor([[0] * 12 + [1] * 12, [0] * 8 + [1] * 16])
+    torch.manual_seed(0)  # the training-mode state init is random: same draw both times
+    plain = model(row, segment_ids=segments, loop_k=2).logits
+    model.gradient_checkpointing = True
+    torch.manual_seed(0)
+    out = model(row, segment_ids=segments, loop_k=2)
+    out.logits.float().sum().backward()  # recompute happens here
+    assert torch.allclose(out.logits, plain, atol=1e-5)
+    assert all(p.grad is not None for n, p in model.named_parameters() if "embed" in n)
