@@ -262,10 +262,18 @@ l'entraînement, le contenu qu'on lui demande à l'inférence : défaut de proto
 mécanisme. La suite corrigée fait porter la relecture sur le fichier d'**il y a deux
 épisodes** (`--related-lag 2`, un épisode entier entre la lecture et la question, donc
 au-delà de la fenêtre) : sous le masque, le registre est la seule voie vers la réponse,
-à l'entraînement comme au décodage — **en cours**, avec et sans registre. C'est le
-nombre honnête de la mémoire de travail entre épisodes à cette échelle : la **mécanique**
-(masque, état porté, décision conditionnée, registre porté et sélectif) est prouvée, la
-**capacité** ne l'est pas encore.
+à l'entraînement comme au décodage. Mesuré (lignes de quatre épisodes, 40 tâches) :
+vierge **100 %**, porté **5.0 %** (fichiers vus 10 %, non vus 3.3 %, lectures sautées
+partout, 16 % de malformés) — le témoin sans registre est **en cours**. Six variantes
+de la mémoire entre épisodes (état seul, concaténé, masqué ; registre écrivant tout,
+registre écrivant les outils, à un puis deux épisodes de distance) donnent le même
+nombre : sous un état porté, le modèle apprend la *décision* (ne pas relire) et jamais le
+*contenu*. C'est le nombre honnête de la mémoire de travail entre épisodes à cette
+échelle : la **mécanique** (masque, état porté, décision conditionnée, registre porté et
+sélectif) est prouvée et testée, la **capacité** ne l'est pas — à 7M paramètres et 500
+pas, ni l'état récurrent ni un registre de 1 024 emplacements entraîné sur des lignes de
+quatre épisodes ne rendent retrouvable ce qu'un épisode a lu. Le test est prêt ; c'est
+l'échelle qui répondra.
 
 ## 3. Économie de tokens
 
