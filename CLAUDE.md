@@ -58,7 +58,7 @@ prophet/
                 le balayage delta par blocs (CPU/Mac) vit dans modeling/layers.py
 configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
 scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
-tests/          ~460 tests ; les plus importants sont des tests d'équivalence
+tests/          ~500 tests ; les plus importants sont des tests d'équivalence
 ```
 
 ## Ce que ce dépôt a appris à ses dépens

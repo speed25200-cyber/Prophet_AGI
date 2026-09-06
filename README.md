@@ -84,7 +84,7 @@ modèle de 408M.
 > données réel (fichiers ou Hub, décontamination dans le flux, phases reprenables),
 > l'infrastructure d'entraînement, le harnais d'évaluation, le pilier agentique
 > (actions typées, vérification à tiers, quarantaine, et le chemin des épisodes promus
-> vers le corpus) et le plan d'exécution. **~430 tests passent** ; la boucle
+> vers le corpus) et le plan d'exécution. **~500 tests passent** ; la boucle
 > d'entraînement tourne de bout en bout sur corpus synthétique et sur un corpus local
 > minuscule, avec reprise dans la phase en cours.
 >
