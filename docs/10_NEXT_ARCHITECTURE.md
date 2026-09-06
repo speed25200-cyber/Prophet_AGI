@@ -186,10 +186,10 @@ elle et rien d'autre, et l'état seul lui est étranger. Même cause que la lign
 trois épisodes ci-dessus, en plus fort. Avec le masque par épisode
 (`--related --segment-attention`), même budget :
 
-| Banc | Succès | Fichiers non vus : succès, lectures/épisode | Fichiers vus : succès, lectures/épisode |
+| Banc (deux graines) | Succès | Fichiers non vus : succès, lectures/épisode | Fichiers vus : succès, lectures/épisode |
 |---|---:|---:|---:|
-| état vierge | 97.4 % | 100 %, 1.0 | 91.7 %, 1.0 |
-| état porté | **10.3 %** (0 malformé) | 11.1 %, **0.04** | 8.3 %, **0.0** |
+| état vierge | 97.4 % / 100 % | 100 % / 100 %, 1.0 | 91.7 % / 100 %, 1.0 |
+| état porté | **10.3 % / 5.1 %** (0 / 1.3 % de malformés) | 11.1 % / 3.4 %, **0.04 / 0.03** | 8.3 % / 10 %, **0.0 / 0.0** |
 
 Le masque a fait son travail : plus un appel malformé, et la décision de ne pas relire est
 prise **sur l'état seul** — dès qu'un état est porté, le modèle saute la lecture (0.04
