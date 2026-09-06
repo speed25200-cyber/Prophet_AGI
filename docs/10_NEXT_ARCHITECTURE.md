@@ -144,7 +144,7 @@ inédites par graine, deux graines **[CPU, 7M]** :
 | première (55 % / 32.5 %) | 55 % / 32.5 % | 0 % | 529 / ∞ |
 | corrigée, 1 épisode par ligne | **95 % / 97.5 %** | **87.5 % / 90 %** | 294 / 321 |
 | corrigée, 3 épisodes par ligne (concaténés) | 97.5 % / 97.5 % | 82.5 % / 75 % (courbe 1.00 → 0.50 le long de la session) | 284 / 376 |
-| corrigée, 3 épisodes par ligne, **attention masquée par épisode** | en cours | en cours | en cours |
+| corrigée, 3 épisodes par ligne, **attention masquée par épisode** | 95 % / 100 % | 82.5 % / **92.5 %** (courbes 0.50 → 1.00 et plate) | 292 / 341, 276 / 301 |
 
 Trois faits. La compétence de la recette était cachée par ses décalages : 55 % → 95–97.5 %
 sans un paramètre de plus, avec 279 tokens par épisode au lieu de 304 (le span de
@@ -157,7 +157,12 @@ absente à l'inférence, et se dégrade dès que l'état s'éloigne de trois ép
 décalage restant est nommé et câblé : `ProphetModel.forward(segment_ids=)` masque
 l'attention à chaque `<|bos|>` d'une ligne et laisse passer l'état récurrent — une ligne de
 trois épisodes ainsi masquée **est** le chemin de la session portée, à 1e-4 (test
-`tests/test_segments.py`), pas une approximation. Sa mesure est en file. La consolidation
+`tests/test_segments.py`), pas une approximation. Mesuré : le masque **supprime la
+décroissance** (75 % décroissant jusqu'à 0.50 → 92.5 % plat sur la graine 11 ; 82.5 % avec
+une courbe qui monte de 0.50 à 1.00 sur la graine 7) et ne coûte rien à l'état vierge
+(95 % / 100 %). Il ne fait pas mieux, en moyenne, qu'un épisode par ligne (87.5 % contre
+87.5 % / 90 %) : à 7M et 500 pas, l'état porté coûte encore 5 à 10 points quelle que soit
+la recette, et c'est ce reste-là que mesurera l'échelle. La consolidation
 dans le registre de sortie entre blocs d'épisodes n'a pas été mesurée : la config CPU n'a
 pas de registre.
 
