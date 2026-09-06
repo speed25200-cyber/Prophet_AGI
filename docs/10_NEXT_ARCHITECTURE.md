@@ -4,6 +4,9 @@
 > et à un mécanisme qui la déplace. Les nombres marqués **[CPU, 7M]** viennent des
 > premiers runs (`09_FIRST_RUN.md`) ; ils sont vrais à cette échelle et à aucune autre.
 > Les cases marquées **en cours** attendent une expérience qui tourne ou est planifiée.
+> Les nombres agentiques d'avant la cinquième mesure de `09_FIRST_RUN.md` (55 % / 32.5 %)
+> portent deux décalages train/boucle corrigés depuis ; ils sont gardés pour l'écart qu'ils
+> mesurent, pas comme référence.
 > Rien ici n'est adopté dans une configuration livrée sans son ablation (règle 2).
 
 ## 0. Ce que les mots veulent dire, en quantités
@@ -66,16 +69,37 @@ a parlé :
 | > 2 fenêtres | 17.8 % | 7.5 % | 10.6 % | 8.1 % |
 
 Le témoin propre apprend dans sa fenêtre (12.6 %, comme la fenêtre RoPE) ; ouvrir la porte
-au registre **nuit** à son hôte dans la fenêtre (4.9 %) et n'ajoute rien au-delà (9.3 et
-8.1 contre 10.2 et 10.6). À cette échelle (165k paramètres, 3 000 pas, rappel synthétique),
-le verdict est celui que le critère d'échec du plan prévoyait : **mémoire constante
-prouvée, rappel au-delà de la fenêtre non démontré, coût dans la fenêtre mesuré** — D3b
-reste à `"none"`. Ce que l'expérience ne dit pas : si un hôte plus large ou plus de pas
-apprendraient à *lire* un registre qu'ils savent déjà écrire ; c'est l'ablation sur texte
-réel (100M, dans `prophet.plan`) qui le dira, avec le même critère. L'ablation sur texte réel
-(deux runs de 100M, BPB et rappel multi-clés à 32k) est dans `prophet.plan` avec son
-critère d'échec : BPB dégradé de plus de 0.5 % ou rappel au hasard au-delà de la fenêtre,
-et le registre reste à `"none"`.
+au registre semblait **nuire** à son hôte dans la fenêtre (4.9 %) et ne rien ajouter au-delà.
+Mais ces trois protocoles avaient un défaut commun, trouvé après coup : **le contrôle
+n'apprenait pas** — 24 % pour l'attention complète là où le hasard est à 6 %, et aucun
+bras ne se sépare d'un contrôle qui ne sépare rien. La cause est arithmétique. Avec
+QK-norm, requête et clé sont normalisées et le logit d'attention est borné par
+√`head_dim` × les gains appris : **4** à `head_dim` 16. Une clé parmi 160 ne peut donc
+recevoir que e⁴ / (e⁴ + 159) = 26 % de la masse, et 24–25 % est exactement le plateau
+observé. (`design_warnings()` le signale désormais sous `head_dim` 32 ; à 64, la borne est
+e⁸ ≈ 3 000 clés et ce sont les gains appris qui doivent la dépasser — un point à
+surveiller sur tout contexte long.) Protocole corrigé — QK-norm coupée, un saut au lieu de
+deux, moitié des exemples dans la fenêtre, six paires interrogées par séquence au lieu
+d'une — 16 clés, 6 paires, 3 000 pas, 165k paramètres, ~1 200 questions par ligne :
+
+| Distance de la paire à la question | attention complète | fenêtre RoPE seule | hôte NoPE, porte clouée | hôte NoPE + registre |
+|---|---:|---:|---:|---:|
+| ≤ fenêtre | 45.3 % | 31.7 % | 43.8 % | 43.7 % |
+| 1 à 2 fenêtres | 51.7 % | 37.3 % | 49.7 % | 49.5 % |
+| > 2 fenêtres | 47.3 % | 36.3 % | 48.0 % | 49.2 % |
+
+Trois lectures. Le contrôle apprend (perte 1.06 et en baisse : pas à saturation, mais
+loin du hasard). Le registre **ne coûte rien** dans la fenêtre : le « coût » de 12.6 → 4.9
+était un artefact du protocole borné. Et au-delà de la fenêtre, l'hôte à porte clouée fait
+**aussi bien que l'attention complète** (48.0 contre 47.3) : à 6 paires, c'est l'état borné
+du cœur delta qui rappelle, pas la fenêtre — la tâche tient dans l'état, et rien ne peut
+départager un registre d'un état qui suffit. La fenêtre RoPE seule, elle, perd 12 points
+partout : la couche NoPE est le meilleur hôte. Le test qui compte est donc celui où la
+tâche **dépasse l'état** : 64 clés, 24 paires (l'état delta de cette config en tient ~16
+par tête), même fenêtre — **en cours** (`--keys 64 --pairs 24`). Le verdict D3b reste
+suspendu à ce nombre et à l'ablation sur texte réel (deux runs de 100M, BPB et rappel
+multi-clés à 32k, dans `prophet.plan`) avec son critère d'échec : BPB dégradé de plus de
+0.5 % ou rappel au hasard au-delà de la fenêtre, et le registre reste à `"none"`.
 
 ## 2. Apprentissage continu : la hauteur du mur, puis la première parade
 
@@ -102,26 +126,43 @@ l'entraînement agentique servent à ne pas oublier — et c'est précisément l
 mécanismes sans gradient (registre de sortie, écriture sur surprise, état de session porté)
 que le benchmark mesure par la courbe par bloc, pour la voir plier — ou pas.
 
-**L'état de session porté entre épisodes, mesuré.** Le mécanisme existe (R03 appliqué à
-l'agent : l'état récurrent borné de l'épisode précédent restauré au début du suivant). Sur
-le checkpoint agentique à 57.5 %, 40 tâches inédites, poids gelés, seule variable l'état
-porté **[CPU, 7M]** :
+**L'état de session porté entre épisodes, mesuré — deux fois.** Le mécanisme existe (R03
+appliqué à l'agent : l'état récurrent borné de l'épisode précédent restauré au début du
+suivant, attention vide). Première mesure, sur le checkpoint à 57.5 % : **57.5 % → 0 %**
+dès que l'état est porté, appels bien formés et faux. La lecture d'alors — « le modèle n'a
+jamais vu d'état porté à l'entraînement » — était vraie mais pas première : en relançant
+la recette, deux décalages train/boucle plus graves sont apparus (position de requête du
+pointeur de copie, span de réflexion jamais rendu ; `09_FIRST_RUN.md`, cinquième mesure),
+et une fois corrigés, le même budget (600 épisodes, 500 pas, 7M) donne — 40 tâches
+inédites par graine, deux graines **[CPU, 7M]** :
 
-| État au début de chaque épisode | Succès | Malformés |
-|---|---:|---:|
-| vierge | **57.5 %** | 4.7 % |
-| porté de l'épisode précédent (tâche sans rapport) | **0 %** | 1.9 % |
+| Recette | État vierge | État porté (40 épisodes à la suite) | Tokens par succès (vierge / porté) |
+|---|---:|---:|---:|
+| première (55 % / 32.5 %) | 55 % / 32.5 % | 0 % | 529 / ∞ |
+| corrigée, 1 épisode par ligne | **95 % / 97.5 %** | **87.5 % / 90 %** | 294 / 321 |
+| corrigée, 3 épisodes par ligne (concaténés) | 97.5 % / 97.5 % | 82.5 % / 75 % (courbe 1.00 → 0.50 le long de la session) | 284 / 376 |
+| corrigée, 3 épisodes par ligne, **attention masquée par épisode** | en cours | en cours | en cours |
 
-Les appels sont bien formés et faux : l'état récurrent porte le contenu d'une autre tâche,
-et le modèle n'a jamais vu un état porté à l'entraînement — chaque séquence y démarre d'un
-état vierge. Même classe de trouvaille que les plafonds de profondeur par token : ce qui
-n'est pas dans la distribution d'entraînement est indéfini à l'inférence, et le mécanisme
-le plus correct du monde ne le sauve pas. La recette qui rendrait l'état porté utile est
-un entraînement sur des *séquences d'épisodes* (l'état d'un épisode devient l'init du
-suivant, avec des tâches liées et d'autres non) ; elle n'est pas construite. La
-consolidation dans le registre de sortie entre blocs d'épisodes n'a pas été mesurée non
-plus : la config CPU n'a pas de registre. Ces deux-là sont les prochaines lignes de la
-courbe, pas des résultats.
+Trois faits. La compétence de la recette était cachée par ses décalages : 55 % → 95–97.5 %
+sans un paramètre de plus, avec 279 tokens par épisode au lieu de 304 (le span de
+réflexion se ferme en un token). Un état porté, même jamais vu à l'entraînement, ne coûte
+plus que 5 à 8 points : le « mur » de 57.5 → 0 était d'abord celui des défauts. Et la
+recette naïve des séquences — épisodes concaténés dans une ligne — **aggrave** l'état
+porté au lieu de l'améliorer, avec une courbe qui décroît le long de la session : le
+modèle apprend à s'appuyer sur ce que l'attention lui montre de l'épisode précédent,
+absente à l'inférence, et se dégrade dès que l'état s'éloigne de trois épisodes. Le
+décalage restant est nommé et câblé : `ProphetModel.forward(segment_ids=)` masque
+l'attention à chaque `<|bos|>` d'une ligne et laisse passer l'état récurrent — une ligne de
+trois épisodes ainsi masquée **est** le chemin de la session portée, à 1e-4 (test
+`tests/test_segments.py`), pas une approximation. Sa mesure est en file. La consolidation
+dans le registre de sortie entre blocs d'épisodes n'a pas été mesurée : la config CPU n'a
+pas de registre.
+
+**Ce que l'état porté peut acheter : ne pas relire.** Des suites de tâches `lookup` sur le
+même fichier (`make_related_tasks`) où un fichier lu par l'épisode précédent est répondu
+sans le relire — moins de tokens à succès égal si l'état retient ce qu'il a lu, réponse
+fausse sinon — **en cours** (`--related`, bancs vierge et porté, fichiers vus et non vus
+séparés).
 
 ## 3. Économie de tokens
 
@@ -140,6 +181,17 @@ annonçait — la récurrence sous-performe une pile simple à 135M et ne gagne 
 ~360M — et la raison pour laquelle la porte R04 du plan est à ≥ 350M. Le pari central
 reste un pari ; ce nombre dit seulement qu'il ne se gagne pas petit, et qu'un run qui le
 testerait en dessous de l'échelle où il peut gagner produirait exactement ce faux négatif.
+
+**(a′) La profondeur latente contre les tokens de chaîne de pensée.** Le test le plus
+direct du pari : mêmes poids, `k` passes du cœur et un seul token de réponse, contre une
+passe et la chaîne de pensée émise token par token (`scripts/depth_cpu.py`, opérations
+séquentielles modulo 10, monoïde non résoluble, donc pas de raccourci logarithmique à
+apprendre). Premier lancement à 6 opérations, 150k paramètres, 3 000 pas **[CPU]** : k=1
+31.2 %, k=2 30.7 %, k=4 31.2 %, chaîne de pensée 28.9 % — hasard 10 %. **Insensible** :
+la chaîne, qui n'a qu'une opération par token à faire, n'apprend pas non plus, donc rien
+n'est séparé (même QK-norm à `head_dim` 16 que le needle). Balayage 1 → 6 opérations sans
+QK-norm **en cours** ; le nombre qui compte est l'opération la plus longue où k=4 égale
+la chaîne avec un seul token émis.
 
 **(b) À l'inférence.** Un agent qui *copie* un argument le paie un pas au lieu de douze,
 et un agent qui appelle un outil au lieu de raisonner en tokens paie l'appel. Le benchmark
