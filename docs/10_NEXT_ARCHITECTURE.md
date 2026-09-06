@@ -99,10 +99,28 @@ tâche **dépasse l'état**. Grossir la tâche ne marche pas : à 64 clés et 24
 contrôle à attention complète est au hasard après 4 000 pas (8.7 / 10.7 / 12.0 %, perte
 2.69 pour 2.77 au hasard), comme au tout premier protocole. Rétrécir l'état, si : cœur
 delta à une tête de 8 dimensions (~8 paires) contre 12 paires de 16 clés, même fenêtre,
-6 000 pas — **en cours** (`--state-heads 1 --state-dim 8 --pairs 12`). Le verdict D3b reste
-suspendu à ce nombre et à l'ablation sur texte réel (deux runs de 100M, BPB et rappel
-multi-clés à 32k, dans `prophet.plan`) avec son critère d'échec : BPB dégradé de plus de
-0.5 % ou rappel au hasard au-delà de la fenêtre, et le registre reste à `"none"`.
+6 000 pas, ~3 000 questions par ligne au-delà de la fenêtre (`--state-heads 1 --state-dim 8
+--pairs 12`) :
+
+| Distance de la paire à la question | attention complète | fenêtre RoPE seule | hôte NoPE, porte clouée | hôte NoPE + registre |
+|---|---:|---:|---:|---:|
+| ≤ fenêtre | 26.7 % | 13.0 % | 11.1 % | 12.2 % |
+| 1 à 2 fenêtres | 37.7 % | 18.8 % | 11.4 % | **15.4 %** |
+| > 2 fenêtres | 37.5 % | 19.4 % | 11.1 % | **15.4 %** |
+
+Cette fois l'état ne suffit plus (la porte clouée tombe à 11 %, au hasard ou presque,
+contre 48 % quand l'état tenait la tâche), et le terme de lecture du registre **rend 4
+points** au-delà de la fenêtre à son jumeau exact (15.4 contre 11.4 et 11.1, écart-type
+≈ 0.6 point à n ≈ 3 000) et un point dedans. C'est la première contribution mesurée du
+registre, et elle est petite : le tiers de ce que l'attention complète rappelle, et
+**moins** que la fenêtre RoPE seule (19 %), parce que l'hôte NoPE à fenêtre apprend moins
+bien que la couche RoPE dans cette configuration réduite — le registre aide son hôte, et
+son hôte n'est pas le meilleur. Verdict D3b à cette échelle : **mécanisme vivant, gain
+réel et insuffisant**, et un choix d'hôte à revoir (un registre sur une couche à fenêtre
+RoPE est possible si l'adresse est prise avant la rotation). Il reste à `"none"` ;
+l'ablation sur texte réel (deux runs de 100M, BPB et rappel multi-clés à 32k, dans
+`prophet.plan`) décide, avec son critère d'échec : BPB dégradé de plus de 0.5 % ou rappel
+au hasard au-delà de la fenêtre, et le registre reste à `"none"`.
 
 ## 2. Apprentissage continu : la hauteur du mur, puis la première parade
 
@@ -298,9 +316,20 @@ tokens d'un agent est d'abord la différence entre copier et générer. `files` 
 | Corpus agentique | `scripts/build_agent_dataset.py` sur cinq familles vérifiables | prêt et généré à volonté, sans licence ni fuite possible |
 | Tokenizer | `scripts/train_tokenizer.py` | prêt (incrémental) |
 
-## 5. Ce qui reste hors de portée ici
+## 5. Ce que ces nombres disent, et ce qui reste hors de portée ici
 
-Un GPU et le réseau. Tout ce qui précède tourne sur 4 cœurs et 7M paramètres, ce qui
-suffit à prouver la mécanique et à trouver ses défauts (deux de plus en une journée,
-`CLAUDE.md`), et à rien d'autre. Les nombres qui comptent sortiront de `prophet.plan`,
-dans l'ordre qu'il donne.
+Les trois propriétés, au terme de deux journées de mesures à 7M paramètres et moins :
+
+| Propriété | Ce qui est prouvé | Ce qui ne l'est pas |
+|---|---|---|
+| Contexte infini | mémoire constante (34 Go → 62 Mo à 8M tokens) ; le registre ne coûte rien dans la fenêtre et rend 4 points au-delà quand l'état est saturé | un rappel au-delà de la fenêtre qui approche l'attention complète (15 % contre 38 %) |
+| Apprentissage continu | la recette agentique corrigée (95–100 % sur tâches inédites, 276–294 tokens par succès) ; un état porté sur 40 épisodes à 83–93 % sans décroissance sous le masque par épisode ; l'oubli mesuré et son cadran (rejeu) | un état borné qui retienne *ce* qu'il a lu (la décision de ne pas relire est conditionnée à l'état, la réponse est fausse) |
+| Économie de tokens | 55 % → 95–100 % à tokens égaux par correction des décalages ; le span de réflexion se ferme en un token | la profondeur latente : à 150k paramètres, quatre passes du cœur n'apprennent pas la composition que deux tokens de chaîne apprennent à 100 % |
+
+Ce dépôt n'a pas d'architecture inédite validée : il a une architecture réversible dont
+chaque pari est un interrupteur, une recette agentique qui marche, seize défauts
+silencieux trouvés et fermés, et pour chaque pari le test qui le tranchera — et le nombre
+qu'il donne aujourd'hui, à une échelle où les trois paris perdent ou font jeu égal. Le
+reste est un GPU et le réseau. Tout ce qui précède tourne sur 4 cœurs, ce qui suffit à
+prouver la mécanique et à trouver ses défauts, et à rien d'autre. Les nombres qui comptent
+sortiront de `prophet.plan`, dans l'ordre qu'il donne.
