@@ -423,7 +423,7 @@ class CausalSelfAttention(nn.Module):
             mask = mask & in_window
         return mask.unsqueeze(0).unsqueeze(0)
 
-    def _attn_mask(self, q_pos: Tensor, k_pos: Tensor, cache: "AttentionCache | None") -> Tensor:
+    def _attn_mask(self, q_pos: Tensor, k_pos: Tensor, cache: AttentionCache | None) -> Tensor:
         """The position mask, restricted to the query's own segment on a cache-free pass
         when ``segment_ids`` is set (``(b, 1, s, s)`` then)."""
         mask = self._position_mask(q_pos, k_pos)
@@ -484,11 +484,21 @@ class LedgerAttention(CausalSelfAttention):
         ledger_top_k: int = 32,
         ledger_heads: int = 1,
         ledger_memory_dim: int = 256,
+        use_rope: bool = False,
+        rope_theta: float = 500_000.0,
     ) -> None:
+        # The base class never rotates here: with ``use_rope`` this layer rotates queries
+        # and keys itself, by their absolute positions, at attention time only -- the
+        # cache and the ledger hold the *unrotated* keys, so a key written to the ledger
+        # is addressed by an unrotated query wherever it sits. That is what lets a RoPE
+        # windowed layer, which learns local structure better than a NoPE one, host a
+        # ledger at all.
         super().__init__(
             dim, n_heads=n_heads, n_kv_heads=n_kv_heads, head_dim=head_dim, qk_norm=qk_norm,
             window=window, sink_tokens=sink_tokens, norm_eps=norm_eps, bias=bias, use_rope=False,
         )
+        self.rope = use_rope
+        self.rotary = RotaryEmbedding(self.head_dim, theta=rope_theta) if use_rope else None
         from prophet.memory.ledger import LedgerConfig, ProductKeyMemory  # local: no import cycle
 
         kv_dim = n_kv_heads * self.head_dim
@@ -544,7 +554,8 @@ class LedgerAttention(CausalSelfAttention):
         if self.q_norm is not None:
             q = self.q_norm(q)
             k = self.k_norm(k)
-        # NoPE by construction: cos/sin are ignored.
+        # The caller's cos/sin are ignored: NoPE by construction, or rotated here by
+        # position (see __init__). Everything below the attention call is unrotated.
 
         if cache is not None:
             if b != 1:
@@ -564,11 +575,16 @@ class LedgerAttention(CausalSelfAttention):
         if self.record_keys:
             self.last_keys, self.last_key_positions = keys, k_pos
 
+        q_att, k_att = q, keys
+        if self.rotary is not None:
+            cos_q, sin_q = self.rotary(q_pos.unsqueeze(0))
+            cos_k, sin_k = self.rotary(k_pos.unsqueeze(0))
+            q_att, k_att = apply_rotary(q, cos_q, sin_q), apply_rotary(keys, cos_k, sin_k)
         if self.n_rep > 1:
-            keys = keys.repeat_interleave(self.n_rep, dim=1)
+            k_att = k_att.repeat_interleave(self.n_rep, dim=1)
             values = values.repeat_interleave(self.n_rep, dim=1)
         out = F.scaled_dot_product_attention(
-            q, keys, values, attn_mask=self._attn_mask(q_pos, k_pos, cache), is_causal=False,
+            q_att, k_att, values, attn_mask=self._attn_mask(q_pos, k_pos, cache), is_causal=False,
             scale=self.scale,
         )
 
@@ -908,6 +924,8 @@ def build_mixer(
             ledger_slots=m.global_ledger_slots,
             ledger_top_k=m.global_ledger_top_k,
             ledger_heads=m.global_ledger_heads,
+            use_rope=m.global_ledger_rope and cfg.layer_uses_rope(layer_index, section),
+            rope_theta=m.rope_theta,
         )
     if kind in ("full_attn", "swa"):
         return CausalSelfAttention(

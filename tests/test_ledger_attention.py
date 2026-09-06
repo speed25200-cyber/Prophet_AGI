@@ -151,11 +151,49 @@ def test_model_builds_and_runs_past_the_window():
     assert out.logits.shape == (2, 50, 2048) and torch.isfinite(out.logits).all()
 
 
-def test_rope_on_a_ledger_layer_is_refused():
+def test_rope_on_a_ledger_layer_is_refused_unless_the_layer_rotates_itself():
     cfg = ProphetConfig.from_json("configs/prophet_tiny_smoke.json")
     cfg = dataclasses.replace(cfg, mixer=dataclasses.replace(cfg.mixer, global_memory="ledger", nope_layers=()))
     with pytest.raises(ValueError, match="NoPE"):
         cfg.validate()
+    ok = dataclasses.replace(cfg, mixer=dataclasses.replace(cfg.mixer, global_ledger_rope=True))
+    ok.validate()
+    model = ProphetModel(ok).eval()
+    layer = next(m for m in model.modules() if isinstance(m, LedgerAttention))
+    assert layer.rotary is not None
+    with torch.no_grad():
+        out = model(torch.randint(0, 2048, (1, 40)), loop_k=2)
+    assert torch.isfinite(out.logits).all()
+    scaled = dataclasses.replace(ok, mixer=dataclasses.replace(ok.mixer, rope_scaling="yarn", rope_scaling_factor=4.0))
+    with pytest.raises(ValueError, match="scaling"):
+        scaled.validate()
+
+
+def test_a_rope_ledger_layer_is_a_rope_windowed_layer_inside_the_window():
+    """Same weights: within the window, the ledger layer that rotates by position equals
+    the ordinary RoPE layer fed the model's cos/sin, in one pass and token by token."""
+    from prophet.modeling.layers import RotaryEmbedding
+
+    torch.manual_seed(5)
+    plain = CausalSelfAttention(32, n_heads=2, n_kv_heads=1, head_dim=16, window=12, sink_tokens=0).eval()
+    ledger = LedgerAttention(32, n_heads=2, n_kv_heads=1, head_dim=16, window=12, ledger_slots=64,
+                             ledger_top_k=4, use_rope=True, rope_theta=10_000.0).eval()
+    ledger.load_state_dict(plain.state_dict(), strict=False)
+    x = torch.randn(1, 12, 32)
+    rope = RotaryEmbedding(16, theta=10_000.0)
+    cos, sin = rope(torch.arange(12).unsqueeze(0))
+    with torch.no_grad():
+        reference = plain(x, cos=cos, sin=sin)
+        full = ledger(x)
+        cache = AttentionCache()
+        steps = [ledger(x[:, t : t + 1], cache=cache) for t in range(12)]
+    assert torch.allclose(full, reference, atol=1e-5)
+    assert torch.allclose(torch.cat(steps, dim=1), reference, atol=1e-4)
+    # Beyond the window the cache holds unrotated keys and the ledger fills.
+    with torch.no_grad():
+        for _t in range(12, 40):
+            ledger(torch.randn(1, 1, 32), cache=cache)
+    assert int(ledger.ledger.tokens_written) == 40 - 12 and cache.keys.shape[2] == 13
 
 
 def test_memory_per_context_is_bounded_with_the_ledger_and_not_without():

@@ -106,6 +106,10 @@ class MixerConfig:
     """Always-attended prefix tokens; prevents the softmax-sink collapse that breaks
     windowed attention at long context."""
     global_memory: Literal["none", "ledger"] = "none"
+    global_ledger_rope: bool = False
+    """Let a ledger layer keep RoPE for its attention: it then rotates queries and keys
+    by position itself, at attention time, and addresses the ledger with the unrotated
+    ones. Off, ledger layers must be NoPE (``nope_layers``). Needs ``rope_scaling="none"``."""
     """What a full-attention layer keeps of the context beyond ``global_window``.
 
     ``"none"``: everything -- exact recall, a KV cache linear in context. ``"ledger"``:
@@ -630,12 +634,18 @@ class ProphetConfig:
                 errors.append("mixer.global_ledger_top_k must lie in [1, global_ledger_slots]")
             if m.global_window < 1 or m.global_ledger_heads < 1:
                 errors.append("mixer.global_window and global_ledger_heads must be >= 1")
+            if m.global_ledger_rope and m.rope_scaling != "none":
+                errors.append(
+                    "mixer.global_ledger_rope rotates by position inside the ledger layer and "
+                    "knows no scaling: set mixer.rope_scaling='none'"
+                )
             for section, index, kind in self.section_layout():
-                if kind == "full_attn" and self.layer_uses_rope(index, section):
+                if kind == "full_attn" and self.layer_uses_rope(index, section) and not m.global_ledger_rope:
                     errors.append(
                         f"mixer.global_memory='ledger' needs NoPE global layers: {section}[{index}] "
                         "applies RoPE, and a rotated key written to the ledger would be "
-                        "addressed by a query rotated to a different position"
+                        "addressed by a query rotated to a different position (or set "
+                        "mixer.global_ledger_rope, which rotates at attention time only)"
                     )
                     break
             if not any(kind == "full_attn" for _, _, kind in self.section_layout()):
