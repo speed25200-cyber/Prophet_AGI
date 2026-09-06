@@ -162,8 +162,19 @@ def heldout_bpb(work: Path, model, tokenizer: ProphetTokenizer, *, seq_len: int 
     return {"bpb": r.bits_per_byte, "nats": r.nats_per_token, "docs": len(docs)}
 
 
-def agent_config(cfg: ProphetConfig) -> ProphetConfig:
-    return dataclasses.replace(cfg, heads=dataclasses.replace(cfg.heads, action_head=True, action_dk=32))
+def agent_config(cfg: ProphetConfig, *, ledger_window: int | None = None) -> ProphetConfig:
+    """The CPU config with the action heads on and, with ``ledger_window``, the global
+    attention layer turned into a ledger layer (``mixer.global_memory="ledger"``): what
+    falls out of a window of that many tokens is written to a bounded product-key memory
+    that travels with the session. The base checkpoint loads into it unchanged -- the
+    gate starts almost closed, so the layer begins as the windowed layer it was."""
+    cfg = dataclasses.replace(cfg, heads=dataclasses.replace(cfg.heads, action_head=True, action_dk=32))
+    if ledger_window is not None:
+        cfg = dataclasses.replace(cfg, mixer=dataclasses.replace(
+            cfg.mixer, global_memory="ledger", global_window=ledger_window,
+            global_ledger_slots=1024, global_ledger_top_k=8,
+        ))
+    return cfg
 
 
 def bench(model, tokenizer, *, n_tasks: int, seed: int, family: str | None = None,
@@ -243,6 +254,9 @@ def main() -> int:
     ap.add_argument("--segment-attention", action="store_true",
                     help="mask attention at every <|bos|> of a training row, so the rows of "
                          "--episodes-per-row are seen exactly as the loop sees a carried session")
+    ap.add_argument("--ledger-window", type=int, default=None,
+                    help="turn the global attention layer into a ledger layer with this window: what "
+                         "leaves the window is kept in a bounded memory carried with the session")
     ap.add_argument("--related", action="store_true",
                     help="train and bench on related lookup sequences (a file read by the previous "
                          "episode is answered without reading it again); rows hold --episodes-per-row "
@@ -254,7 +268,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
-    cfg = agent_config(ProphetConfig.from_json(CONFIG))
+    cfg = agent_config(ProphetConfig.from_json(CONFIG), ledger_window=args.ledger_window)
     cfg.validate()
     torch.manual_seed(0)
     model = ProphetModel(cfg)
@@ -290,6 +304,7 @@ def main() -> int:
             segment_by_bos=args.segment_attention,
         )
         report["segment_attention"] = args.segment_attention
+        report["ledger_window"] = args.ledger_window
         trainer = Trainer(model, loader, tc, model_config=cfg, tokenizer=tokenizer)
         started = time.time()
         history = trainer.train()

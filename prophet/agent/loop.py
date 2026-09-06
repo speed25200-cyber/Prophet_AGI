@@ -332,8 +332,13 @@ class AgentLoop:
         cache = ProphetCache()
         self._ids = []
         fingerprint = model_fingerprint(self.model) if isinstance(self.model, torch.nn.Module) and hasattr(self.model, "cfg") else ""
+        # An episode without a session starts from empty ledgers: they are buffers on
+        # the model, not on the cache, and would otherwise leak from one episode into the
+        # next through the weights.
+        for layer in self._ledger_layers():
+            layer.ledger.reset()
         if session is not None:
-            restore_session(session, cache, fingerprint=fingerprint)
+            restore_session(session, cache, fingerprint=fingerprint, model=self._module())
             # Positions continue from the carried count; the id log must line up.
             self._ids = [self.tok.pad_id] * cache.position
         carried = len(self._ids)  # placeholders are not tokens this episode processed
@@ -471,9 +476,23 @@ class AgentLoop:
 
     # -- helpers -------------------------------------------------------------------------
 
-    @staticmethod
-    def _session(cache: ProphetCache, fingerprint: str):
-        return extract_session(cache, fingerprint=fingerprint) if cache.slots else None
+    def _session(self, cache: ProphetCache, fingerprint: str):
+        """The carried state: the recurrent slots and, when the model has them, the
+        attention ledgers (what fell out of the window, kept by key)."""
+        if not cache.slots and not self._ledger_layers():
+            return None
+        return extract_session(cache, fingerprint=fingerprint, model=self._module())
+
+    def _module(self) -> torch.nn.Module | None:
+        return self.model if isinstance(self.model, torch.nn.Module) else None
+
+    def _ledger_layers(self) -> list:
+        module = self._module()
+        if module is None:
+            return []
+        from prophet.modeling.layers import LedgerAttention
+
+        return [m for m in module.modules() if isinstance(m, LedgerAttention)]
 
     @staticmethod
     def _selection(out, tool_names: list[str]) -> tuple[str | None, float | None]:

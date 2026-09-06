@@ -100,7 +100,7 @@ def test_cached_decode_keeps_memory_bounded_and_writes_each_evicted_key_once():
     ledger, _ = _pair(window=8)
     cache = AttentionCache()
     with torch.no_grad():
-        for t in range(50):
+        for _t in range(50):
             ledger(torch.randn(1, 1, 32), cache=cache)
     assert cache.keys.shape[2] == 8 + 1
     assert int(ledger.ledger.tokens_written) == 50 - 8 - 1
@@ -191,3 +191,27 @@ def test_attention_ledgers_persist_with_the_session(tmp_path):
     assert int(fresh_layer.ledger.tokens_written) == 0
     restore_session(type(session).load(tmp_path / "s.pt"), ProphetCache(), model=fresh)
     assert torch.equal(fresh_layer.ledger.values, layer.ledger.values)
+
+
+def test_the_agent_loop_carries_ledgers_with_the_session_and_resets_them_without():
+    """What fell out of the window during an episode travels with the session; an
+    episode started without one begins from empty ledgers, never from the last run's."""
+    from prophet.agent.actions import ToolRegistry, ToolSchema
+    from prophet.agent.loop import AgentConfig, AgentLoop
+    from prophet.data.tokenizer import ProphetTokenizer
+
+    tok = ProphetTokenizer(merges=[])
+    model = ProphetModel(_cfg()).eval()
+    tools = ToolRegistry()
+    tools.add(ToolSchema("read_file", "Read one file", {"type": "object", "properties": {"path": {"type": "string"}}}))
+    tools.bind("read_file", lambda path: "hello")
+    cfg = AgentConfig(max_steps=1, think_budget=2, action_budget=8, halt_threshold=None)
+    loop = AgentLoop(model, tok, tools, cfg)
+    layer = next(m for m in model.modules() if isinstance(m, LedgerAttention))
+    first = loop.run("goal " * 40)  # long enough a prompt to evict into the ledger
+    written = int(layer.ledger.tokens_written)
+    assert written > 0 and first.session is not None and first.session.ledgers
+    again = loop.run("goal " * 40)
+    assert int(layer.ledger.tokens_written) == written  # reset, then the same episode
+    loop.run("goal " * 40, session=again.session)
+    assert int(layer.ledger.tokens_written) > written  # restored, then written further
