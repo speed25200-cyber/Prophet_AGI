@@ -63,7 +63,7 @@ tests/          ~460 tests ; les plus importants sont des tests d'équivalence
 
 ## Ce que ce dépôt a appris à ses dépens
 
-Quinze défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+Seize défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
 normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
 et faux :
 
@@ -84,6 +84,7 @@ et faux :
 | État de session porté entre épisodes : mécanique exacte, 57.5 % → 0 % — le modèle n'a jamais vu un état porté à l'entraînement | le benchmark agentique, poids gelés, seule variable l'état ; recette « séquences d'épisodes » à construire avant tout usage |
 | Position de requête du pointeur de copie : entraînée au token du guillemet ouvrant, interrogée un token plus tôt (après `"clé":`) au décodage — un checkpoint survivait par marge (55 %), le suivant tombait à 0 % avec des pointeurs exacts en forçage | sonde forçage contre décodage incrémental sur le même checkpoint ; cible déplacée là où la grammaire tire, test d'accord train/décodage |
 | Span de réflexion jamais rendu dans les trajectoires parfaites, ouvert par la boucle à chaque pas : un token de contrôle inconnu au décodage, rempli de fragments d'appel — **100 % → 0 %** sur les mêmes poids selon que la boucle l'ouvre ou non | banc avec et sans span sur le même checkpoint ; le rendu émet le span (vide) à chaque pas |
+| Masque d'attention par segment posé sur les couches pendant le forward et effacé à la sortie : sous checkpointing d'activations, le recalcul du backward ne le voit plus et PyTorch refuse — plantage au premier pas | le premier run à masque ; le masque reste posé jusqu'au forward suivant (qui le réécrit toujours), test sous checkpointing |
 
 **Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
 réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par
