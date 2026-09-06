@@ -254,9 +254,18 @@ ligne). Ce n'est pas la mémoire qui manque, c'est la **politique d'écriture** 
 n'a pas à retenir ses prompts, seulement ce que les outils lui ont dit. Cette politique
 (`ledger_write="tool"` : seuls les tokens des spans `<|tool|>` sont écrits à l'éviction,
 masque porté par le cache au décodage et dérivé du flux à l'entraînement) est câblée et
-testée ; sa mesure est **en cours**. C'est le nombre honnête de la mémoire de travail
-entre épisodes à cette échelle : la **mécanique** (masque, état porté, décision
-conditionnée, registre porté) est prouvée, la **capacité** ne l'est pas encore.
+testée. Mesurée : vierge **100 % / 100 %**, porté **7.7 % / 7.7 %** — rien. Et en y
+regardant, elle ne *pouvait* rien : dans ces suites, un fichier « vu » est celui de
+l'épisode précédent, à ~150 tokens, donc encore **dans** la fenêtre de 256 — jamais
+évincé, jamais écrit, et invisible par l'attention masquée. Le registre n'a jamais tenu, à
+l'entraînement, le contenu qu'on lui demande à l'inférence : défaut de protocole, pas de
+mécanisme. La suite corrigée fait porter la relecture sur le fichier d'**il y a deux
+épisodes** (`--related-lag 2`, un épisode entier entre la lecture et la question, donc
+au-delà de la fenêtre) : sous le masque, le registre est la seule voie vers la réponse,
+à l'entraînement comme au décodage — **en cours**, avec et sans registre. C'est le
+nombre honnête de la mémoire de travail entre épisodes à cette échelle : la **mécanique**
+(masque, état porté, décision conditionnée, registre porté et sélectif) est prouvée, la
+**capacité** ne l'est pas encore.
 
 ## 3. Économie de tokens
 
