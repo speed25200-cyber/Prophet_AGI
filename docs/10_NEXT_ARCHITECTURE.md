@@ -368,8 +368,8 @@ itération par opération **[CPU, 150k]** :
 |---|---:|---:|
 | boucle, réponse directe | 1 | 45.2 % / 30.2 % (deux runs) |
 | boucle + cibles par itération | 1 | 46.6 % |
-| boucle + cibles par itération + embedding d'itération | 1 | **46.1 %** |
-| chaîne émise | 2 | **100 %** |
+| boucle + cibles par itération + embedding d'itération | 1 | **46.1 %** (34.0 % à trois opérations, contre 31.1 % direct) |
+| chaîne émise | 2 | **100 %** (42 % à trois opérations, chaîne exacte 20 %) |
 
 Ni le signal par pas, ni l'index d'itération, ni les deux ne font composer la boucle. Ce
 qui reste à la chaîne et manque au cœur bouclé est alors structurel : à chaque pas, la
