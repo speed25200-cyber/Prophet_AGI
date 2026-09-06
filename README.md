@@ -78,7 +78,7 @@ modèle de 408M.
 > de l'oubli mesuré (2.18 → 7.36 sans rejeu, 2.61 avec) ; la boucle contre *k* = 1 à
 > égalité (2.184 contre 2.179) ; le contexte borné-infini prouvé en mémoire (34 Go →
 > 62 Mo à 8M tokens), et en rappel synthétique le registre à parité avec l'attention
-> complète tant que la tâche tient dans l'état borné, +4 points au-delà de la fenêtre
+> complète tant que la tâche tient dans l'état borné, +5 points reproductibles (trois graines) au-delà de la fenêtre
 > quand il est saturé ; la profondeur latente ne compose pas ce que deux tokens de chaîne
 > composent à 100 % ([`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md),
 > [`docs/10_NEXT_ARCHITECTURE.md`](docs/10_NEXT_ARCHITECTURE.md)). Aucun modèle compétitif.**
