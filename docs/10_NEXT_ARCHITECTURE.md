@@ -369,6 +369,9 @@ itération par opération **[CPU, 150k]** :
 | boucle, réponse directe | 1 | 45.2 % / 30.2 % (deux runs) |
 | boucle + cibles par itération | 1 | 46.6 % |
 | boucle + cibles par itération + embedding d'itération | 1 | **46.1 %** (34.0 % à trois opérations, contre 31.1 % direct) |
+| idem, avec attention **dans** le cœur (cache KV × k, ce que D1 refuse) | 1 | 45.5 % (31.1 % à trois) |
+| idem, lecture **re-quantifiée** en symbole et réinjectée (`iteration_requantize="hard"`) | 1 | **50.7 %** (31.3 % à trois) |
+| idem, re-quantification douce (`"soft"`) | 1 | 31.0 % (32.9 % à trois) |
 | chaîne émise | 2 | **100 %** (42 % à trois opérations, chaîne exacte 20 %) |
 
 Ni le signal par pas, ni l'index d'itération, ni les deux ne font composer la boucle. Ce
@@ -381,12 +384,17 @@ latente avec de l'attention **dans** le cœur, ce que D1 refuse — a tranché c
 explication aussi : **45.5 %** à deux opérations, 31.1 % à trois. Cinq variantes de
 profondeur latente (directe ; cibles par itération ; + index d'itération ; + attention
 dans le cœur ; à 3 000 et 12 000 pas) donnent le même nombre, et la chaîne émise 100 %.
-Ce qu'elle a et qu'aucune n'a : le résultat intermédiaire **ré-encodé comme un symbole
-discret** à l'entrée du pas suivant. À cette échelle, composer deux consultations de
-table en espace continu ne s'optimise pas ; émettre le symbole entre les deux, si. C'est
-le résultat de R04 sur un test de raisonnement : le pari « la profondeur latente
-remplace les tokens de chaîne » n'a **aucun support** sous la porte de 350M, et chacune
-de ses variantes reste un interrupteur à `false` avec son test.
+Restait ce qu'elle a et qu'aucune n'avait : le résultat intermédiaire **ré-encodé comme
+un symbole discret** à l'entrée du pas suivant. Câblé (`recurrent.iteration_requantize`,
+lecture par itération → distribution sur le vocabulaire → embedding réinjectée, dure avec
+gradient direct ou douce) et mesuré : **50.7 %** en dur, 31.0 % en doux, à deux
+opérations — la septième variante, et la meilleure de cinq points, toujours à moitié de la
+chaîne. La différence qui reste est la chaîne elle-même : un token *nouveau*, à une
+position nouvelle, sur lequel **toute la pile** se relance. À cette échelle, composer deux
+consultations de table en profondeur ne s'optimise pas ; émettre le symbole entre les deux,
+si. C'est le résultat de R04 sur un test de raisonnement : le pari « la profondeur latente
+remplace les tokens de chaîne » n'a **aucun support** sous la porte de 350M, et chacune de
+ses sept variantes reste un interrupteur à `false` avec son test, prêt pour l'échelle.
 
 **(b) À l'inférence.** Un agent qui *copie* un argument le paie un pas au lieu de douze,
 et un agent qui appelle un outil au lieu de raisonner en tokens paie l'appel. Le benchmark
