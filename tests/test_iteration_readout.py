@@ -11,10 +11,10 @@ from prophet.config import (
     ProphetConfig,
     RecurrentCoreConfig,
 )
-from prophet.modeling.model import ProphetModel
+from prophet.modeling.model import ProphetCache, ProphetModel
 
 
-def _model(readout: bool) -> ProphetModel:
+def _model(readout: bool, embedding: bool = False) -> ProphetModel:
     cfg = ProphetConfig(
         d_model=32,
         frontend=FrontendConfig(vocab_size=64),
@@ -23,7 +23,8 @@ def _model(readout: bool) -> ProphetModel:
         recurrent=RecurrentCoreConfig(
             enabled=True, prelude_layers=1, core_layers=1, coda_layers=1, core_pattern=["gdn"],
             coda_pattern=["full_attn"], default_loop_k=3, train_loop_min=3, train_loop_max=3,
-            halting="none", iteration_readout=readout, truncated_backprop_steps=3,
+            halting="none", iteration_readout=readout, iteration_embedding=embedding,
+            truncated_backprop_steps=3,
         ),
         ffn=FeedForwardConfig(kind="dense", hidden_mult=2.0),
     )
@@ -55,3 +56,24 @@ def test_readout_carries_gradient_to_every_iteration():
     loss.backward()
     core = [p for n, p in model.named_parameters() if ".core." in n and p.grad is not None]
     assert core and any(p.grad.abs().sum() > 0 for p in core)
+
+
+def test_iteration_embedding_is_read_per_iteration_and_keeps_decode_exact():
+    plain, embedded = _model(False), _model(False, embedding=True)
+    assert embedded.iteration_embed is not None and embedded.iteration_embed.weight.shape == (3, 32)
+    n_plain = sum(p.numel() for p in plain.parameters())
+    assert sum(p.numel() for p in embedded.parameters()) == n_plain + 3 * 32
+    ids = torch.randint(0, 64, (1, 9))
+    with torch.no_grad():
+        embedded.load_state_dict(plain.state_dict(), strict=False)
+        embedded.iteration_embed.weight.zero_()
+        assert torch.allclose(embedded(ids, loop_k=3).logits, plain(ids, loop_k=3).logits, atol=1e-5)
+        embedded.iteration_embed.weight[1].fill_(0.5)  # only the second pass changes
+        moved = embedded(ids, loop_k=3).logits
+        assert not torch.allclose(moved, plain(ids, loop_k=3).logits, atol=1e-3)
+        assert torch.allclose(embedded(ids, loop_k=1).logits, plain(ids, loop_k=1).logits, atol=1e-5)
+        # Deeper than the table: the last row is reused, and decode stays exact.
+        cache = ProphetCache()
+        steps = [embedded(ids[:, t : t + 1], cache=cache, loop_k=4).logits for t in range(9)]
+        full = embedded(ids, loop_k=4).logits
+    assert torch.allclose(torch.cat(steps, dim=1), full, atol=1e-4)

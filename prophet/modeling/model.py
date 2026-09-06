@@ -357,6 +357,12 @@ class ProphetModel(nn.Module):
         # Learned halting. A single scalar per position per iteration: "is this enough
         # thinking?". Cheap to add, and it is the only mechanism that makes recurrence
         # depth a function of the input rather than a constant chosen by the caller.
+        self.iteration_embed = (
+            nn.Embedding(max(cfg.recurrent.train_loop_max, cfg.recurrent.default_loop_k), d)
+            if cfg.recurrent.enabled and cfg.recurrent.iteration_embedding else None
+        )
+        if self.iteration_embed is not None:
+            nn.init.normal_(self.iteration_embed.weight, std=0.02)  # near the switch-off point
         self.halt_head = (
             nn.Sequential(make_norm(cfg.norm_kind, d, cfg.norm_eps), nn.Linear(d, 1))
             if cfg.recurrent.enabled and cfg.recurrent.halting == "ponder"
@@ -671,6 +677,9 @@ class ProphetModel(nn.Module):
                 ctx = contextlib.nullcontext() if grad_on else torch.no_grad()
                 with ctx:
                     step_in = h + injected if r.inject_input_each_step else h
+                    if self.iteration_embed is not None:
+                        row = min(i, self.iteration_embed.num_embeddings - 1)
+                        step_in = step_in + self.iteration_embed.weight[row].to(step_in.dtype)
                     if token_depth is None:
                         h = run("core", i, step_in)
                     else:

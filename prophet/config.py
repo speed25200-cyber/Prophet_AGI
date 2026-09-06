@@ -245,6 +245,13 @@ class RecurrentCoreConfig:
     """Ceiling applied, when ``token_depth`` is on, to tool-observation spans (from
     ``<|tool|>`` to the next control token) and to the random shallow spans below."""
     token_depth_random_spans: float = 0.25
+    iteration_embedding: bool = False
+    """Add a learned per-iteration vector to the core's input at iteration *i* (one row
+    per iteration up to ``train_loop_max``; deeper iterations reuse the last). Without it
+    the shared core receives the same injected input at every pass and has to infer by
+    itself which step of a computation it is at -- which, on sequential tasks, it did
+    not (``scripts/depth_cpu.py``). A chain of thought gets that index for free from its
+    own emitted tokens. Costs ``train_loop_max x d_model`` parameters."""
     iteration_readout: bool = False
     """Read the model out (coda, then norm) after *every* core iteration and return the
     states as ``ProphetOutput.hidden_per_step`` even without halting. What it is for:

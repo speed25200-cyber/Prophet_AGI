@@ -101,7 +101,8 @@ def batch(rng: random.Random, *, n: int, ops: int, cot: bool, sup: bool = False)
     return torch.tensor(rows), torch.tensor(targets), torch.tensor(positions)
 
 
-def config(k: int, *, length: int, qk_norm: bool = False, readout: bool = False) -> ProphetConfig:
+def config(k: int, *, length: int, qk_norm: bool = False, readout: bool = False,
+           iteration_embedding: bool = False) -> ProphetConfig:
     """``qk_norm`` off by default: at head_dim 16 it caps the attention logit at 4 (see
     ``scripts/needle_cpu.py`` and ``ProphetConfig.design_warnings``). ``readout`` turns on
     the per-iteration read-out the ``-sup`` arms train on."""
@@ -116,7 +117,8 @@ def config(k: int, *, length: int, qk_norm: bool = False, readout: bool = False)
         recurrent=RecurrentCoreConfig(enabled=True, prelude_layers=1, core_layers=1, coda_layers=2,
                                       train_loop_min=k, train_loop_max=k, default_loop_k=k,
                                       halting="none", core_pattern=["gdn"], coda_pattern=["swa", "full_attn"],
-                                      truncated_backprop_steps=k, iteration_readout=readout),
+                                      truncated_backprop_steps=k, iteration_readout=readout,
+                                      iteration_embedding=iteration_embedding),
         heads=HeadsConfig(n_multi_token_predict=0),
     )
 
@@ -129,9 +131,11 @@ def lr_at(step: int, *, steps: int, peak: float, warmup: int) -> float:
 
 
 def train(k: int, *, cot: bool, ops: int, steps: int, minutes: float, seed: int, lr: float, warmup: int,
-          log, qk_norm: bool = False, sup: bool = False) -> tuple[ProphetModel, dict]:
+          log, qk_norm: bool = False, sup: bool = False,
+          iteration_embedding: bool = False) -> tuple[ProphetModel, dict]:
     torch.manual_seed(seed)
-    cfg = config(k, length=2 * ops + 2 + ops, qk_norm=qk_norm, readout=sup)
+    cfg = config(k, length=2 * ops + 2 + ops, qk_norm=qk_norm, readout=sup,
+                 iteration_embedding=iteration_embedding)
     cfg.validate()
     model = ProphetModel(cfg).train()
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
@@ -201,6 +205,8 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--ops", default="6", help="operations per expression; a comma-separated list sweeps")
     ap.add_argument("--qk-norm", action="store_true", help="normalise queries and keys (bounds the logit)")
+    ap.add_argument("--iteration-embedding", action="store_true",
+                    help="give the core a learned per-iteration vector (recurrent.iteration_embedding)")
     ap.add_argument("--steps", type=int, default=3000)
     ap.add_argument("--arms", default="k1,k2,k4,k1-cot")
     ap.add_argument("--minutes", type=float, default=10.0, help="per model")
@@ -216,7 +222,8 @@ def main() -> int:
         print(msg, flush=True)
 
     ops_list = [int(o) for o in args.ops.split(",") if o]
-    report: dict = {"ops": ops_list, "steps": args.steps, "lr": args.lr, "chance": 0.1, "qk_norm": args.qk_norm}
+    report: dict = {"ops": ops_list, "steps": args.steps, "lr": args.lr, "chance": 0.1, "qk_norm": args.qk_norm,
+                    "iteration_embedding": args.iteration_embedding}
     arms = [a for a in args.arms.split(",") if a]
     for ops in ops_list:
         report[str(ops)] = {}
@@ -226,7 +233,8 @@ def main() -> int:
             cot = arm.endswith("-cot")
             sup = arm.endswith("-sup")
             model, stats = train(k, cot=cot, ops=ops, steps=args.steps, minutes=args.minutes, seed=args.seed,
-                                 lr=args.lr, warmup=args.warmup, log=log, qk_norm=args.qk_norm, sup=sup)
+                                 lr=args.lr, warmup=args.warmup, log=log, qk_norm=args.qk_norm, sup=sup,
+                                 iteration_embedding=args.iteration_embedding)
             acc = accuracy(model, k, random.Random(args.seed + 100), cot=cot, ops=ops, n=args.eval_n)
             acc["core_passes_per_token"] = k
             report[str(ops)][arm] = {"train": stats, **acc}
