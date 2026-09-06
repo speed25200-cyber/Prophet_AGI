@@ -72,6 +72,10 @@ class Tokenizer(Protocol):
 
 @dataclass
 class AgentConfig:
+    ledger_write: str = "all"
+    """What the model's ledger layers keep of what leaves their window: ``"all"``, or
+    ``"tool"`` -- only the tokens of tool observations (the trainer's
+    ``TrainConfig.ledger_write`` must say the same)."""
     max_steps: int = 64
     think_budget: int = 128
     """Maximum think-span tokens per step."""
@@ -196,12 +200,14 @@ class AgentLoop:
     @torch.no_grad()
     def _feed(self, ids: list[int], cache: ProphetCache, *, loop_k: int | None,
               halt_threshold: float | None = None, modality: int | None = None,
-              positions: dict[str, list[int]] | None = None):
+              positions: dict[str, list[int]] | None = None, observation: bool = False):
         if not ids:
             return None
         self._ids.extend(ids)  # absolute position == index; eviction never renumbers
         t = torch.tensor([ids], dtype=torch.long, device=next(self.model.parameters()).device)
         kw: dict[str, Any] = dict(cache=cache, loop_k=loop_k, return_mtp=True)
+        if self.cfg.ledger_write == "tool":
+            kw["ledger_write_mask"] = torch.full_like(t, observation, dtype=torch.bool)
         if halt_threshold is not None:
             kw["halt_threshold"] = halt_threshold
         if positions and getattr(self.model, "action", None) is not None:
@@ -459,7 +465,8 @@ class AgentLoop:
             if observation:
                 obs_ids = self._observation_ids(observation)
                 start = cache.position
-                self._last_output = self._feed(obs_ids, cache, loop_k=k_ingest, modality=modality_tool) or self._last_output
+                self._last_output = self._feed(obs_ids, cache, loop_k=k_ingest, modality=modality_tool,
+                                               observation=True) or self._last_output
                 obs = Observation(step, action.name, observation, len(obs_ids), start, cache.position)
                 for old in state.push_observation(obs):
                     state.evict_from_attention(cache, old)

@@ -242,18 +242,23 @@ class ProductKeyMemory(nn.Module):
 
     @torch.no_grad()
     def write_state(
-        self, values: Tensor, counts: Tensor, x: Tensor, target: Tensor, *, lr: float | None = None
+        self, values: Tensor, counts: Tensor, x: Tensor, target: Tensor, *, lr: float | None = None,
+        rows: Tensor | None = None,
     ) -> WriteStats:
         """The write rule on an explicit memory (``values`` ``(rows, n_slots, dim)``,
         ``counts`` ``(rows, n_slots)``), updated in place. Row ``r`` of the memory takes
-        the ``r``-th slice of ``x``'s leading dimension. The buffers are the one-row case."""
+        the ``r``-th slice of ``x``'s leading dimension, unless ``rows`` names the row of
+        every token of ``x`` (a selection of tokens, uneven across rows). The buffers are
+        the one-row case."""
         cfg = self.cfg
         lr = cfg.write_lr if lr is None else lr
 
         flat_x = x.reshape(-1, cfg.dim)
         flat_t = target.reshape(-1, cfg.dim)
+        if flat_x.shape[0] == 0:
+            return WriteStats(0, 0.0, 0.0, 0.0, 0.0)
         indices, weights = self.address(flat_x)
-        rows = self._rows_for(flat_x, values)
+        rows = self._rows_for(flat_x, values) if rows is None else rows.reshape(-1)
         flat_slot = indices + rows.unsqueeze(1) * cfg.n_slots      # (t, h*k) into rows*slots
         vflat = values.view(-1, cfg.dim)
         cflat = counts.view(-1)

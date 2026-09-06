@@ -11,6 +11,7 @@ import torch
 
 from prophet.budget import _kv_bytes_per_token, count_parameters
 from prophet.config import ProphetConfig
+from prophet.data.tokenizer import ProphetTokenizer
 from prophet.memory.ledger import LedgerConfig, ProductKeyMemory
 from prophet.memory.session import extract_session, restore_session
 from prophet.modeling.layers import AttentionCache, CausalSelfAttention, LedgerAttention
@@ -253,3 +254,85 @@ def test_the_agent_loop_carries_ledgers_with_the_session_and_resets_them_without
     assert int(layer.ledger.tokens_written) == written  # reset, then the same episode
     loop.run("goal " * 40, session=again.session)
     assert int(layer.ledger.tokens_written) > written  # restored, then written further
+
+
+# --------------------------------------------------------------------------------------
+# The write policy: what a ledger keeps of what leaves the window
+# --------------------------------------------------------------------------------------
+
+
+def test_cache_flags_travel_with_the_keys_through_eviction():
+    cache = AttentionCache()
+    cache.window, cache.sink_tokens = 4, 1
+    k = torch.randn(1, 1, 6, 8)
+    cache.append(k, k, torch.tensor([True, False, True, False, True, False]))
+    assert cache.evictable_flags().tolist() == [False]  # positions 1 (sink 0 kept)
+    cache.evict()
+    assert cache.flags.tolist() == [True, True, False, True, False]
+    cache.append(torch.randn(1, 1, 2, 8), torch.randn(1, 1, 2, 8))  # no policy for this chunk: not written
+    assert cache.flags.tolist()[-2:] == [False, False]
+
+
+def test_a_ledger_keeps_only_flagged_tokens_at_decode_and_in_training():
+    torch.manual_seed(7)
+    ledger, plain = _pair(window=8)
+    # Decode: a policy that flags every other token halves what is written.
+    cache = AttentionCache()
+    with torch.no_grad():
+        for t in range(40):
+            ledger.write_mask = torch.tensor([[t % 2 == 0]])
+            ledger(torch.randn(1, 1, 32), cache=cache)
+    ledger.write_mask = None
+    written = int(ledger.ledger.tokens_written)
+    # Evicted: positions 1..31 (the sink at 0 is kept); flagged among them: the even ones.
+    assert written == sum(1 for t in range(1, 40 - 8) if t % 2 == 0)
+    # Training: an all-false policy leaves the transient memory empty, so the layer is
+    # exactly its windowed twin at any length; an all-true one is not.
+    x = torch.randn(2, 40, 32)
+    with torch.no_grad():
+        ledger.gate.fill_(0.0)
+        ledger.write_mask = torch.zeros(2, 40, dtype=torch.bool)
+        silent = ledger(x)
+        ledger.write_mask = torch.ones(2, 40, dtype=torch.bool)
+        loud = ledger(x)
+        ledger.write_mask = None
+        reference = plain(x)
+    assert torch.allclose(silent, reference, atol=1e-5)
+    assert not torch.allclose(loud, reference, atol=1e-3)
+
+
+def test_tool_span_mask_marks_observation_tokens_only():
+    from prophet.train.loop import tool_span_mask
+
+    tok = ProphetTokenizer(merges=[])
+    text = "<|system|>g<|assistant|><|call|>x<|/call|><|tool|>hello<|assistant|><|call|>y<|/call|><|tool|>zz<|assistant|>"
+    ids = tok.encode(text, parse_special=True)
+    mask = tool_span_mask(torch.tensor([ids]), tok.special_id("<|tool|>"), tok.special_id("<|assistant|>"))
+    kept = tok.decode([i for i, m in zip(ids, mask[0].tolist(), strict=True) if m])
+    assert kept == "hellozz"
+
+
+def test_the_loop_flags_observations_for_the_ledger_under_the_tool_policy():
+    from prophet.agent.actions import ToolRegistry, ToolSchema
+    from prophet.agent.loop import AgentConfig, AgentLoop
+
+    tok = ProphetTokenizer(merges=[])
+    model = ProphetModel(_cfg()).eval()
+    seen: list[tuple[int, bool | None]] = []
+    original = model.forward
+
+    def spy(ids, **kw):
+        mask = kw.get("ledger_write_mask")
+        seen.append((ids.shape[1], None if mask is None else bool(mask.all())))
+        return original(ids, **kw)
+
+    model.forward = spy  # type: ignore[method-assign]
+    tools = ToolRegistry()
+    tools.add(ToolSchema("read_file", "Read one file", {"type": "object", "properties": {"path": {"type": "string"}}}))
+    tools.bind("read_file", lambda path: "the content of the file")
+    cfg = AgentConfig(max_steps=1, think_budget=1, action_budget=8, halt_threshold=None, ledger_write="tool")
+    AgentLoop(model, tok, tools, cfg).run("read it")
+    assert seen and all(flag is not None for _, flag in seen)  # every feed carries the policy
+    # Nothing but an observation feed is flagged (a random model rarely produces a call,
+    # so the flagged feed may be absent; what must never happen is a flagged prompt).
+    assert seen[0][1] is False

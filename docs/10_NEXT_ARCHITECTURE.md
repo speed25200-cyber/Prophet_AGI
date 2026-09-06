@@ -231,10 +231,32 @@ lecture par épisode). Mais il la saute pour *tous* les fichiers, vus ou non, et
 faux : l'état borné du cœur delta, à 7M paramètres et 500 pas, porte le fait qu'une lecture
 a eu lieu, pas son contenu, ni le nom du fichier qui permettrait de distinguer « ce
 fichier » d'« un autre ». Le gain de tokens qu'il achèterait est visible (218 contre 226
-par épisode) et inutile tant que la réponse est fausse. C'est le nombre honnête de la
-mémoire de travail entre épisodes à cette échelle : la **mécanique** (masque, état porté,
-décision conditionnée) est prouvée, la **capacité** ne l'est pas, et c'est elle que
-l'échelle et le registre de sortie (absent de la config CPU) doivent apporter.
+par épisode) et inutile tant que la réponse est fausse.
+
+**Le registre de session, branché sur ce chemin.** La couche globale de la config CPU
+devient une couche à registre (`--ledger-window 256`, fenêtre de 256 tokens, 1 024
+emplacements ; le checkpoint de base s'y charge tel quel, porte quasi fermée), la boucle
+porte les registres avec la session (deux défauts de plomberie fermés au passage : la
+session n'emportait pas les registres, et un épisode sans session héritait de ceux du
+précédent par les tampons du module). Même recette, même masque, 500 pas :
+
+| Banc (deux graines) | Succès | Fichiers non vus : succès, lectures | Fichiers vus : succès, lectures |
+|---|---:|---:|---:|
+| état vierge | 89.7 % / 76.9 % | 88.9 % / —, 1.0 | 91.7 % / —, 1.0 |
+| état porté | **10.3 % / 10.3 %** | 11.1 % / —, 0.04 | 8.3 % / —, 0.0 |
+
+Le registre tel que construit — qui écrit **chaque** token évincé — ne change rien à
+l'état porté (10.3 % dans les deux cas), et la courbe le dit pourquoi : 0.50 sur le premier
+bloc de huit épisodes, 0 ensuite. Sur 39 épisodes, ~9 000 tokens évincés entrent dans
+1 024 emplacements, la moyenne courante des écritures noie chaque valeur, et le registre
+dérive hors de la distribution des lignes d'entraînement (au plus ~450 tokens évincés par
+ligne). Ce n'est pas la mémoire qui manque, c'est la **politique d'écriture** : un agent
+n'a pas à retenir ses prompts, seulement ce que les outils lui ont dit. Cette politique
+(`ledger_write="tool"` : seuls les tokens des spans `<|tool|>` sont écrits à l'éviction,
+masque porté par le cache au décodage et dérivé du flux à l'entraînement) est câblée et
+testée ; sa mesure est **en cours**. C'est le nombre honnête de la mémoire de travail
+entre épisodes à cette échelle : la **mécanique** (masque, état porté, décision
+conditionnée, registre porté) est prouvée, la **capacité** ne l'est pas encore.
 
 ## 3. Économie de tokens
 

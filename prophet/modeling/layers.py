@@ -207,12 +207,15 @@ class AttentionCache:
     values: Tensor | None = None
     positions: Tensor | None = None
     """Absolute position of each retained key, shape ``(kv_len,)``."""
+    flags: Tensor | None = None
+    """Per retained key, whether a ledger may write it on eviction (``(kv_len,)`` bool);
+    ``None`` when no write policy was ever given, which means every key."""
     window: int | None = None
     sink_tokens: int = 0
     seen: int = 0
     """Total tokens ever written -- what positions derive from, not the buffer length."""
 
-    def append(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def append(self, k: Tensor, v: Tensor, flags: Tensor | None = None) -> tuple[Tensor, Tensor, Tensor]:
         """Append a chunk and return the *un-evicted* keys, values and positions.
 
         Eviction happens in :meth:`evict`, after attention has been computed: the chunk
@@ -221,12 +224,20 @@ class AttentionCache:
         """
         s = k.shape[2]
         new_pos = torch.arange(self.seen, self.seen + s, device=k.device)
+        had = 0 if self.keys is None else self.keys.shape[2]
         if self.keys is None:
             self.keys, self.values, self.positions = k, v, new_pos
         else:
             self.keys = torch.cat([self.keys, k], dim=2)
             self.values = torch.cat([self.values, v], dim=2)
             self.positions = torch.cat([self.positions, new_pos])
+        if flags is not None or self.flags is not None:
+            # Once a policy exists, a chunk without one is not written (keys that came
+            # before the policy stay writable, as they were).
+            if self.flags is None:
+                self.flags = torch.ones(had, dtype=torch.bool, device=k.device)
+            new_flags = torch.zeros(s, dtype=torch.bool, device=k.device) if flags is None else flags.to(torch.bool)
+            self.flags = torch.cat([self.flags, new_flags])
         self.seen += s
         return self.keys, self.values, self.positions
 
@@ -241,6 +252,17 @@ class AttentionCache:
             return None
         drop = torch.arange(self.sink_tokens, length - self.window, device=self.keys.device)
         return self.keys.index_select(2, drop), self.values.index_select(2, drop)
+
+    def evictable_flags(self) -> Tensor | None:
+        """The write flags of the keys :meth:`evict` is about to drop, aligned with
+        :meth:`evictable`; ``None`` when no policy was given (every key is writable)."""
+        if self.flags is None or self.window is None or self.keys is None:
+            return None
+        limit = self.window + self.sink_tokens
+        length = self.keys.shape[2]
+        if length <= limit:
+            return None
+        return self.flags[self.sink_tokens : length - self.window]
 
     def evict(self) -> None:
         """Trim to the window plus the sinks. A no-op for full attention."""
@@ -260,6 +282,8 @@ class AttentionCache:
         self.keys = self.keys.index_select(2, keep)
         self.values = self.values.index_select(2, keep)
         self.positions = self.positions.index_select(0, keep)
+        if self.flags is not None:
+            self.flags = self.flags.index_select(0, keep)
 
     def n_bytes(self) -> int:
         if self.keys is None:
@@ -499,6 +523,11 @@ class LedgerAttention(CausalSelfAttention):
         )
         self.rope = use_rope
         self.rotary = RotaryEmbedding(self.head_dim, theta=rope_theta) if use_rope else None
+        self.write_mask: Tensor | None = None
+        """``(batch, seq)`` bool set by the model for one forward: which of these tokens
+        the ledger may keep once they leave the window. ``None`` keeps every token --
+        which, over a long session, fills the slots with prompt boilerplate and drifts;
+        a policy that keeps only what tools returned is what an agent needs."""
         from prophet.memory.ledger import LedgerConfig, ProductKeyMemory  # local: no import cycle
 
         kv_dim = n_kv_heads * self.head_dim
@@ -566,7 +595,8 @@ class LedgerAttention(CausalSelfAttention):
             cache.window = self.window
             cache.sink_tokens = self.sink_tokens
             q_pos = torch.arange(cache.seen, cache.seen + s, device=x.device)
-            keys, values, k_pos = cache.append(k, v)
+            flags = None if self.write_mask is None else self.write_mask[0]
+            keys, values, k_pos = cache.append(k, v, flags)
         else:
             keys, values = k, v
             q_pos = torch.arange(s, device=x.device)
@@ -596,7 +626,11 @@ class LedgerAttention(CausalSelfAttention):
             pending = cache.evictable()
             if pending is not None:
                 ek, ev = pending
-                self.ledger.write(self._flat_kv(ek.detach()), self._flat_kv(ev.detach()))
+                flags = cache.evictable_flags()
+                if flags is not None:
+                    ek, ev = ek[:, :, flags], ev[:, :, flags]
+                if ek.shape[2]:
+                    self.ledger.write(self._flat_kv(ek.detach()), self._flat_kv(ev.detach()))
             cache.evict()
         else:
             read = self._blockwise_read(q_kv, k, v)
@@ -613,11 +647,17 @@ class LedgerAttention(CausalSelfAttention):
         k_flat, v_flat = self._flat_kv(k.detach()), self._flat_kv(v.detach())
         reads = []
         previous: tuple[int, int] | None = None
+        mask = self.write_mask
         for start in range(0, s, w):
             end = min(start + w, s)
             if previous is not None:
                 a, e = previous
-                self.ledger.write_state(values, counts, k_flat[:, a:e], v_flat[:, a:e])
+                if mask is None:
+                    self.ledger.write_state(values, counts, k_flat[:, a:e], v_flat[:, a:e])
+                else:
+                    sel = mask[:, a:e].to(torch.bool)
+                    rows = torch.arange(b, device=q_kv.device).unsqueeze(1).expand_as(sel)[sel]
+                    self.ledger.write_state(values, counts, k_flat[:, a:e][sel], v_flat[:, a:e][sel], rows=rows)
             reads.append(self.ledger.read(q_kv[:, start:end], values=values))
             previous = (start, end)
         return torch.cat(reads, dim=1)

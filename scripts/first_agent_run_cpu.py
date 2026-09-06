@@ -178,14 +178,14 @@ def agent_config(cfg: ProphetConfig, *, ledger_window: int | None = None) -> Pro
 
 
 def bench(model, tokenizer, *, n_tasks: int, seed: int, family: str | None = None,
-          carry: bool = False, related_size: int = 0) -> dict:
+          carry: bool = False, related_size: int = 0, ledger_write: str = "all") -> dict:
     """``carry`` starts every episode from the recurrent state the previous one left:
     the session-carry measurement of ``docs/10_NEXT_ARCHITECTURE.md``. ``related_size``
     benches the related lookup sequences instead (runs of that many episodes) and
     reports seen and unseen files apart: tokens, success and how many reads the model
     still made on a file the previous episode read."""
     cfg = AgentConfig(max_steps=4, think_budget=4, action_budget=64, halt_threshold=None,
-                      k_decide=2, tau_done=0.0, tau_act=0.0, tau_ask=0.0)
+                      k_decide=2, tau_done=0.0, tau_act=0.0, tau_ask=0.0, ledger_write=ledger_write)
     tasks = None
     if related_size:
         tasks = task_families.make_related_tasks(max(n_tasks // related_size, 1), size=related_size, seed=seed)
@@ -257,6 +257,9 @@ def main() -> int:
     ap.add_argument("--ledger-window", type=int, default=None,
                     help="turn the global attention layer into a ledger layer with this window: what "
                          "leaves the window is kept in a bounded memory carried with the session")
+    ap.add_argument("--ledger-write", choices=["all", "tool"], default="all",
+                    help="what a ledger layer keeps of what leaves its window: every token, or the "
+                         "tokens of tool observations only (train and bench agree)")
     ap.add_argument("--related", action="store_true",
                     help="train and bench on related lookup sequences (a file read by the previous "
                          "episode is answered without reading it again); rows hold --episodes-per-row "
@@ -289,7 +292,8 @@ def main() -> int:
         if args.bpb:
             report["bpb_before"] = heldout_bpb(work, model, tokenizer, seq_len=min(args.seq_len, 256), max_docs=args.bpb_docs)
             print("bpb before:", report["bpb_before"], flush=True)
-        report["bench_before"] = bench(model, tokenizer, n_tasks=args.bench_before_tasks, seed=7)
+        report["bench_before"] = bench(model, tokenizer, n_tasks=args.bench_before_tasks, seed=7,
+                                       ledger_write=args.ledger_write)
         print("before:", report["bench_before"]["summary"], flush=True)
         sources = sources_from_iterables({"episodes": (1.0 - args.replay_fraction, rows)})
         if args.replay_fraction > 0:
@@ -301,10 +305,11 @@ def main() -> int:
             peak_lr_muon=0.01, peak_lr_adamw=2e-3, warmup_frac=0.05, decay_frac=0.3,
             checkpoint_dir=str(out_dir / "checkpoints"), checkpoint_every=100, log_every=25,
             device="cpu", max_wall_seconds=args.minutes * 60.0, mtp_weight=0.0,
-            segment_by_bos=args.segment_attention,
+            segment_by_bos=args.segment_attention, ledger_write=args.ledger_write,
         )
         report["segment_attention"] = args.segment_attention
         report["ledger_window"] = args.ledger_window
+        report["ledger_write"] = args.ledger_write
         trainer = Trainer(model, loader, tc, model_config=cfg, tokenizer=tokenizer)
         started = time.time()
         history = trainer.train()
@@ -334,18 +339,20 @@ def main() -> int:
                                       (11, False, "bench_after_unseen_seed_related"),
                                       (11, True, "bench_after_unseen_seed_related_carried")):
                 report[name] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=seed, carry=carry,
-                                     related_size=args.episodes_per_row)
+                                     related_size=args.episodes_per_row, ledger_write=args.ledger_write)
                 print(f"{name}:", report[name]["summary"], report[name]["by_seen"], flush=True)
         for family in families:
             key = "" if family is None else f"_{family}"
-            report[f"bench_after{key}"] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=7, family=family)
+            report[f"bench_after{key}"] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=7, family=family,
+                                                ledger_write=args.ledger_write)
             print(f"after{key}:", report[f"bench_after{key}"]["summary"], flush=True)
-            report[f"bench_after_unseen_seed{key}"] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=11, family=family)
+            report[f"bench_after_unseen_seed{key}"] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=11,
+                                                            family=family, ledger_write=args.ledger_write)
             print(f"after (other seed){key}:", report[f"bench_after_unseen_seed{key}"]["summary"], flush=True)
             if args.carry_bench:
                 for seed, name in ((7, "bench_after_carried"), (11, "bench_after_unseen_seed_carried")):
                     report[f"{name}{key}"] = bench(model, tokenizer, n_tasks=args.bench_tasks, seed=seed,
-                                                   family=family, carry=True)
+                                                   family=family, carry=True, ledger_write=args.ledger_write)
                     print(f"{name}{key}:", report[f"{name}{key}"]["summary"], flush=True)
 
     (out_dir / "report.json").write_text(json.dumps(report, indent=2, default=str))

@@ -37,6 +37,7 @@ from prophet.modeling.layers import (
     AttentionCache,
     CausalSelfAttention,
     GatedDeltaNet,
+    LedgerAttention,
     RecurrentState,
     RotaryEmbedding,
     SwiGLU,
@@ -462,6 +463,7 @@ class ProphetModel(nn.Module):
         input_ids: Tensor,
         *,
         segment_ids: Tensor | None = None,
+        ledger_write_mask: Tensor | None = None,
         **kw: Any,
     ) -> ProphetOutput:
         """Run the model (see ``_forward``).
@@ -492,6 +494,16 @@ class ProphetModel(nn.Module):
             segment_ids = segment_ids.to(input_ids.device)
         for layer in self._attention_layers():
             layer.segment_ids = segment_ids
+        # ``ledger_write_mask`` (``(batch, seq)`` bool): which of these tokens the ledger
+        # layers may keep once evicted -- the write policy; ``None`` keeps every token.
+        # Kept on the layers across the checkpoint recompute, like the segments.
+        if ledger_write_mask is not None and tuple(ledger_write_mask.shape) != tuple(input_ids.shape):
+            raise ValueError(
+                f"ledger_write_mask must be shaped {tuple(input_ids.shape)}, got {tuple(ledger_write_mask.shape)}"
+            )
+        for layer in self._attention_layers():
+            if isinstance(layer, LedgerAttention):
+                layer.write_mask = None if ledger_write_mask is None else ledger_write_mask.to(input_ids.device)
         return self._forward(input_ids, **kw)
 
     def _attention_layers(self) -> list[CausalSelfAttention]:

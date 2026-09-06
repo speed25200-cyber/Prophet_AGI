@@ -34,6 +34,16 @@ TOOL_ID = N_BYTES + SPECIAL_TOKENS.index("<|tool|>")
 __all__ = ["TrainConfig", "Trainer", "TrainMetrics"]
 
 
+def tool_span_mask(batch: Tensor, tool_id: int, assistant_id: int) -> Tensor:
+    """``(b, s)`` bool: the tokens of every tool observation -- strictly after a
+    ``<|tool|>`` and before the next ``<|assistant|>`` -- which is what a session ledger
+    keeps under the ``"tool"`` write policy (``TrainConfig.ledger_write``)."""
+    idx = torch.arange(batch.shape[1], device=batch.device).unsqueeze(0).expand_as(batch)
+    last_open = torch.where(batch == tool_id, idx, torch.full_like(idx, -1)).cummax(1).values
+    last_close = torch.where(batch == assistant_id, idx, torch.full_like(idx, -1)).cummax(1).values
+    return (last_open > last_close) & (batch != tool_id)
+
+
 def segment_ids_from_bos(batch: Tensor, bos_id: int) -> Tensor:
     """``(b, s)`` segment labels: a new segment starts at every ``<|bos|>`` (tokens before
     the first one, if any, are segment 0 with it)."""
@@ -65,6 +75,10 @@ class TrainConfig:
     max_consecutive_nonfinite: int = 20
     """A non-finite loss or gradient norm skips the optimiser step (the batch is still
     consumed, so the stream stays deterministic); this many in a row aborts the run."""
+    ledger_write: str = "all"
+    """What a ledger layer keeps of what leaves its window: ``"all"`` (every token) or
+    ``"tool"`` (the tokens of tool observations only, ``tool_span_mask``). Needs the
+    tokenizer for the control ids."""
     segment_by_bos: bool = False
     """Mask attention at every ``<|bos|>`` of a row (``ProphetModel.forward(segment_ids=)``):
     a row of several episodes is then seen exactly as the loop sees a carried session --
@@ -144,6 +158,10 @@ class Trainer:
         self._action = bool(model_config is not None and model_config.heads.action_head)
         if cfg.segment_by_bos and tokenizer is None:
             raise ValueError("segment_by_bos needs the tokenizer: Trainer(..., tokenizer=...)")
+        if cfg.ledger_write not in ("all", "tool"):
+            raise ValueError(f"ledger_write must be 'all' or 'tool', got {cfg.ledger_write!r}")
+        if cfg.ledger_write == "tool" and tokenizer is None:
+            raise ValueError("ledger_write='tool' needs the tokenizer: Trainer(..., tokenizer=...)")
         if self._action and tokenizer is None:
             raise ValueError(
                 "heads.action_head derives its targets from the token stream and needs "
@@ -226,7 +244,7 @@ class Trainer:
 
     def _apply_lr(self) -> float:
         multiplier = self.schedule.lr_at(self.step)
-        for opt, peak in zip(self.optimizers, self._peak_lrs):
+        for opt, peak in zip(self.optimizers, self._peak_lrs, strict=False):
             for group in opt.param_groups:
                 group["lr"] = peak * multiplier
         return self._peak_lrs[0] * multiplier if self._peak_lrs else 0.0
@@ -250,7 +268,7 @@ class Trainer:
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
         self.model.load_state_dict(state["model"])
-        for opt, opt_state in zip(self.optimizers, state["optimizers"]):
+        for opt, opt_state in zip(self.optimizers, state["optimizers"], strict=False):
             opt.load_state_dict(opt_state)
         self.step = int(state["step"])
         self.tokens_seen = int(state["tokens_seen"])
@@ -334,6 +352,10 @@ class Trainer:
                     forward_kw.update(action_targets.forward_kwargs())
                 if self.cfg.segment_by_bos:
                     forward_kw["segment_ids"] = segment_ids_from_bos(batch, self.tokenizer.bos_id)
+                if self.cfg.ledger_write == "tool":
+                    forward_kw["ledger_write_mask"] = tool_span_mask(
+                        batch, self.tokenizer.special_id("<|tool|>"), self.tokenizer.special_id("<|assistant|>")
+                    )
                 with torch.autocast(
                     device_type="cuda", dtype=self._autocast_dtype or torch.bfloat16,
                     enabled=use_autocast,
