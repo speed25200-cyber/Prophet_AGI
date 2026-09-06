@@ -203,9 +203,29 @@ séquentielles modulo 10, monoïde non résoluble, donc pas de raccourci logarit
 apprendre). Premier lancement à 6 opérations, 150k paramètres, 3 000 pas **[CPU]** : k=1
 31.2 %, k=2 30.7 %, k=4 31.2 %, chaîne de pensée 28.9 % — hasard 10 %. **Insensible** :
 la chaîne, qui n'a qu'une opération par token à faire, n'apprend pas non plus, donc rien
-n'est séparé (même QK-norm à `head_dim` 16 que le needle). Balayage 1 → 6 opérations sans
-QK-norm **en cours** ; le nombre qui compte est l'opération la plus longue où k=4 égale
-la chaîne avec un seul token émis.
+n'est séparé (même QK-norm à `head_dim` 16 que le needle). Balayage sans QK-norm, 3 000
+pas par bras, 1 024 expressions d'évaluation **[CPU, 150k]** :
+
+| Opérations | k=1, réponse directe | k=2 | k=4 | k=1, chaîne (un token par opération) |
+|---:|---:|---:|---:|---:|
+| 1 | **100 %** | 100 % | 100 % | 100 % |
+| 2 | 30.7 % | 30.9 % | 30.7 % | **45.3 %** |
+| 3 | 32.1 % | 32.0 % | 32.5 % | 41.7 % |
+| 4 | 29.1 % | 29.4 % | 30.6 % | 40.1 % |
+| 6 | 30.1 % | 32.0 % | 31.4 % | 34.3 % |
+
+Une opération s'apprend à 100 % dans tous les bras : le contrôle passe. Dès la deuxième,
+la réponse directe tombe à ~31 % **quelle que soit la profondeur** — k=1, 2 et 4 finissent
+à la même perte à la troisième décimale (1.351) : quatre passes du cœur n'apprennent
+pas une composition de plus qu'une seule, à ce budget. La chaîne émise achète 10 à 15
+points, pas la solution : sa fiabilité par pas est d'environ 57 % (chaîne exacte 19 % à
+trois opérations), là où l'opération isolée est à 100 % — c'est l'entraînement qui
+manque, pas la mécanique. Le pari « la profondeur latente remplace les tokens de
+chaîne » est donc, à 150k paramètres et 3 000 pas, **perdu des deux côtés à égalité** :
+ni l'une ni l'autre ne compose. Run à 12 000 pas (k=1, k=4, chaîne ; 2 et 3 opérations)
+**en cours** pour séparer budget et capacité ; si la chaîne monte et k=4 non, le verdict
+R04 (la boucle ne gagne qu'à l'échelle) tient sur un test de raisonnement comme sur les
+bits/octet.
 
 **(b) À l'inférence.** Un agent qui *copie* un argument le paie un pas au lieu de douze,
 et un agent qui appelle un outil au lieu de raisonner en tokens paie l'appel. Le benchmark
