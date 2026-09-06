@@ -245,11 +245,26 @@ pas une composition de plus qu'une seule, à ce budget. La chaîne émise achèt
 points, pas la solution : sa fiabilité par pas est d'environ 57 % (chaîne exacte 19 % à
 trois opérations), là où l'opération isolée est à 100 % — c'est l'entraînement qui
 manque, pas la mécanique. Le pari « la profondeur latente remplace les tokens de
-chaîne » est donc, à 150k paramètres et 3 000 pas, **perdu des deux côtés à égalité** :
-ni l'une ni l'autre ne compose. Run à 12 000 pas (k=1, k=4, chaîne ; 2 et 3 opérations)
-**en cours** pour séparer budget et capacité ; si la chaîne monte et k=4 non, le verdict
-R04 (la boucle ne gagne qu'à l'échelle) tient sur un test de raisonnement comme sur les
-bits/octet.
+chaîne » est donc, à 150k paramètres et 3 000 pas, perdu des deux côtés à égalité. À
+12 000 pas, le budget et la capacité se séparent :
+
+| Opérations (12 000 pas) | k=1 direct | k=4 direct | k=1, chaîne |
+|---:|---:|---:|---:|
+| 2 | 29.6 % | 29.3 % | **100 %** (chaîne exacte 100 %) |
+| 3 | 31.3 % | 30.9 % | 42.1 % (chaîne exacte 20 %) |
+
+Le verdict est net et va **contre** le pari, à cette échelle : quatre fois plus de pas ne
+déplacent pas d'un point la réponse directe, à k=1 comme à k=4 (perte 1.348 dans les deux
+cas), tandis que la chaîne émise apprend la composition de deux opérations **à 100 %**
+avec deux tokens. Deux tokens de chaîne achètent ce que quatre passes latentes du même
+cœur n'apprennent pas du tout. À trois opérations la chaîne stagne à son tour (42 %, ~58 %
+par pas, inchangé entre 3 000 et 12 000 pas) : un plafond d'apprentissage de ce modèle de
+150k paramètres sur la localisation, pas une propriété de la chaîne, et hors sujet ici.
+Ce que ce nombre dit du projet : le pari central de Prophet — la profondeur latente
+remplace les tokens de raisonnement — n'a **aucun** support à petite échelle, ni en
+bits/octet (§3a) ni en composition ; il ne se joue qu'au-dessus de la porte R04 (≥ 350M),
+et tout ce dépôt peut faire d'ici là est de garder la boucle réversible (elle l'est :
+`train_loop_min = train_loop_max = 1`, `halting = "none"`) et le test prêt.
 
 **(b) À l'inférence.** Un agent qui *copie* un argument le paie un pas au lieu de douze,
 et un agent qui appelle un outil au lieu de raisonner en tokens paie l'appel. Le benchmark
