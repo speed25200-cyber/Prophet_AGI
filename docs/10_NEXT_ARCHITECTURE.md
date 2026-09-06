@@ -164,10 +164,10 @@ sans le relire — moins de tokens à succès égal si l'état retient ce qu'il 
 fausse sinon. Entraîné trois épisodes par ligne, **concaténés** (sans masque), 500 pas,
 39 tâches inédites **[CPU, 7M]** :
 
-| Banc | Succès | Fichiers non vus : succès, lectures/épisode | Fichiers vus : succès, lectures/épisode |
+| Banc (deux graines) | Succès | Fichiers non vus : succès, lectures/épisode | Fichiers vus : succès, lectures/épisode |
 |---|---:|---:|---:|
-| état vierge | 97.4 % | 100 %, 1.0 | 91.7 %, 0.92 |
-| état porté | **5.1 %** (45 % de malformés) | 7.4 %, 1.0 | 0 %, 1.0 |
+| état vierge | 97.4 % / 100 % | 100 % / 100 %, 1.0 | 91.7 % / 100 %, 0.92 / 1.0 |
+| état porté | **5.1 % / 2.6 %** (45 % / 39 % de malformés) | 7.4 % / 3.4 %, 1.0 | 0 % / 0 %, 1.0 |
 
 À l'état vierge, le modèle **relit** un fichier « vu » (0.92 lecture par épisode, et la
 seule fois où il ne relit pas, il se trompe) : la décision de ne pas relire est bien
