@@ -122,4 +122,41 @@ The learning rates above are pilot starting values, not tuned results. Repeat th
 same settings for the unshared arm and the other seeds. Use fixed held-out
 document-level scores and record all failed or stopped runs. This early-learning
 comparison alone cannot establish behavior after large-scale pretraining or the
-project's persistent-memory and agent capabilities.
+project’s persistent-memory and agent capabilities.
+
+## Full-document evaluation and resumable R04 sessions
+
+The step-64 smoke checkpoint was additionally scored on **all 376 held-out
+ documents**, with a context of 256 and one-token overlap between windows. Each
+ target is scored exactly once, excluding each document's first token; EOS has zero
+ payload bytes. Across 393,040 scored tokens and 1,750,592 payload bytes, CE falls
+ from **10.408930 to 8.657214 nats/token** and BPB from **3.371572 to 2.804171**.
+ These are whole-corpus measurements of the same 2.47M-parameter pipeline smoke,
+ not results for either R04 arm. The [full report](experiments/2026-09-19-pilot-full-validation.json)
+ retains per-document hashes and scores. Window positions reset; the evaluator
+ preserves model mode and training RNG. It does not measure cross-window memory.
+
+`run_r04_pilot.py` now defines the reproducible paired experiment and supersedes
+ the manual training command above. It verifies the audited shard checksums and
+ vocabulary, freezes the source revision and numerical environment, rejects
+ incompatible resumes, and evaluates all held-out documents before training and
+ after each bounded session. Its default session covers 128 steps of the fixed
+ 4,096-step schedule. Learning rates remain unvalidated starting values.
+
+```bash
+TRITON_F32_DEFAULT=tf32x3 python scripts/run_r04_pilot.py \
+  --variant loop --seed 0 --out /content/drive/MyDrive/Prophet_AGI/R04/loop-seed0
+```
+
+Repeat the identical command to resume; use `plain` and seeds 0, 1, 2 for the other
+ arms. A normal stop publishes a checksum-protected checkpoint. An exception during
+ a batch leaves the previous checkpoint intact. Training history without a surviving
+ checkpoint is rejected. Source changes require a separately recorded experiment.
+ Trainer checkpoint format 3 freezes learning rates, schedule and objective settings;
+ older checkpoint formats warn that their numerical settings cannot be verified.
+
+Tokenizer JSON file bytes can differ between Windows and Linux. The runner checks
+ the locally recorded file hash, the train-only source fingerprint, and a canonical
+ UTF-8 JSON vocabulary hash (`sort_keys=True`, `ensure_ascii=True`):
+ `7d8d36adb2b2bf9dac7a6060294641ea16c59ce20506e2294c556c7abd99537b`.
+ This keeps cross-platform serialization differences from changing the experiment.
