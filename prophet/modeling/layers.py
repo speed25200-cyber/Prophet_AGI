@@ -801,7 +801,10 @@ class GatedDeltaNet(nn.Module):
 
         # L2-normalised keys keep the delta-rule update a well-conditioned projection;
         # without this the removal term can amplify rather than erase.
-        k = F.normalize(k, dim=-1, eps=1e-6)
+        # Autocast promotes normalize to fp32, but FLA requires q/k/v to share
+        # their dtype. Compute the norm accurately, then round keys once for all
+        # paths so the reference and fused kernels receive identical inputs.
+        k = F.normalize(k.float(), dim=-1, eps=1e-6).to(q.dtype)
         a_logits = self.a_proj(x).float()
         alpha = torch.sigmoid(a_logits)  # (b, s, h)
         # The chunked and fused paths work in log space. log(sigmoid(a)) is taken as
@@ -821,14 +824,18 @@ class GatedDeltaNet(nn.Module):
             # ``_scan`` (output *and* final state) is required before it carries a run.
             init = None if state is None or state.state is None else state.state.to(device=q.device).transpose(-1, -2).contiguous()
             out, fla_state = _fla_gated_delta(
-                q=q, k=k, v=v, g=log_alpha.to(q.dtype), beta=beta.to(q.dtype), scale=1.0,
+                q=q, k=k, v=v, g=log_alpha, beta=beta, scale=1.0,
                 initial_state=init, output_final_state=state is not None,
             )
             new_state = None if fla_state is None else fla_state.transpose(-1, -2).contiguous()
-        elif self.chunk_size is not None and s > 1:
-            out, new_state = self._chunk_scan(q, k, v, log_alpha, beta, state, self.chunk_size)
         else:
-            out, new_state = self._scan(q, k, v, alpha, beta, state)
+            # .float() alone does not prevent autocast from rounding matmuls
+            # back to bf16. The reference recurrence must accumulate in fp32.
+            with torch.autocast(device_type=x.device.type, enabled=False):
+                if self.chunk_size is not None and s > 1:
+                    out, new_state = self._chunk_scan(q, k, v, log_alpha, beta, state, self.chunk_size)
+                else:
+                    out, new_state = self._scan(q, k, v, alpha, beta, state)
 
         if state is not None:
             state.state = new_state
