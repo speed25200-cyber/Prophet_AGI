@@ -44,8 +44,68 @@ the earlier checkpoints. This also follows Colab's advice to reduce mounted-Driv
 I/O; the exact cause of the transient Drive stalls was not established.
 [Colab FAQ](https://research.google.com/colaboratory/faq.html#drive-timeout).
 
-The continuation toward 1,024 is in progress; no result at that boundary is
-claimed by this report yet.
+## Shared model at step 1,024
+
+The local continuation from 576 to 1,024 completed and evaluated all 376 held-out
+documents: **16,777,216 cumulative training tokens**, **4.708506826 nats/token**,
+**1.525139450 bits/byte**. The checkpoint audit inspected 313 model/optimizer
+tensors: all finite, zero skipped non-finite steps. Target counts remain 393,040
+tokens and 1,750,592 bytes.
+
+The published checkpoint is slot 1, 3,233,913,291 bytes, SHA256
+`920f8a3338b33de0e5835756b8ec0f94c34e2af18cee9ac8edbc97835534e726`.
+The evidence ZIP was downloaded and verified locally: 162,395 bytes, SHA256
+`60dfd5abca15928cc0066f3553eaaec33b69809fa5f375a366554f20b282a91b`.
+All document sums, target identities, and 64 training log rows were independently
+checked. [Validation](experiments/2026-09-19-r04-continuation/loop-seed0/evaluation-step-001024.json),
+[checkpoint audit](experiments/2026-09-19-r04-continuation/loop-seed0/checkpoint-audit-step-001024.json).
+
+The unshared seed-0 model is continuing from step 128 toward the same step-1,024
+boundary. There is no matched comparison at 1,024 yet.
+
+## Inference depth sensitivity on the same weights
+
+`scripts/eval_r04_depth.py`, from revision
+`04b744b195a54a28026021fb63fb25bec19ee501`, loaded the exact checkpoint above while
+retaining the frozen training implementation and runtime. Four complete evaluations
+used the same documents and targets. The first, at the trained depth of four loops,
+reproduced the saved validation CE exactly.
+
+| Inference loops | Nats/token | Bits/byte | BPB change against four loops |
+|---:|---:|---:|---:|
+| 1 | 5.632993405 | 1.824591273 | +19.63% |
+| 2 | 4.950292106 | 1.603456480 | +5.14% |
+| 4, trained depth | 4.708506826 | 1.525139450 | reference |
+| 8 | 4.939149559 | 1.599847281 | +4.90% |
+
+**Eight inference loops hurt language loss at this checkpoint.** These fixed-k=4
+training results do not establish useful extra inference computation, nor do they
+test variable-depth training or reasoning accuracy. No depth-generalization or
+architecture-adoption claim follows. The distinction from the variable-depth
+training recipe in Huginn is documented in the [source audit](15_R04_SOURCE_AUDIT.md).
+
+Recorded evaluation times were 27.64, 9.86, 14.94 and 45.38 seconds in execution
+order k=4,1,2,8. They include I/O and possible compilation and are not controlled
+latency benchmarks. Peak allocated GPU memory was 5.21–5.27 GiB for the standalone
+model and evaluation workspace, excluding training optimizer and gradients.
+[Full depth results](experiments/2026-09-19-r04-continuation/loop-seed0/depth-step-001024.json).
+
+## Snapshot workflow
+
+The shared step-1,024 snapshot is stored at
+`MyDrive/Prophet_AGI/R04/snapshots/step-001024-seed0/loop-seed0`.
+Its filesystem copy passed the checksum and full checkpoint audit. Drive was
+confirmed mounted before `flush_and_unmount(timeout_ms=300000)`, which completed
+successfully. After remounting, the checkpoint was read and audited again; the
+entire audit matched the local source. The earlier Drive run was preserved.
+The unshared continuation uses local files throughout these operations.
+
+The revised [notebook](../notebooks/r04_pilot.ipynb) follows this sequence:
+explicit resume source, audit and stage into local storage, local training and
+monitoring, a new verified Drive snapshot, remote flush, then a separate VM-release
+cell. An interrupted restore is left under `.restoring` and cannot become the
+working run before its audit succeeds. The analysis helpers are independently
+pinned to `a08a15fb493beabb9969c405f01380b28ca185ec`; training stays at `e5720d0`.
 
 `scripts/snapshot_r04.py` copies only the checkpoint referenced by the completed
 validation into a fresh directory, audits the destination independently, then

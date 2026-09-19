@@ -78,7 +78,8 @@ changes saved.
 ## Evidence and reproduction
 
 The [extended continuation report](17_R04_CONTINUATION.md) records the later
-step-576 checkpoint, full validation and Drive recovery.
+step-576 and step-1,024 shared checkpoints, full validation, inference depth
+sensitivity, and Drive recovery.
 
 The later [retrospective benchmark overlap screen](16_PILOT_BENCHMARK_OVERLAP.md)
 records nine training documents with short lexical overlaps and incomplete
