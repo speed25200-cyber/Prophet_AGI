@@ -16,6 +16,7 @@ Design constraints that shape every module here:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import torch
@@ -36,6 +37,12 @@ __all__ = [
     "build_mixer",
     "HAS_FLA",
 ]
+
+# Triton's default FP32 dot uses TF32 on Ampere, independently of PyTorch's
+# matmul policy. The recurrent state and its gate gradients need FP32 accuracy.
+# Set before FLA import/compilation; an explicit operator choice is preserved,
+# but must pass the GPU gate before training.
+os.environ.setdefault("TRITON_F32_DEFAULT", "ieee")
 
 try:  # pragma: no cover - availability depends on the environment
     from fla.ops.gated_delta_rule import chunk_gated_delta_rule as _fla_gated_delta
@@ -819,14 +826,15 @@ class GatedDeltaNet(nn.Module):
             # because getting it wrong transposes the state silently: inputs are
             # (batch, seq, heads, dim); its state is (batch, heads, K, V) while the
             # reference scan keeps (batch, heads, V, K). ``scale=1.0`` because the scan
-            # applies no query scaling. This path has not been executed in this
-            # repository -- no GPU, no ``fla`` -- and a GPU equivalence test against
-            # ``_scan`` (output *and* final state) is required before it carries a run.
+            # applies no query scaling. Keep recurrent arithmetic in fp32, just as
+            # in the reference: bf16 WY intermediates corrupted small gate gradients
+            # on the A100 even when the forward output looked close.
             init = None if state is None or state.state is None else state.state.to(device=q.device).transpose(-1, -2).contiguous()
             out, fla_state = _fla_gated_delta(
-                q=q, k=k, v=v, g=log_alpha, beta=beta, scale=1.0,
+                q=q.float(), k=k.float(), v=v.float(), g=log_alpha, beta=beta, scale=1.0,
                 initial_state=init, output_final_state=state is not None,
             )
+            out = out.to(q.dtype)
             new_state = None if fla_state is None else fla_state.transpose(-1, -2).contiguous()
         else:
             # .float() alone does not prevent autocast from rounding matmuls
