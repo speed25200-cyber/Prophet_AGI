@@ -194,6 +194,22 @@ diagnostic. Auxiliary heads are disabled in recovery and excluded from that equa
 claim. [Attention audit](experiments/2026-09-19-qwen-attention-conversion.json),
 [pair audit](experiments/2026-09-19-qwen-recovery-initialization-pair.json).
 
+`scripts/eval_qwen_recovery.py` now scores the unchanged donor and either audited
+initialization over the complete prepared development split. It shares the exact
+tokenizer, document/window policy and CE/BPB implementation with the recovery
+runner. At the planned sequence length of 512, every target after the first token
+is scored exactly once, including EOS with zero payload bytes. The source weights,
+tokenizer, initialization and development split must match their audits. Reports
+record individual document sums, runtime precision and artifact hashes. The CLI is
+tested against independent unpadded, window-by-window losses from a real miniature
+Qwen donor and Prophet initialization, including Unicode and empty documents.
+
+Full development evaluation of the actual donor has started locally on CPU; no
+completed score is claimed yet. The matching attention and GDN initializations
+will follow separately. These reports must use the same sequence length and
+precision for a paired comparison; the previous four-prefix numbers are not the
+baseline for a complete development-set recovery claim.
+
 Before budgeted recovery, measure actual A100 forward/backward memory and kernel
 agreement, and freeze equal-token
 CE/KL comparisons. The command requires explicit learning rates and a fixed total
@@ -271,6 +287,11 @@ python scripts/prepare_recovery_data.py --corpus data/fineweb-pilot-v1 \
   --smoke docs/experiments/2026-09-19-qwen-conversion-smoke.json \
   --out /tmp/qwen-recovery-data
 python scripts/recover_qwen.py --help
+python scripts/eval_qwen_recovery.py --source data/donor-qwen3-0.6b/source \
+  --validation data/qwen-recovery-v1/validation.jsonl \
+  --data-audit docs/experiments/2026-09-19-qwen-recovery-data.json \
+  --arm donor --device cpu --seq-len 512 --batch-size 1 --out /tmp/qwen-development-donor.json
+# For a converted arm, use --arm initialization --initialization <weights.pt> --audit <conversion.json>.
 python scripts/rehearse_qwen_conversion.py --source data/donor-qwen3-0.6b/source \
   --core-mixer full_attn --out /tmp/qwen-attention.pt --report /tmp/qwen-attention.json
 python scripts/audit_recovery_pair.py --hybrid /tmp/qwen-initialization.pt \

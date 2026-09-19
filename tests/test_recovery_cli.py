@@ -100,3 +100,79 @@ def test_recovery_config_freezes_depth_without_changing_initial_config():
     assert config.recurrent.train_loop_min == config.recurrent.train_loop_max == 3
     assert config.recurrent.default_loop_k == config.recurrent.truncated_backprop_steps == 3
     assert original == tiny_model_config().to_dict()
+
+
+@pytest.mark.parametrize("arm", ["donor", "initialization"])
+def test_full_development_evaluation_matches_unpadded_manual_windows(
+    recovery_fixture, tmp_path, monkeypatch, arm
+):
+    import math
+
+    from scripts import eval_qwen_recovery
+
+    source = tmp_path / "source"
+    validation = tmp_path / "validation.jsonl"
+    texts = ["é🦊 abc def", "hello", "", "many windows " * 3]
+    validation.write_text("\n".join(json.dumps({"text": text}) for text in texts), encoding="utf-8")
+    data_audit = tmp_path / "data-audit.json"
+    data_audit.write_text(json.dumps({"complete": True, "splits": {"validation": {
+        "sha256": recover_qwen.digest(validation), "retained_documents": len(texts)}}}))
+    out = tmp_path / "evaluation.json"
+    args = ["eval_qwen_recovery.py", "--source", str(source), "--validation", str(validation),
+            "--data-audit", str(data_audit), "--out", str(out), "--arm", arm,
+            "--device", "cpu", "--seq-len", "8", "--batch-size", "3", "--loop-k", "2"]
+    if arm == "initialization":
+        args += ["--initialization", str(tmp_path / "initial.pt"), "--audit", str(tmp_path / "audit.json")]
+    monkeypatch.setattr(sys, "argv", args)
+    eval_qwen_recovery.main()
+    report = json.loads(out.read_bytes())
+    tokenizer = recover_qwen.DonorByteTokenizer(source / "tokenizer.json")
+    if arm == "donor":
+        from transformers import AutoModelForCausalLM
+        model = AutoModelForCausalLM.from_pretrained(source, dtype=torch.float32, attn_implementation="sdpa")
+        extra = {"use_cache": False}
+    else:
+        payload = torch.load(tmp_path / "initial.pt", weights_only=True)
+        model = ProphetModel(recover_qwen.recovery_config(payload["config"], 2, 8))
+        model.load_state_dict(payload["model"])
+        extra = {"loop_k": 2, "return_mtp": False}
+    model.eval()
+    expected_nats, expected_tokens, expected_bytes = 0.0, 0, 0
+    with torch.no_grad():
+        for text, measured in zip(texts, report["evaluation"]["documents"], strict=True):
+            ids = tokenizer.encode(text, add_eos=True)
+            doc_nats = 0.0
+            for start in range(0, len(ids) - 1, 7):
+                window = torch.tensor([ids[start:start + 8]])
+                logits = model(window, **extra).logits
+                doc_nats += torch.nn.functional.cross_entropy(
+                    logits[0, :-1], window[0, 1:], reduction="none").double().sum().item()
+            assert measured["total_nats"] == pytest.approx(doc_nats, abs=1e-5)
+            expected_nats += doc_nats
+            expected_tokens += len(ids) - 1
+            expected_bytes += tokenizer.byte_length(ids[1:])
+    assert report["complete"] and report["trained_steps"] == 0
+    assert report["evaluation"]["scored_tokens"] == expected_tokens
+    assert report["evaluation"]["scored_bytes"] == expected_bytes
+    assert report["evaluation"]["bits_per_byte"] == pytest.approx(expected_nats / expected_bytes / math.log(2))
+    assert (report["initialization_sha256"] is None) == (arm == "donor")
+    with pytest.raises(FileExistsError, match="preserve"):
+        eval_qwen_recovery.main()
+    out.unlink()
+    validation.write_text('{"text":"changed"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="validation differs"):
+        eval_qwen_recovery.main()
+
+
+def test_recovery_artifact_preflight_rejects_tampering(recovery_fixture, tmp_path):
+    source = tmp_path / "source"
+    with (source / "tokenizer.json").open("a") as stream:
+        stream.write(" ")
+    with pytest.raises(ValueError, match="source differs"):
+        recover_qwen.load_source(source)
+    audit = tmp_path / "audit.json"
+    record = json.loads(audit.read_bytes())
+    record["config"]["d_model"] = 123
+    audit.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="metadata mismatch"):
+        recover_qwen.load_initialization(tmp_path / "initial.pt", audit)

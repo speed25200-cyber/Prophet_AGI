@@ -37,6 +37,38 @@ from scripts.verify_donors import compare  # noqa: E402
 TOKENIZER_SHA256 = "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
 
 
+def load_source(source):
+    """Verify the pinned local donor and construct the shared text/byte policy."""
+    if (digest(source / "model.safetensors") != WEIGHTS_SHA256
+            or digest(source / "tokenizer.json") != TOKENIZER_SHA256):
+        raise ValueError("source differs from the audited pinned artifacts")
+    source_config = json.loads((source / "config.json").read_bytes())
+    differences = compare(get_donor("qwen3-0.6b"), source_config)
+    if differences:
+        raise ValueError(f"donor configuration differs from the audited source: {differences}")
+    tokenizer = DonorByteTokenizer(source / "tokenizer.json", eos_id=151645,
+                                   pad_id=151643, vocab_size=151936)
+    return source_config, tokenizer
+
+
+def load_initialization(initialization, audit_path):
+    """Restricted-load exactly the artifact recorded by a successful conversion audit."""
+    audit = json.loads(audit_path.read_bytes())
+    initialization_sha = digest(initialization)
+    if (not audit.get("complete") or not audit.get("all_parameters_finite")
+            or not audit.get("serialization_exact")
+            or initialization_sha != audit["checkpoint_sha256"]
+            or audit["donor_revision"] != REVISION
+            or audit["donor_weights_sha256"] != WEIGHTS_SHA256):
+        raise ValueError("initialization differs from the audited pinned artifacts")
+    payload = torch.load(initialization, map_location="cpu", weights_only=True, mmap=True)
+    if (json.loads(json.dumps(payload["config"])) != audit["config"]
+            or payload["donor_revision"] != REVISION
+            or payload["donor_weights_sha256"] != WEIGHTS_SHA256):
+        raise ValueError("initialization metadata mismatch")
+    return payload, initialization_sha
+
+
 def recovery_config(initial_config, loop_k, seq_len):
     cfg = ProphetConfig.from_dict(initial_config)
     if (cfg.heads.action_head or cfg.recurrent.token_depth or cfg.recurrent.halting != "none"):
@@ -105,29 +137,11 @@ def main():
     import transformers
     from transformers import AutoModelForCausalLM
 
-    audit = json.loads(args.audit.read_bytes())
-    initialization_sha = digest(args.initialization)
-    if (not audit.get("complete") or not audit.get("all_parameters_finite")
-            or not audit.get("serialization_exact")
-            or initialization_sha != audit["checkpoint_sha256"]
-            or audit["donor_revision"] != REVISION
-            or audit["donor_weights_sha256"] != WEIGHTS_SHA256
-            or digest(args.source / "model.safetensors") != WEIGHTS_SHA256
-            or digest(args.source / "tokenizer.json") != TOKENIZER_SHA256):
-        raise ValueError("source or initialization differs from the audited pinned artifacts")
-    payload = torch.load(args.initialization, map_location="cpu", weights_only=True, mmap=True)
-    if (json.loads(json.dumps(payload["config"])) != audit["config"] or payload["donor_revision"] != REVISION
-            or payload["donor_weights_sha256"] != WEIGHTS_SHA256):
-        raise ValueError("initialization metadata mismatch")
+    source_config, tokenizer = load_source(args.source)
+    payload, initialization_sha = load_initialization(args.initialization, args.audit)
     cfg = recovery_config(payload["config"], args.loop_k, args.seq_len)
-    tokenizer = DonorByteTokenizer(args.source / "tokenizer.json", eos_id=151645,
-                                   pad_id=151643, vocab_size=151936)
     if cfg.frontend.vocab_size != tokenizer.vocab_size:
         raise ValueError("student vocabulary differs from the pinned donor")
-    source_config = json.loads((args.source / "config.json").read_bytes())
-    differences = compare(get_donor("qwen3-0.6b"), source_config)
-    if differences:
-        raise ValueError(f"donor configuration differs from the audited source: {differences}")
     device = torch.device(args.device)
     if device.type == "cuda" and not HAS_FLA:
         raise RuntimeError("CUDA recovery requires the pinned FLA kernel and a separate GPU gate")
