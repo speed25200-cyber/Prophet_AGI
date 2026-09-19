@@ -133,13 +133,17 @@ model and evaluation workspace, excluding training optimizer and gradients.
 
 ## Snapshot workflow
 
-The shared step-1,024 snapshot is stored at
-`MyDrive/Prophet_AGI/R04/snapshots/step-001024-seed0/loop-seed0`.
-Its filesystem copy passed the checksum and full checkpoint audit. Drive was
-confirmed mounted before `flush_and_unmount(timeout_ms=300000)`, which completed
-successfully. After remounting, the checkpoint was read and audited again; the
-entire audit matched the local source. The earlier Drive run was preserved.
-The unshared continuation uses local files throughout these operations.
+Both step-1,024 snapshots are stored below
+`MyDrive/Prophet_AGI/R04/snapshots/step-001024-seed0`, in `loop-seed0` and
+`plain-seed0`. Each filesystem copy passed its checksum and full checkpoint audit.
+Drive was confirmed mounted before each successful flush. After remounting, both
+checkpoints were read and audited again: the entire audits matched their local
+sources, including all 313 shared and 865 unshared model/optimizer tensors.
+The earlier Drive runs were preserved. The current shared continuation uses local
+files throughout these operations.
+[Persistence evidence](experiments/2026-09-19-r04-step1024-persistence.json),
+downloaded with SHA256
+`af529d2545186fb43ef639a9685aec02b6a9e0eb8d58f4a5fcc86ec5b07758c5`.
 
 The revised [notebook](../notebooks/r04_pilot.ipynb) follows this sequence:
 explicit resume source, audit and stage into local storage, local training and
