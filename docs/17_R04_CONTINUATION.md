@@ -99,10 +99,30 @@ python scripts/summarize_r04.py \
   --step 1024 --seed 0 --out /tmp/r04-step1024-summary.json
 ```
 
-The shared model has resumed toward 2,048 in a fresh local working directory
-containing only the exact evaluated step-1,024 checkpoint manifest entry. The
-previous working directory and Drive snapshot remain available. No result at
-2,048 is claimed yet.
+## Shared model at step 2,048
+
+The shared continuation completed with exit code 0 at **33,554,432 training tokens**.
+Full validation on the same 376 documents gives **4.357405080 nats/token** and
+**1.411413562 bits/byte**. Counts and document identities match the earlier evaluation:
+393,040 scored targets and 1,750,592 payload bytes. Its unchanged numerical training
+contract and all 313 model/optimizer tensors were audited, with zero non-finite
+steps skipped.
+
+The exact evaluated checkpoint is slot 0, 3,233,910,859 bytes, SHA256
+`90239173054b59a0d06532ca5ff80c1ec5414b6d838d8c8c3c09b731c096cdd1`.
+The downloaded evidence ZIP contains 62,621 bytes, SHA256
+`9d85c442f6848200013af709ffe09d11e16a14c257ed853b459c136cfb1851b6`.
+All per-document sums, target identities and 128 training log rows were independently
+checked on the workstation. The previous step-1,024 evidence is preserved separately.
+[Evaluation and checkpoint audit](experiments/2026-09-19-r04-step2048/loop-seed0).
+
+After this audit, the bounded Colab queue launched the unshared continuation from
+its exact evaluated step-1,024 checkpoint toward 2,048. Shared snapshot copying runs
+separately from the unshared GPU training, which uses local files. The queue stops
+on errors, audits the unshared result after exit code 0, then creates its fresh
+snapshot. Remote flush/remount verification is a separate remaining action.
+**No matched comparison at step 2,048 is available yet.** The original 4,096-step
+schedule and training source remain frozen; the full three-seed gate remains open.
 
 ## Inference depth sensitivity on the same weights
 

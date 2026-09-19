@@ -84,10 +84,14 @@ de qualité R04 sur plusieurs graines restent à entraîner. Le [premier point c
 cette graine. À [1 024 étapes dans les deux bras](docs/17_R04_CONTINUATION.md),
 le témoin conserve l'avantage : 4.6821 contre 4.7085 nats/token sur la validation complète. Passer de
 quatre à huit boucles à l'inférence dégrade ce checkpoint entraîné à profondeur fixe.
+Le modèle partagé atteint ensuite 2 048 étapes et 4,3574 nats/token ; le témoin
+poursuit sa reprise vers ce palier, sans résultat apparié disponible pour l'instant.
 Les [sources R04](docs/15_R04_SOURCE_AUDIT.md) et les [recoupements avec les benchmarks](docs/16_PILOT_BENCHMARK_OVERLAP.md)
 sont audités séparément. Une [première conversion de poids Qwen3-0.6B](docs/18_DONOR_CONVERSION_REHEARSAL.md)
-est vérifiée, mais sa perte sur quatre extraits est fortement dégradée : la récupération
-par entraînement reste à effectuer. **694 tests CPU passent**, ainsi que huit tests sur A100.
+est auditée, mais sa perte sur quatre extraits est fortement dégradée : la récupération
+par entraînement reste à effectuer. Son décodage token par token échoue aussi au nouveau
+contrôle numérique strict sur poids réels, tandis que le donneur original le réussit.
+**694 tests CPU passent**, ainsi que huit tests sur A100 ; ces tests ne remplacent pas ce contrôle.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
@@ -168,21 +172,23 @@ Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception
 qu'elles ne coûtent quoi que ce soit — un budget de tokens surestimé d'un facteur 20, et
 805M de paramètres gaspillés dans des tables de hachage.
 
-## La voie retenue : deux modèles, deux origines
+## Deux pistes de modèles à valider
 
-Cinq analyses indépendantes concluent que **surpasser la concurrence par
-pré-entraînement depuis des poids aléatoires est arithmétiquement exclu** à ce budget.
-La réponse retenue n'est pas de choisir un camp, mais de faire les deux sur deux modèles :
+L'analyse du budget motive deux pistes : un petit modèle entraîné de zéro pour
+mesurer l'architecture, et la conversion d'un donneur pour étudier la conservation
+de capacités acquises. Les budgets ci-dessous sont des hypothèses du plan initial.
 
 | Modèle | Origine | Budget | Rôle |
 |---|---|---:|---|
-| **Prophet-mini** (253M) | Poids aléatoires | 85 h-A100 | Preuve honnête de l'architecture. Cible iPhone. |
-| **Prophet-main** (~970M) | Conversion d'un donneur Apache-2.0 | 30 h-A100 | Modèle compétitif. 89 % des paramètres hérités. |
+| **Prophet-mini** (gabarit initial 253M) | Poids aléatoires | 85 h-A100 estimées | Évaluer l'architecture et la cible iPhone. |
+| **Prophet-main** (taille à fixer) | Conversion d'un donneur Apache-2.0 | 30 h-A100 hypothétiques | Mesurer puis récupérer les capacités du donneur. |
 
-Le rapport de coût — 85 heures contre 30 — est le résultat central : la conversion coûte
-un tiers de l'entraînement de zéro pour un modèle quatre fois plus gros, parce qu'elle
-n'achète que l'architecture. Mesuré sur Qwen3-1.7B : 1.72B paramètres et 28 couches
-deviennent 1.02B paramètres et 12 blocs pour **la même profondeur effective de 28**.
+Le rapport 85/30 n'est pas un gain de coût mesuré : aucune récupération de donneur
+n'a encore été entraînée. Un plan de conversion compte des paramètres et des blocs,
+mais ne prédit ni la qualité retenue ni le budget nécessaire pour la retrouver.
+La répétition de blocs conserve une profondeur d'exécution, pas la fonction du donneur.
+Le premier essai réel Qwen3-0.6B produit une initialisation de 385,5M paramètres,
+avec 82,795 % copiés ou moyennés, dont la qualité et le décodage restent à corriger.
 
 ```bash
 python scripts/convert_donor.py --donor qwen3-1.7b --plan-only
