@@ -202,6 +202,8 @@ def main():
         parser.add_argument("--" + key, type=Path, required=True)
     parser.add_argument("--objective", choices=("ce", "kl"), required=True)
     parser.add_argument("--seq-len", type=int, default=512)
+    parser.add_argument("--probe-seq-len", type=int, default=67,
+                        help="reference/fused gradient comparison length; timing still uses --seq-len")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--grad-accum", type=int, default=1)
     parser.add_argument("--loop-k", type=int, default=5)
@@ -221,6 +223,8 @@ def main():
         raise FileExistsError("preserve previous gate evidence")
     if args.seq_len < 67 or min(args.batch_size, args.grad_accum, args.loop_k, args.chunk_tokens) < 1:
         parser.error("sequence length must be >=67 and other sizes positive")
+    if not 67 <= args.probe_seq_len <= args.seq_len:
+        parser.error("--probe-seq-len must lie between 67 and --seq-len")
     if any(not math.isfinite(x) or x <= 0 for x in (args.muon_lr, args.adamw_lr)):
         parser.error("learning rates must be finite and positive")
     if args.objective == "ce" and (args.alpha != 0.5 or args.temperature != 1.0):
@@ -243,7 +247,7 @@ def main():
         raise ValueError("training corpus differs from its preparation audit")
     source = TokenisedSource(LocalTextSource("recovery", 1.0, [args.train]), tokenizer, max_epochs=4)
     # A separate loader supplies a fixed prefix without advancing the timed stream.
-    probe_loader = StreamingLoader([source], seq_len=67, batch_size=1, seed=0, separator=None)
+    probe_loader = StreamingLoader([source], seq_len=args.probe_seq_len, batch_size=1, seed=0, separator=None)
     ids = torch.tensor(next(iter(probe_loader.batches(1))), device="cuda")
     model = ProphetModel(cfg)
     model.load_state_dict(payload["model"], strict=True)
