@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check cached execution of the real hybrid initialization on one held-out prefix."""
+"""Check cached execution of a donor or converted initialization on one fixed prefix."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import torch  # noqa: E402
 
 from prophet.config import ProphetConfig  # noqa: E402
+from prophet.modeling.layers import GatedDeltaNet  # noqa: E402
 from prophet.modeling.model import ProphetCache, ProphetModel  # noqa: E402
 from scripts.rehearse_qwen_conversion import digest  # noqa: E402
 
@@ -25,7 +26,10 @@ def main():
     parser.add_argument("--reference-scan", action="store_true")
     parser.add_argument("--donor-control", action="store_true")
     parser.add_argument("--trace-blocks", action="store_true")
+    parser.add_argument("--loop-k", type=int, default=5)
     args = parser.parse_args()
+    if args.loop_k < 1:
+        parser.error("--loop-k must be positive")
     if args.out.exists():
         raise FileExistsError("preserve existing evidence")
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -59,16 +63,24 @@ def main():
         model.load_state_dict(payload["model"], strict=True)
         del payload
     model.eval()
+    gdn_layers = [layer for layer in model.modules() if isinstance(layer, GatedDeltaNet)]
     if args.reference_scan:
-        for block in model.sections["core"]:
-            block.mixer.chunk_size = None
+        if not gdn_layers:
+            raise ValueError("--reference-scan requires at least one GDN layer")
+        for layer in gdn_layers:
+            layer.chunk_size = None
     result = {
-        "scope": "one fixed 128-token prefix, CPU float32; hybrid uses fixed k=5",
-        "model": "unchanged_donor" if args.donor_control else "hybrid_initialization",
+        "scope": "one fixed 128-token prefix, CPU float32; unchanged elementwise tolerance",
+        "model": "unchanged_donor" if args.donor_control else "converted_initialization",
+        "core_pattern": None if args.donor_control else model.cfg.recurrent.core_pattern,
+        "loop_k": None if args.donor_control else args.loop_k,
+        "torch": torch.__version__,
+        "num_threads": torch.get_num_threads(),
+        "script_sha256": digest(Path(__file__)),
         "checkpoint_sha256": audit["checkpoint_sha256"],
         "donor_weights_sha256": audit["donor_weights_sha256"],
         "gdn_scan": None
-        if args.donor_control
+        if not gdn_layers
         else ("sequential_reference" if args.reference_scan else "chunk64"),
         "document_sha256": reference["document_sha256"],
         "input_ids_sha256": hashlib.sha256(ids.numpy().tobytes()).hexdigest(),
@@ -112,7 +124,7 @@ def main():
         full = (
             model(ids, use_cache=False)
             if args.donor_control
-            else model(ids, loop_k=5, return_mtp=False)
+            else model(ids, loop_k=args.loop_k, return_mtp=False)
         ).logits
         assert torch.isfinite(full).all()
         tracing_reference = False
@@ -136,7 +148,7 @@ def main():
                     output = model(
                         ids[:, position : position + length],
                         cache=cache,
-                        loop_k=5,
+                        loop_k=args.loop_k,
                         return_mtp=False,
                     ).logits
                 expected = full[:, position : position + length]

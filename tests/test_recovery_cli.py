@@ -102,6 +102,70 @@ def test_recovery_config_freezes_depth_without_changing_initial_config():
     assert original == tiny_model_config().to_dict()
 
 
+@pytest.mark.parametrize("mixer,corrupt", [("gdn", False), ("full_attn", False),
+                                           ("full_attn", True)])
+def test_cache_audit_identifies_core_and_preserves_numerical_failure(
+    recovery_fixture, tmp_path, monkeypatch, mixer, corrupt
+):
+    import hashlib
+
+    from transformers import AutoTokenizer, PreTrainedTokenizerFast
+
+    from scripts import audit_qwen_cache
+
+    tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(tmp_path / "source/tokenizer.json"))
+    monkeypatch.setattr(AutoTokenizer, "from_pretrained", lambda *a, **kw: tokenizer)
+    text = "abc def " * 32
+    validation = tmp_path / "prefixes"
+    validation.mkdir()
+    (validation / "data.jsonl").write_text(json.dumps({"text": text}), encoding="utf-8")
+    ids = torch.tensor([tokenizer.encode(text, add_special_tokens=False)[:129]])
+    reference = tmp_path / "prefix-reference.json"
+    reference.write_text(json.dumps({"arms": {"donor": {"documents": [{
+        "document_sha256": hashlib.sha256(text.encode()).hexdigest(),
+        "target_ids_sha256": hashlib.sha256(ids.numpy().tobytes()).hexdigest(),
+    }]}}}))
+    cfg = tiny_model_config()
+    cfg.frontend.vocab_size = 260
+    cfg.max_seq_len = 256
+    cfg.recurrent.core_pattern = [mixer]
+    checkpoint = tmp_path / "cache-initial.pt"
+    torch.save({"model": ProphetModel(cfg).state_dict(), "config": cfg.to_dict()}, checkpoint)
+    audit = tmp_path / "cache-initial.json"
+    audit.write_text(json.dumps({
+        "checkpoint_sha256": audit_qwen_cache.digest(checkpoint),
+        "donor_weights_sha256": audit_qwen_cache.digest(tmp_path / "source/model.safetensors"),
+    }))
+    out = tmp_path / "cache-audit.json"
+    args = ["audit_qwen_cache.py", "--source", str(tmp_path / "source"),
+            "--checkpoint", str(checkpoint), "--audit", str(audit), "--reference", str(reference),
+            "--validation", str(validation), "--out", str(out), "--loop-k", "2", "--trace-blocks"]
+    monkeypatch.setattr(sys, "argv", args)
+    if corrupt:
+        forward = ProphetModel.forward
+
+        def wrong_cached(self, *args, **kwargs):
+            result = forward(self, *args, **kwargs)
+            if kwargs.get("cache") is not None:
+                result.logits = result.logits + 0.01
+            return result
+
+        monkeypatch.setattr(ProphetModel, "forward", wrong_cached)
+        with pytest.raises(SystemExit, match="numerical tolerance failed"):
+            audit_qwen_cache.main()
+    else:
+        audit_qwen_cache.main()
+    result = json.loads(out.read_text())
+    assert result["core_pattern"] == [mixer] and result["loop_k"] == 2
+    assert result["passed"] is (not corrupt)
+    assert result["gdn_scan"] == ("chunk64" if mixer == "gdn" else None)
+    for path in result["paths"].values():
+        assert path["all_logits_finite"] and path["positions"] == 128
+        assert "core/0/iteration-1" in path["block_errors"]
+    with pytest.raises(FileExistsError):
+        audit_qwen_cache.main()
+
+
 @pytest.mark.parametrize("arm", ["donor", "initialization"])
 def test_full_development_evaluation_matches_unpadded_manual_windows(
     recovery_fixture, tmp_path, monkeypatch, arm
