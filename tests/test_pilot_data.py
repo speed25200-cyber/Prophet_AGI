@@ -37,6 +37,16 @@ def test_url_versions_stay_together():
         "http://EXAMPLE.org/page?x=3#part", "b", 42, 200)
 
 
+def test_recipe_filters_match_published_fineweb_schema():
+    from prophet.data.corpus import row_passes
+    from prophet.data.recipes import prophet_v1_mixture
+    for phase in prophet_v1_mixture().phases:
+        for source in phase.sources:
+            if source.hf_id == "HuggingFaceFW/fineweb-edu":
+                assert row_passes({"text": "example", "score": 4.1, "int_score": 4}, source.filters)
+                assert not row_passes({"text": "example", "score": 2.1, "int_score": 2}, source.filters)
+
+
 def test_caps_are_strict_and_schema_errors_fail_closed():
     groups, stats = partition_rows(rows(), max_docs=10, max_bytes=100000)
     assert stats["selected_docs"] == 10

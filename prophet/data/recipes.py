@@ -74,7 +74,7 @@ def prophet_v1_mixture(total_tokens: float = 40 * B) -> Mixture:
                 0.18,
                 1300 * B,
                 odc,
-                filters={"edu_score_min": 3},
+                filters={"int_score_min": 3},
                 notes="Kept for decorrelation from the Nemotron pipeline.",
             ),
             _source(
@@ -217,7 +217,7 @@ def prophet_v1_mixture(total_tokens: float = 40 * B) -> Mixture:
                 0.10,
                 350 * B,
                 odc,
-                filters={"edu_score_min": 4},
+                filters={"int_score_min": 4},
             ),
             _source(
                 "nemotron-diverse-qa",
@@ -328,7 +328,7 @@ def prophet_v1_mixture(total_tokens: float = 40 * B) -> Mixture:
                 0.12,
                 350 * B,
                 odc,
-                filters={"edu_score_min": 4},
+                filters={"int_score_min": 4},
             ),
             _source(
                 "nemotron-diverse-qa",

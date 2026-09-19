@@ -28,7 +28,7 @@ phases:
     license: ODC-By-1.0
     config: null
     filters:
-      edu_score_min: 3
+      int_score_min: 3
     notes: Kept for decorrelation from the Nemotron pipeline.
   - name: dclm-baseline
     hf_id: mlfoundations/dclm-baseline-1.0
@@ -172,7 +172,7 @@ phases:
     license: ODC-By-1.0
     config: null
     filters:
-      edu_score_min: 4
+      int_score_min: 4
     notes: ''
   - name: nemotron-diverse-qa
     hf_id: nvidia/Nemotron-CC-v2
@@ -282,7 +282,7 @@ phases:
     license: ODC-By-1.0
     config: null
     filters:
-      edu_score_min: 4
+      int_score_min: 4
     notes: ''
   - name: nemotron-diverse-qa
     hf_id: nvidia/Nemotron-CC-v2

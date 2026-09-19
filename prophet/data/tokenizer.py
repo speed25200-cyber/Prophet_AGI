@@ -14,10 +14,11 @@ single token.
 
 from __future__ import annotations
 
+import heapq
 import json
 import re
 import unicodedata
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Self
@@ -133,9 +134,9 @@ def _as_merge(value: object, *, index: int) -> Merge:
 class BPETrainer:
     """Train a deterministic byte-level BPE merge table.
 
-    The implementation aggregates equal pre-tokens, which keeps the reference trainer
-    small while avoiding work proportional to repeated corpus text.  It is intended for
-    reproducible vocabulary construction, not for online tokenization.
+    Equal pre-tokens share one weighted sequence. A reverse pair index updates only
+    sequences affected by each merge; a lazy heap preserves the reference trainer's
+    frequency and lexicographic tie-breaking without rescanning the whole vocabulary.
     """
 
     def __init__(
@@ -176,32 +177,58 @@ class BPETrainer:
         target_merges = self.vocab_size - N_BYTES - N_RESERVED
         vocabulary = {bytes((byte,)) for byte in range(N_BYTES)}
         merges: list[Merge] = []
+        words = list(sequences)
+        frequencies = [sequences[word] for word in words]
+        del sequences
+        counts: Counter[Merge] = Counter()
+        locations: dict[Merge, set[int]] = defaultdict(set)
+        for index, (symbols, frequency) in enumerate(zip(words, frequencies, strict=True)):
+            pairs = Counter(zip(symbols, symbols[1:], strict=False))
+            for pair, multiplicity in pairs.items():
+                counts[pair] += frequency * multiplicity
+                locations[pair].add(index)
+        heap = [(-count, left, right) for (left, right), count in counts.items()]
+        heapq.heapify(heap)
 
-        while len(merges) < target_merges:
-            counts: Counter[Merge] = Counter()
-            for symbols, frequency in sequences.items():
-                for left, right in zip(symbols, symbols[1:], strict=False):
-                    if left + right not in vocabulary:
-                        counts[(left, right)] += frequency
-
-            if not counts:
-                break
-
-            # Highest frequency wins.  Lexicographic byte ordering makes ties stable
-            # across processes, platforms and Counter insertion order.
-            pair, frequency = min(
-                counts.items(),
-                key=lambda item: (-item[1], item[0][0], item[0][1]),
-            )
+        while heap and len(merges) < target_merges:
+            negative, left, right = heapq.heappop(heap)
+            pair = (left, right)
+            frequency = -negative
+            if counts.get(pair, 0) != frequency or left + right in vocabulary:
+                continue
             if frequency < self.min_frequency:
                 break
-
-            updated: Counter[tuple[bytes, ...]] = Counter()
-            for symbols, occurrences in sequences.items():
-                updated[_merge_pair(symbols, pair)] += occurrences
-            sequences = updated
             merges.append(pair)
-            vocabulary.add(pair[0] + pair[1])
+            vocabulary.add(left + right)
+            changed = set()
+            # Snapshot because each update removes old reverse-index entries.
+            for index in sorted(locations[pair]):
+                symbols = words[index]
+                updated = _merge_pair(symbols, pair)
+                old_pairs = Counter(zip(symbols, symbols[1:], strict=False))
+                new_pairs = Counter(zip(updated, updated[1:], strict=False))
+                for key, multiplicity in old_pairs.items():
+                    counts[key] -= frequencies[index] * multiplicity
+                    locations[key].discard(index)
+                    changed.add(key)
+                for key, multiplicity in new_pairs.items():
+                    counts[key] += frequencies[index] * multiplicity
+                    locations[key].add(index)
+                    changed.add(key)
+                words[index] = updated
+            for key in changed:
+                count = counts[key]
+                if count <= 0:
+                    del counts[key]
+                    locations.pop(key, None)
+                elif key[0] + key[1] not in vocabulary:
+                    heapq.heappush(heap, (-count, key[0], key[1]))
+            # Bound stale heap entries on large corpora. Rebuilding does not alter
+            # ordering: each entry has the same complete frequency/byte-order key.
+            if len(heap) > 4 * len(counts) + 10000:
+                heap = [(-count, a, b) for (a, b), count in counts.items()
+                        if a + b not in vocabulary]
+                heapq.heapify(heap)
 
         return merges
 

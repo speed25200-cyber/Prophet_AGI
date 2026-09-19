@@ -19,7 +19,11 @@ vocabulary that violates the digit or newline rules never leaves this script.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -73,6 +77,7 @@ def main() -> int:
     print(f"sources    {[s.name for s in sources]}")
     print(f"sample     {len(docs)} documents, {n_bytes / 1e6:.1f} MB")
 
+    started = time.perf_counter()
     trainer = BPETrainer(args.vocab_size, min_frequency=args.min_frequency)
     merges = trainer.train(docs)
     tok = ProphetTokenizer(merges=merges, vocab_size=args.vocab_size)
@@ -81,10 +86,28 @@ def main() -> int:
         print("\n".join(problems), file=sys.stderr)
         return 1
     tok.save(args.out)
+    elapsed = time.perf_counter() - started
+    artifact = Path(args.out)
+    metadata = {
+        "code_revision": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent.parent,
+            text=True,
+        ).strip(),
+        "sources": [{"name": source.name, "fingerprint": source.fingerprint()} for source in sources],
+        "sample_documents": len(docs), "sample_utf8_bytes": n_bytes,
+        "sampling": "round-robin prefix; use train split only for held-out evaluation",
+        "vocab_size": args.vocab_size, "min_frequency": args.min_frequency,
+        "learned_merges": len(merges), "training_seconds": elapsed,
+        "tokenizer_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+    }
+    artifact.with_suffix(artifact.suffix + ".metadata.json").write_text(
+        json.dumps(metadata, indent=2) + "\n", encoding="utf-8",
+    )
     sample = "\n".join(docs[:50])
     print(f"merges     {len(merges)} (ids in use: {tok.n_tokens})")
     print(f"fertility  {tok.fertility(sample):.2f} bytes/token on the first 50 documents")
     print(f"saved      {args.out}")
+    print(f"time       {elapsed:.2f}s; provenance in {artifact.name}.metadata.json")
     return 0
 
 
