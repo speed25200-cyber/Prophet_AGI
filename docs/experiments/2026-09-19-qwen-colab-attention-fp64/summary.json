@@ -1,0 +1,20 @@
+{
+  "complete": true,
+  "script_revision": "4490d6640680455d9e3678017b6bd96db43f2542",
+  "model_revision": "8ad19d3c60dafd85fc67caf759981f1d765c3405",
+  "results": {
+    "attention-k5": {
+      "exit_code": 0,
+      "passed": true,
+      "seconds": 55.14790130900292,
+      "sha256": "d1184f7015ca837cbe03c374737b95c666967d0a5aeca32fe96eb8bf458e30ac"
+    },
+    "attention-k1": {
+      "exit_code": 0,
+      "passed": true,
+      "seconds": 39.9780621179998,
+      "sha256": "b10f1a78fdcca2441851d427744765557b5de0ccbd7869409e05f1d37214b619"
+    }
+  },
+  "scope": "FP64 attention oracle with production FP32 rotary values; actual Colab initialization and original 128-token diagnostic prefix; not the production FP32 gate"
+}

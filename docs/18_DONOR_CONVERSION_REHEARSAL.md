@@ -307,6 +307,15 @@ cached-decoding equivalence. A separate CUDA test compares the custom KL backwar
 with dense PyTorch KL in FP32 and BF16; its execution is still pending alongside
 the real-size gate. R04 retains the GPU until its current queue has completed.
 
+A separate Colab checkout at `4490d66` is staged under
+`/content/prophet-recovery/gpu-repo` for those checks. The gate, recovery and
+evaluation command entry points all load successfully with CUDA hidden. The active
+R04 checkout remains at `e5720d0`, and the CPU baseline checkout remains at `8ad19d3`.
+This is code preparation only: no GPU gate or recovery update has run yet. Before
+comparing CUDA recovery scores, evaluate the unchanged donor and both exact
+initializations in that same BF16-autocast evaluation runtime; the CPU FP32 reports
+above do not substitute for those matched pre-recovery references.
+
 ## Real-size cached decoding: strict gate remains open
 
 The hybrid was checked on the first diagnostic prefix, with 128 positions, fixed
@@ -406,6 +415,42 @@ model tests pass (68 cases); CI at `5c117d1` passes 748 cases with 10 CUDA-only 
 The cache-control and donor evidence ZIP is 39,499 bytes, SHA256
 `3c39c3802fc0cdb758c0215422ebcb064e4f08b9508c65e1a26c19b19b6cab2b`.
 
+### FP64 attention oracle isolates a precision-dependent discrepancy
+
+The attention-only pair member was rerun on the same Colab CPU and prefix with
+double-precision weights, attention, residual arithmetic and RMS reductions.
+Rotary values retain the production FP32 construction. This diagnostic changes
+only its private model instance; production code, weights on disk and the FP32
+acceptance tolerance remain unchanged. GDN is explicitly rejected by this oracle
+because its internal recurrence and gates otherwise retain FP32 arithmetic.
+
+The oracle uses the stricter threshold `1e-8 + 1e-8 * abs(reference)`:
+
+| Depth | Prefill/decode maximum logit error | Tokenwise maximum logit error | Result |
+|---|---:|---:|---|
+| k=5 | 4.885e-14 | 2.309e-13 | Both pass; 128/128 argmax matches |
+| k=1 | 9.059e-14 | 1.382e-12 | Both pass; 128/128 argmax matches |
+
+The tokenwise FP32 errors for these same weights were 1.652e-4 and 6.466e-4.
+This is strong evidence of a precision-dependent discrepancy in the attention
+candidate on this prefix, rather than an indexing/state mismatch that persists in
+double arithmetic. It does not isolate which FP32 operation dominates, validate
+other prefixes or GDN, or make double precision a practical deployment solution.
+The normal FP32 cache gate remains failed. Full-forward recovery training has its
+own pending kernel/gradient and memory gate; any later recovery checkpoint still
+needs fresh cached-decoding checks before adoption.
+
+The analysis script is pinned to `4490d66`; model imports remain at `8ad19d3`.
+Both processes exited successfully. Download verification matched the weights,
+input, runtime and script identities and confirmed doubled attention-cache bytes.
+[Oracle reports and block traces](experiments/2026-09-19-qwen-colab-attention-fp64/summary.json).
+The evidence ZIP is 11,235 bytes, SHA256
+`70b4f63e6989505e4c7552c21df820d82f606c07d19082fd61bc91455a6b53f7`.
+The focused suite now passes 71 cases; CI at `4490d66` passes 751 with 10 CUDA skips.
+Tests include an independent double RMS formula, exact preservation of initialized
+parameter values, rejection of GDN, and deliberate cached-output corruption that
+must still fail the stricter oracle.
+
 ## Reproduction and stopped attempts
 
 The first two rehearsal-harness attempts stopped before writing a checkpoint. A
@@ -455,6 +500,8 @@ python scripts/audit_recovery_pair.py --hybrid /tmp/qwen-initialization.pt \
 The hybrid cache audit currently writes its failure report and exits nonzero.
 Use a new output path with `--reference-scan`, `--donor-control`, or `--trace-blocks`
 to reproduce the additional controls.
+For the attention initialization, `--attention-fp64-oracle --loop-k 5` (or `1`)
+selects the diagnostic double-precision path, not the production acceptance gate.
 
 The local dependency versions were Transformers 5.17.0, safetensors 0.8.0 and
 tokenizers 0.23.2. CPU and recovery test results are reported with their execution environment in the PR.
