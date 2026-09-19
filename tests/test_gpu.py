@@ -162,3 +162,30 @@ def test_fused_backward_matches_sequential_reference(autocast):
         assert torch.isfinite(right).all(), name
         error = (left.float() - right.float()).norm() / left.float().norm().clamp_min(1e-8)
         assert error <= tolerance, f"{name}: relative L2 {error.item():.6g} > {tolerance}"
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_chunked_donor_kl_cuda_values_and_gradients(dtype):
+    """Compare the custom backward to independent dense PyTorch KL on CUDA."""
+    import torch.nn.functional as F
+
+    from prophet.train.distillation import forward_kl
+
+    torch.manual_seed(19)
+    student = torch.randn(2, 67, 2048, dtype=dtype, device="cuda").requires_grad_()
+    teacher = torch.randn_like(student).requires_grad_()
+    reference = student.detach().clone().requires_grad_()
+    weights = torch.rand(2, 67, device="cuda")
+    weights[:, -1] = 0
+    temperature = 1.7
+    actual = forward_kl(student, teacher, temperature=temperature, chunk_tokens=13)
+    expected = F.kl_div(F.log_softmax(reference.float() / temperature, -1),
+                        F.log_softmax(teacher.detach().float() / temperature, -1),
+                        reduction="none", log_target=True).sum(-1) * temperature**2
+    torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-5)
+    (actual * weights).mean().backward()
+    (expected * weights).mean().backward()
+    error = (student.grad.float() - reference.grad.float()).norm() / reference.grad.float().norm()
+    assert error < (0.006 if dtype == torch.bfloat16 else 2e-6)
+    assert teacher.grad is None
+    assert torch.count_nonzero(student.grad[:, -1]) == 0

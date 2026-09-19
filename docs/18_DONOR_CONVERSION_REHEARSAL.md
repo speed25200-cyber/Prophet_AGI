@@ -255,6 +255,29 @@ agreement, and freeze equal-token
 CE/KL comparisons. The command requires explicit learning rates and a fixed total
 schedule. Checkpoints must be snapshotted and remotely verified as in R04.
 
+`scripts/gate_qwen_recovery.py` prepares that measurement; it has not yet been run
+on the A100. It verifies the source, initialization and prepared training-file
+hashes before checking full-model training logits and parameter gradients against
+the sequential GDN reference. Both passes use the same random seed, fixed depth,
+full backpropagation and activation checkpointing on a 67-token training prefix.
+The existing FP32 relative-L2 bound of 0.002 and BF16 bound of 0.03 are retained;
+FP32 logits additionally require maximum absolute error <=0.002. The attention-only
+arm reports the GDN comparison as inapplicable. CPU harness tests deliberately
+corrupt a candidate backward to verify failure detection; they do not exercise FLA.
+
+After those checks, the gate executes two warmup and three measured updates with
+the actual recovery Trainer, using a 128-step diagnostic schedule and explicit
+learning rates. CUDA synchronization brackets the measured updates. The report
+includes timings, peak allocated CUDA memory, processed tokens, finite model and
+optimizer state, skipped steps, and the frozen teacher's unchanged tensor hash for
+KL. The normal recovery execution policy remains intact, including auxiliary-head
+computation despite zero auxiliary-loss weights. Timings include data loading and
+teacher execution, exclude checkpointing and evaluation, and discard updated
+weights. These short probes establish neither sustained training stability nor
+cached-decoding equivalence. A separate CUDA test compares the custom KL backward
+with dense PyTorch KL in FP32 and BF16; its execution is still pending alongside
+the real-size gate. R04 retains the GPU until its current queue has completed.
+
 ## Real-size cached decoding: strict gate remains open
 
 The hybrid was checked on the first diagnostic prefix, with 128 positions, fixed
