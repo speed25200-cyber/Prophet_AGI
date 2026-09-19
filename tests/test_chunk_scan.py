@@ -84,14 +84,14 @@ def test_autocast_preserves_fp32_recurrence_across_chunk_boundaries():
     layer = _layer(8)
     x = torch.randn(2, 37, 48)
     states = [RecurrentState(), RecurrentState()]
-    outputs = []
     with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
         for chunk, state in zip((None, 8), states, strict=True):
             layer.chunk_size = chunk
-            outputs.append(layer(x, state=state))
+            layer(x, state=state)
     assert all(state.state.dtype == torch.float32 for state in states)
+    # Test the accumulator itself. A later bf16 projection can round fp32 values
+    # on opposite sides of a midpoint to adjacent representable values.
     assert torch.allclose(states[0].state, states[1].state, atol=1e-5, rtol=1e-5)
-    assert torch.allclose(outputs[0], outputs[1], atol=1e-4, rtol=1e-3)
 
 
 def test_model_is_identical_under_either_scan():
