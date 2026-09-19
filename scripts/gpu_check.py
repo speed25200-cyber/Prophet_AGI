@@ -20,6 +20,9 @@ No checkpoint is written. Exit code 1 on a kernel mismatch, 2 without a GPU.
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -73,7 +76,7 @@ def kernel_agreement(cfg: ProphetConfig, *, seq_len: int = 256) -> float:
 
 
 def step_cost(cfg: ProphetConfig, *, batch_size: int, seq_len: int, steps: int = 5) -> tuple[float, float]:
-    """(seconds per step, peak GB), including actual optimiser state and updates."""
+    """(seconds per step, peak GiB), including actual optimiser state and updates."""
     torch.manual_seed(0)
     model = ProphetModel(cfg).cuda().train()
     model.gradient_checkpointing = True
@@ -97,7 +100,7 @@ def step_cost(cfg: ProphetConfig, *, batch_size: int, seq_len: int, steps: int =
         torch.cuda.synchronize()
         if i >= 2:  # warm-up excluded
             times.append(time.perf_counter() - start)
-    return sum(times) / len(times), torch.cuda.max_memory_allocated() / 1e9
+    return sum(times) / len(times), torch.cuda.max_memory_allocated() / 1024**3
 
 
 def main() -> int:
@@ -107,10 +110,12 @@ def main() -> int:
     ap.add_argument("--seq-len", type=int, default=4096)
     ap.add_argument("--tokens", type=float, default=16.1e9, help="run budget, for the hours estimate")
     ap.add_argument("--tolerance", type=float, default=2e-3)
+    ap.add_argument("--steps", type=int, default=5, help="measured steps after two warm-up steps")
+    ap.add_argument("--json-output", type=Path, help="save hardware, revision and measurements")
     args = ap.parse_args()
 
-    if args.batch_size < 1 or args.seq_len < 1:
-        ap.error("batch-size and seq-len must be positive")
+    if args.batch_size < 1 or args.seq_len < 1 or args.steps < 1:
+        ap.error("batch-size, seq-len and steps must be positive")
 
     if not torch.cuda.is_available():
         print("no CUDA device: nothing to check here", file=sys.stderr)
@@ -133,16 +138,31 @@ def main() -> int:
             print("Stop here. Fix the layout contract in GatedDeltaNet.forward before training.", file=sys.stderr)
             return 1
 
-    seconds, peak = step_cost(cfg, batch_size=args.batch_size, seq_len=args.seq_len)
+    seconds, peak = step_cost(cfg, batch_size=args.batch_size, seq_len=args.seq_len, steps=args.steps)
     tokens_per_step = args.batch_size * args.seq_len
     tps = tokens_per_step / seconds
     hours = args.tokens / tps / 3600
     predicted = training_memory(cfg, batch_tokens=tokens_per_step)
     print(f"step       {seconds:.3f} s for {tokens_per_step} tokens at k={cfg.recurrent.train_loop_max}: {tps:,.0f} tok/s")
-    print(f"budget     {args.tokens / 1e9:.1f}B tokens at the *deepest* k = {hours:.1f} h "
-          f"(E[k] is lower; treat this as the ceiling)")
-    print(f"memory     peak {peak:.1f} GB measured vs {predicted.total_gb:.1f} GB predicted "
+    print(f"budget     {args.tokens / 1e9:.1f}B tokens at this measured shape/depth = {hours:.1f} h "
+          f"(excludes data loading, evaluation and checkpoints)")
+    print(f"memory     peak {peak:.1f} GiB measured vs {predicted.total_gb:.1f} GiB predicted "
           f"({peak / max(predicted.total_gb, 1e-9):.2f}x)")
+    if args.json_output:
+        revision = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                                  cwd=Path(__file__).resolve().parent.parent, check=True).stdout.strip()
+        report = {
+            "revision": revision, "config": args.config, "device": torch.cuda.get_device_name(0),
+            "torch": torch.__version__, "cuda": torch.version.cuda,
+            "triton_f32_default": os.environ.get("TRITON_F32_DEFAULT", "tf32"),
+            "device_memory_gib": torch.cuda.get_device_properties(0).total_memory / 1024**3,
+            "batch_size": args.batch_size, "seq_len": args.seq_len, "measured_steps": args.steps,
+            "kernel_max_abs_error": worst, "seconds_per_step": seconds, "tokens_per_second": tps,
+            "peak_allocated_gib": peak, "predicted_gib": predicted.total_gb,
+            "projected_tokens": args.tokens, "projected_hours": hours,
+        }
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return 0
 
 

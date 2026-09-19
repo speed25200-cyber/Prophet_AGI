@@ -79,6 +79,21 @@ def test_chunked_gradients_match_reference():
         assert torch.allclose(grads[None][name], grads[8][name], atol=1e-5, rtol=1e-4), name
 
 
+def test_autocast_preserves_fp32_recurrence_across_chunk_boundaries():
+    """A .float() input is insufficient: autocast also intercepts matmuls."""
+    layer = _layer(8)
+    x = torch.randn(2, 37, 48)
+    states = [RecurrentState(), RecurrentState()]
+    outputs = []
+    with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
+        for chunk, state in zip((None, 8), states, strict=True):
+            layer.chunk_size = chunk
+            outputs.append(layer(x, state=state))
+    assert all(state.state.dtype == torch.float32 for state in states)
+    assert torch.allclose(states[0].state, states[1].state, atol=1e-5, rtol=1e-5)
+    assert torch.allclose(outputs[0], outputs[1], atol=1e-4, rtol=1e-3)
+
+
 def test_model_is_identical_under_either_scan():
     cfg = ProphetConfig.from_json("configs/prophet_tiny_smoke.json")
     torch.manual_seed(1)
