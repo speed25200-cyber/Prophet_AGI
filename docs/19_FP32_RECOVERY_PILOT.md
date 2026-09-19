@@ -262,6 +262,33 @@ pinned tokenizer. [Persistence proof](experiments/2026-09-20-qwen-recovery-hybri
 
 ## Evidence
 
+The final four-arm comparison uses `scripts/summarize_recovery_pilot.py`. It
+requires all four planned endpoints and their separately executed checkpoint
+audits. It rejects mismatched step/token budgets, initializations, corpus/tokenizer
+identities, runtime/precision, evaluation batching, model configurations, training
+schedules, KL teacher tensor identities/settings, rotated slots and incomplete
+training logs. Reading an audit report is not a new tensor or durability audit.
+
+Four contrasts separate the two experimental factors: GDN minus attention under
+CE; GDN minus attention under CE+KL; CE+KL minus CE within GDN; and CE+KL minus CE
+within attention. Each uses the same paired documents. The bootstrap intervals
+are unadjusted and condition on these trained models; they do not measure seed
+uncertainty. Ranking by development CE remains descriptive. Equal student tokens
+do not imply equal compute, because KL also evaluates a frozen teacher. The report
+therefore includes teacher tokens and logged update times, without treating those
+times as billed runtime or making an architecture-adoption decision.
+
+```bash
+python scripts/summarize_recovery_pilot.py --root <four-arm-run-root> \
+  --baselines <matched-fp32-baselines> --out <new-comparison.json>
+```
+
+Analytically known miniature reports test all contrast signs and intervals, plus
+ten deliberately incomplete or incompatible evidence cases. Sixteen focused
+summary/paired tests pass. The real completed GDN endpoint also passes the report
+checks; the comparison correctly refuses to publish before the other endpoints
+exist.
+
 [Baselines and four update probes](experiments/2026-09-20-qwen-colab-fp32/policy/queue.json)
 use revision `31dafc2`.
 [CUDA restart and the full-window gate](experiments/2026-09-20-qwen-colab-fp32/pretrain/queue.json)
