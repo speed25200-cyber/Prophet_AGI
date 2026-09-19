@@ -81,13 +81,13 @@ Un [corpus pilote réel et son tokenizer](docs/13_REAL_TEXT_PILOT.md) sont prép
 avec 19 569 documents d'entraînement et 376 de validation séparée. Les comparaisons
 de qualité R04 sur plusieurs graines restent à entraîner. Le [premier point commun
 à 128 étapes](docs/14_R04_PILOT.md) favorise légèrement le témoin sans partage pour
-cette graine. Le [modèle partagé a ensuite atteint 1 024 étapes](docs/17_R04_CONTINUATION.md),
-avec une validation complète à 4.7085 nats/token et une reprise vérifiée. Passer de
+cette graine. À [1 024 étapes dans les deux bras](docs/17_R04_CONTINUATION.md),
+le témoin conserve l'avantage : 4.6821 contre 4.7085 nats/token sur la validation complète. Passer de
 quatre à huit boucles à l'inférence dégrade ce checkpoint entraîné à profondeur fixe.
 Les [sources R04](docs/15_R04_SOURCE_AUDIT.md) et les [recoupements avec les benchmarks](docs/16_PILOT_BENCHMARK_OVERLAP.md)
 sont audités séparément. Une [première conversion de poids Qwen3-0.6B](docs/18_DONOR_CONVERSION_REHEARSAL.md)
 est vérifiée, mais sa perte sur quatre extraits est fortement dégradée : la récupération
-par entraînement reste à effectuer. **693 tests CPU passent**, ainsi que huit tests sur A100.
+par entraînement reste à effectuer. **694 tests CPU passent**, ainsi que huit tests sur A100.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

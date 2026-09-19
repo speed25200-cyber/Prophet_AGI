@@ -60,8 +60,49 @@ All document sums, target identities, and 64 training log rows were independentl
 checked. [Validation](experiments/2026-09-19-r04-continuation/loop-seed0/evaluation-step-001024.json),
 [checkpoint audit](experiments/2026-09-19-r04-continuation/loop-seed0/checkpoint-audit-step-001024.json).
 
-The unshared seed-0 model is continuing from step 128 toward the same step-1,024
-boundary. There is no matched comparison at 1,024 yet.
+## Matched seed-0 comparison at step 1,024
+
+The unshared model completed its continuation from 128 to 1,024 using the same
+frozen numerical protocol. Both arms have seen **16,777,216 training tokens** and
+are evaluated on the same 376 complete documents and exact next-token targets.
+
+| Measurement | Shared k=4 | Unshared k=1 |
+|---|---:|---:|
+| Parameters | 374,688,512 | 920,675,072 |
+| Held-out nats/token | 4.708506826 | 4.682119010 |
+| Held-out bits/byte | 1.525139450 | 1.516592134 |
+| Median logged step time, 64 samples | 1.9675 s | 2.1544 s |
+| Skipped non-finite steps | 0 | 0 |
+
+Shared minus unshared is **+0.026387816 nats/token**, with a 95% paired document
+bootstrap interval **[+0.021561723, +0.031465560]**, using 10,000 seeded resamples.
+The BPB difference is +0.008547317, interval [+0.006977449, +0.010206979].
+The shared model has lower document loss on 31.38% of the documents.
+**This point favors the unshared model.** The intervals condition on these weights
+and exclude training-seed uncertainty; the 4,096-step, three-seed pilot remains
+unfinished. The logged step times exclude compilation, checkpointing and validation
+and do not establish an end-to-end speed advantage.
+[Reproducible paired summary](experiments/2026-09-19-r04-step1024-summary.json).
+
+The unshared published checkpoint is slot 1, 7,605,985,915 bytes, SHA256
+`19e7fef7005c561f96b8670c8daf82135ac61eb3ceda693889fcaf31953b4ee3`.
+Its restricted CPU audit checked 865 model/optimizer tensors, all finite, with
+zero skipped non-finite steps. Its evidence ZIP was downloaded and verified:
+60,072 bytes, SHA256
+`b369495e1deb321f416d206b704145bf1ce0f075ae4b5311e926c93de88cad14`.
+All document aggregates and 64 training rows were checked independently.
+[Unshared reports](experiments/2026-09-19-r04-continuation/plain-seed0).
+
+```bash
+python scripts/summarize_r04.py \
+  --root docs/experiments/2026-09-19-r04-continuation \
+  --step 1024 --seed 0 --out /tmp/r04-step1024-summary.json
+```
+
+The shared model has resumed toward 2,048 in a fresh local working directory
+containing only the exact evaluated step-1,024 checkpoint manifest entry. The
+previous working directory and Drive snapshot remain available. No result at
+2,048 is claimed yet.
 
 ## Inference depth sensitivity on the same weights
 

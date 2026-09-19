@@ -118,5 +118,5 @@ python scripts/audit_qwen_stack.py --source data/donor-qwen3-0.6b/source \
 ```
 
 The local dependency versions were Transformers 5.17.0, safetensors 0.8.0 and
-tokenizers 0.23.2. The complete CPU suite passes: **693 tests, eight CUDA skips**.
+tokenizers 0.23.2. The complete CPU suite passes in CI: **694 tests, eight CUDA skips**.
 The separate R04 A100 runtime and its training implementation remain unchanged.
