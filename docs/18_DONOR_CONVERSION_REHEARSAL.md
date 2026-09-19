@@ -127,6 +127,43 @@ generalization, significance, or a best initialization strategy. Unseen validati
 and equal-budget recovery runs are required. The current initialization remains
 an experimental artifact, not an adopted Prophet-main model.
 
+## Real-size cached decoding: strict gate remains open
+
+The hybrid was checked on the first diagnostic prefix, with 128 positions, fixed
+k=5, batch one and CPU float32. Cached logits were compared against a full forward
+using the predeclared elementwise tolerance `1e-4 + 1e-4 * abs(reference)`.
+
+| Model and GDN scan | Prefill 64 + 63, then one token: max error | 128 single-token calls: max error | Strict tokenwise gate |
+|---|---:|---:|---|
+| Hybrid, chunk 64 | 0.000069380 | 0.001464784 | Fail |
+| Hybrid, sequential reference | 0.000071049 | 0.001300752 | Fail |
+| Unchanged donor control | 0.000021935 | 0.000083447 | Pass |
+
+All six paths have finite logits and identical argmax predictions at all 128
+positions. Both hybrid prefill/decode paths pass the strict tolerance, but the
+tokenwise paths exceed it by factors of 10.31 and 8.73. The tolerance was not relaxed.
+The sequential reference also fails, so replacing only the blockwise GDN scan does
+not resolve the discrepancy. This is an unresolved numerical gate for this real
+initialization, not evidence of a wrong prediction on these 128 positions or a
+diagnosis of the underlying cause.
+
+Forward-hook tracing reproduces the original failure exactly. Maximum relative L2
+hidden-state error across tokenwise calls grows from 1.89e-6 after the first prelude
+block to 1.96e-5 after the final core pass and 1.16e-4 after the last coda block.
+Differences are already present before GDN; the trace is consistent with amplified
+floating-point differences but does not prove that this is the sole cause. The
+existing small-model CI tests and separate R04 A100 checks do not substitute for
+this real-size gate. No production numerical behavior was changed based on it.
+
+The actual hybrid cache holds **52,297,728 bytes** at this setting: 8,388,608 attention
+bytes and 43,909,120 recurrent/short-convolution bytes in 28 slots. This excludes
+weights, logits and workspaces, uses FP32, and does not measure device latency.
+Bounded recurrent state is not necessarily only a few kilobytes.
+[Original audit](experiments/2026-09-19-qwen-cache-audit.json),
+[sequential reference](experiments/2026-09-19-qwen-cache-reference-audit.json),
+[donor control](experiments/2026-09-19-qwen-cache-donor-control.json),
+[layer trace](experiments/2026-09-19-qwen-cache-trace.json).
+
 ## Reproduction and stopped attempts
 
 The first two rehearsal-harness attempts stopped before writing a checkpoint. A
@@ -151,7 +188,15 @@ python scripts/ablate_qwen_initialization.py --source data/donor-qwen3-0.6b/sour
   --checkpoint /tmp/qwen-initialization.pt --audit /tmp/qwen-conversion.json \
   --validation data/fineweb-pilot-v1/validation --reference /tmp/qwen-smoke.json \
   --out /tmp/qwen-initialization-ablation.json
+python scripts/audit_qwen_cache.py --source data/donor-qwen3-0.6b/source \
+  --checkpoint /tmp/qwen-initialization.pt --audit /tmp/qwen-conversion.json \
+  --validation data/fineweb-pilot-v1/validation --reference /tmp/qwen-smoke.json \
+  --out /tmp/qwen-cache.json
 ```
+
+The hybrid cache audit currently writes its failure report and exits nonzero.
+Use a new output path with `--reference-scan`, `--donor-control`, or `--trace-blocks`
+to reproduce the additional controls.
 
 The local dependency versions were Transformers 5.17.0, safetensors 0.8.0 and
 tokenizers 0.23.2. The complete CPU suite passes in CI: **694 tests, eight CUDA skips**.

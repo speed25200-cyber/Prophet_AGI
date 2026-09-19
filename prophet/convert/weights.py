@@ -8,16 +8,15 @@ very different confidence:
   the donor's ``head_dim`` and ``n_kv_heads`` precisely so this path applies as widely as
   possible.
 - **Averaged copy.** The weight-shared core is initialised from several donor middle
-  layers at once. Consecutive layers of a trained transformer compute similar updates, so
-  their mean is a defensible starting point for a block that will be applied repeatedly —
-  but it is an initialisation, not an equivalence.
+  layers at once. This is an initialization candidate, not an equivalence: feature
+  alignment and recovered quality must be measured on actual donor weights.
 - **Heuristic seed.** Gated-delta layers have no donor counterpart. Their query and key
   projections take the donor's attention projections (both map the residual stream into a
   space where a dot product means similarity, so the correspondence is real), the value
   path is widened by the expansion factor, and the output projection places the donor's
   weights in the first half with **zeros in the second**, so the widened capacity starts
-  inert and the layer's initial function is as close to the donor's attention as a
-  bounded-state mixer can be.
+  inert. This preserves projection shapes; it does not establish functional proximity
+  to the donor's attention or an advantage over random initialization.
 
 This records a donor-derived initialization. Whether it works or is a better starting
 point than random initialization must be measured through recovery experiments.

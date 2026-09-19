@@ -14,7 +14,8 @@ targets rather than requiring three separately trained models.
 Two details make this affordable rather than merely elegant:
 
 - The core is **recurrent, not attentive**, by default. Looping attention would need a
-  separate KV cache per iteration; looping a bounded-state mixer needs a few kilobytes.
+  separate KV cache per iteration; a bounded-state mixer's cache instead depends on
+  its head and state dimensions, not on sequence length.
 - Backpropagation is **truncated** to the last few iterations, so training a deep loop
   costs the activation memory of a shallow one.
 """
