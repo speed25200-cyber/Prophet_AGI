@@ -193,10 +193,13 @@ class TokenisedSource:
             self._snapshot = docs
         tok = self.tokenizer
         decon = self.decontaminator
+        tokenizer_identity = ({"tokenizer": tok.fingerprint()} if hasattr(tok, "fingerprint") else {
+            "vocab_size": tok.vocab_size,
+            "merges": [[a.hex(), b.hex()] for a, b in tok.merges],
+            "special_tokens": tok._special_to_id,
+        })
         return {"source": identity, "max_epochs": self.max_epochs,
-                "parse_special": self.parse_special, "vocab_size": tok.vocab_size,
-                "merges": [[a.hex(), b.hex()] for a, b in tok.merges],
-                "special_tokens": tok._special_to_id,
+                "parse_special": self.parse_special, **tokenizer_identity,
                 "decontamination": None if decon is None else {
                     "n": decon.n, "threshold": decon.threshold,
                     "items": {k: [v.normalised for v in values]

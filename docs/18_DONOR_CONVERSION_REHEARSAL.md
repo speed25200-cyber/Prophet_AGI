@@ -144,8 +144,51 @@ well as student tokens, and use a held-out evaluation not selected by these seve
 prefix diagnostics. Restore optimizer, data cursor and RNG under an immutable
 teacher/checkpoint contract. Additional per-depth adapters are another architectural
 change and require their own parameter/memory accounting and ablation. These are
-requirements for the next experiment, not implemented recovery or evidence that
-this initialization will recover within the available budget.
+requirements for the next experiment, not evidence that this initialization will
+recover within the available budget.
+
+### Recovery training path implemented; real recovery not yet run
+
+`scripts/recover_qwen.py` supports CE-only or
+`(1-alpha) CE + alpha T² KL(donor/T || student/T)` from an audited initialization.
+The donor is frozen and evaluated without gradients. KL workspaces are token-chunked;
+both full logits tensors still exist. Step timings include the donor forward and
+reports count donor tokens. No real recovery-quality result or A100 recovery memory
+measurement exists yet.
+
+The training contract binds the initialization, actual teacher tensor hash, source
+revision/configuration, tokenizer bytes/policy, corpus hashes, objective, schedule
+and runtime versions. A changed donor, alpha, corpus or initialization cannot be
+silently resumed. Fixed k=5 with full BPTT is the default; MTP/confidence, ponder and
+z-loss weights are zero. Initialization tensors and the original train/evaluation
+state-initialization policies are preserved. CE and KL arms reset the training RNG
+identically after model loading. Recovery is separate from the frozen R04 runner.
+
+End-to-end miniature tests load a real local Transformers Qwen model, train both
+objectives, serialize checkpoints, resume, and evaluate. Resumed weights and
+evaluation equal uninterrupted execution exactly on CPU. Loss/gradient tests compare
+KL against ordinary PyTorch autograd; a nonfinite objective skips the optimizer even
+with finite gradients. These validate implementation, not real-size recovery or
+the unresolved cached-decoding gate below.
+
+The plain-text tokenizer adapter retains donor vocabulary and explicit EOS,
+disables automatic added-token recognition, and counts NFC-normalized UTF-8 payload
+bytes. All **376 validation documents** reproduce the reference tokenizer's IDs
+(**372,811 tokens before EOS**); Unicode and literal-control-string probes pass.
+[Tokenizer audit](experiments/2026-09-19-qwen-tokenizer-audit.json).
+
+`scripts/prepare_recovery_data.py` creates a separate development corpus with
+**19,560 training documents** after removing the nine known lexical overlaps, and
+**372 validation documents** after removing the four reused donor diagnostics.
+Original R04 corpus hashes are checked and its files stay unchanged. This remains
+development validation previously used by R04, not an untouched final benchmark;
+seven requested benchmark sources and semantic contamination remain unaudited.
+[Recovery data manifest](experiments/2026-09-19-qwen-recovery-data.json).
+
+Before budgeted recovery, measure actual A100 forward/backward memory and kernel
+agreement, prepare the separate shared-attention initialization, and freeze equal-token
+CE/KL comparisons. The command requires explicit learning rates and a fixed total
+schedule. Checkpoints must be snapshotted and remotely verified as in R04.
 
 ## Real-size cached decoding: strict gate remains open
 
@@ -212,6 +255,13 @@ python scripts/audit_qwen_cache.py --source data/donor-qwen3-0.6b/source \
   --checkpoint /tmp/qwen-initialization.pt --audit /tmp/qwen-conversion.json \
   --validation data/fineweb-pilot-v1/validation --reference /tmp/qwen-smoke.json \
   --out /tmp/qwen-cache.json
+python scripts/audit_donor_tokenizer.py --source data/donor-qwen3-0.6b/source \
+  --validation data/fineweb-pilot-v1/validation --out /tmp/qwen-tokenizer.json
+python scripts/prepare_recovery_data.py --corpus data/fineweb-pilot-v1 \
+  --overlap docs/experiments/2026-09-19-pilot-benchmark-overlap.json \
+  --smoke docs/experiments/2026-09-19-qwen-conversion-smoke.json \
+  --out /tmp/qwen-recovery-data
+python scripts/recover_qwen.py --help
 ```
 
 The hybrid cache audit currently writes its failure report and exits nonzero.
@@ -219,5 +269,5 @@ Use a new output path with `--reference-scan`, `--donor-control`, or `--trace-bl
 to reproduce the additional controls.
 
 The local dependency versions were Transformers 5.17.0, safetensors 0.8.0 and
-tokenizers 0.23.2. The complete CPU suite passes in CI: **694 tests, eight CUDA skips**.
+tokenizers 0.23.2. CPU and recovery test results are reported with their execution environment in the PR.
 The separate R04 A100 runtime and its training implementation remain unchanged.

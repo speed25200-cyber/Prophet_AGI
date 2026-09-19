@@ -91,7 +91,11 @@ sont audités séparément. Une [première conversion de poids Qwen3-0.6B](docs/
 est auditée, mais sa perte sur quatre extraits est fortement dégradée : la récupération
 par entraînement reste à effectuer. Son décodage token par token échoue aussi au nouveau
 contrôle numérique strict sur poids réels, tandis que le donneur original le réussit.
-**694 tests CPU passent**, ainsi que huit tests sur A100 ; ces tests ne remplacent pas ce contrôle.
+La récupération CE ou guidée par le donneur dispose maintenant d'une commande de
+training avec reprise exacte testée sur petits modèles. Son corpus de développement
+exclut les neuf chevauchements connus et les quatre extraits du diagnostic initial.
+Le protocole reste à exécuter sur les poids réels. Les tests CPU et les huit tests
+sur A100 ne remplacent pas le contrôle numérique de ce candidat.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

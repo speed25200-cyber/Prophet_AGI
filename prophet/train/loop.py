@@ -9,10 +9,12 @@ uninterrupted one, and :mod:`tests.test_training` asserts exactly that.
 
 from __future__ import annotations
 
+import json
 import math
 import time
 import warnings
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -25,6 +27,7 @@ from prophet.data.tokenizer import N_BYTES, SPECIAL_TOKENS
 from prophet.modeling.action import build_action_targets
 from prophet.modeling.moe import apply_router_updates
 from prophet.train.checkpoint import CheckpointManager
+from prophet.train.distillation import DistillationObjective
 from prophet.train.loss import compute_loss
 from prophet.train.optim import build_optimizers
 from prophet.train.schedule import WSDSchedule
@@ -154,12 +157,25 @@ class Trainer:
         model_config: ProphetConfig | None = None,
         on_log: Callable[[TrainMetrics], None] | None = None,
         tokenizer: Any | None = None,
+        distillation: DistillationObjective | None = None,
+        run_identity: Mapping[str, Any] | None = None,
     ) -> None:
         self.model = model
         self.loader = loader
         self.cfg = cfg
         self.model_config = model_config
         self.tokenizer = tokenizer
+        self.distillation = distillation
+        self._run_identity = (None if run_identity is None else
+                              json.loads(json.dumps(dict(run_identity), allow_nan=False)))
+        if distillation is not None:
+            student_parameters = {id(p) for p in model.parameters()}
+            if any(id(p) in student_parameters for p in distillation.teacher.parameters()):
+                raise ValueError("teacher and student must not share parameters")
+            if (cfg.segment_by_bos or cfg.ledger_write != "all" or
+                    (model_config is not None and
+                     (model_config.heads.action_head or model_config.recurrent.token_depth))):
+                raise ValueError("donor distillation supports plain text without control-token policies")
         if cfg.loss_chunk_tokens is not None and (
             not isinstance(cfg.loss_chunk_tokens, int)
             or isinstance(cfg.loss_chunk_tokens, bool)
@@ -189,6 +205,8 @@ class Trainer:
             )
         self.device = torch.device(cfg.device)
         self.model.to(self.device)
+        if self.distillation is not None:
+            self.distillation.teacher.to(self.device)
         self.model.gradient_checkpointing = cfg.activation_checkpointing
         if self.device.type == "cuda" and cfg.allow_tf32:
             torch.backends.cuda.matmul.allow_tf32 = True
@@ -271,8 +289,13 @@ class Trainer:
         """
         operational = {"checkpoint_every", "log_every", "checkpoint_dir", "keep_milestones",
                        "max_wall_seconds", "device"}
-        return {**{k: v for k, v in asdict(self.cfg).items() if k not in operational},
-                "device_type": self.device.type, "schedule": asdict(self.schedule)}
+        contract = {**{k: v for k, v in asdict(self.cfg).items() if k not in operational},
+                    "device_type": self.device.type, "schedule": asdict(self.schedule)}
+        if self.distillation is not None:
+            contract["distillation"] = self.distillation.fingerprint()
+        if self._run_identity is not None:
+            contract["run_identity"] = deepcopy(self._run_identity)
+        return contract
 
     def state_dict(self) -> dict[str, Any]:
         return {
@@ -306,6 +329,8 @@ class Trainer:
             raise ValueError(f"unsupported trainer state version: {version!r}")
         saved_contract = state.get("training_contract")
         if saved_contract is None:
+            if self.distillation is not None or self._run_identity is not None:
+                raise ValueError("identified recovery resume requires a complete training contract")
             if version == _TRAINER_STATE_VERSION:
                 raise ValueError("checkpoint does not contain the training contract")
             warnings.warn("legacy checkpoint has no training contract; optimizer schedule and "
@@ -436,6 +461,8 @@ class Trainer:
                 opt.zero_grad(set_to_none=True)
 
             accumulated = 0.0
+            objective_finite = True
+            distillation_metrics: dict[str, float] = {}
             extra: dict[str, float] = {}
             for _ in range(self.cfg.grad_accum_steps):
                 batch = self._batch()
@@ -474,7 +501,18 @@ class Trainer:
                     gate_weight=self.cfg.gate_weight or 0.0,
                     jumped_lm_weight=1.0 if self.cfg.jumped_lm_weight is None else self.cfg.jumped_lm_weight,
                 )
-                (terms.total / self.cfg.grad_accum_steps).backward()
+                total = terms.total
+                if self.distillation is not None:
+                    kl = self.distillation.loss(output.logits, batch,
+                                                autocast_dtype=self._autocast_dtype)
+                    alpha = self.distillation.settings.alpha
+                    total = total + alpha * (kl - terms.lm)
+                    kl_value, total_value = kl.item(), total.item()
+                    objective_finite &= math.isfinite(kl_value) and math.isfinite(total_value)
+                    for key, value in (("loss/donor_kl", kl_value), ("loss/total", total_value)):
+                        distillation_metrics[key] = (distillation_metrics.get(key, 0.0)
+                                                     + value / self.cfg.grad_accum_steps)
+                (total / self.cfg.grad_accum_steps).backward()
                 # Loss-free MoE balancing moves the router biases *after* backward, so
                 # a checkpointed block recomputes the routing it saved.
                 apply_router_updates(getattr(output, "router_stats", ()))
@@ -492,7 +530,7 @@ class Trainer:
             total_norm = float(torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.cfg.grad_clip or float("inf")
             ))
-            finite = math.isfinite(total_norm) and math.isfinite(accumulated)
+            finite = math.isfinite(total_norm) and math.isfinite(accumulated) and objective_finite
             if finite:
                 for opt in self.optimizers:
                     opt.step()
@@ -510,6 +548,7 @@ class Trainer:
                         "last checkpoint; continuing would train nothing."
                     )
             extra["train/grad_norm"] = total_norm
+            extra.update(distillation_metrics)
             if self.skipped_nonfinite:
                 extra["train/skipped_nonfinite"] = float(self.skipped_nonfinite)
 

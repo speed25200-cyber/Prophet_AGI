@@ -17,6 +17,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+conversion = [
+    "transformers==5.17.0",
+    "safetensors==0.8.0",
+    "tokenizers==0.23.2",
+]
 gpu = [
     "fla-core==0.5.2; sys_platform == 'linux'",
 ]
