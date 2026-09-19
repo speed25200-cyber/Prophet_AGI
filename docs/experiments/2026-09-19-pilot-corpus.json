@@ -1,0 +1,51 @@
+{
+  "format_version": 1,
+  "source": "HuggingFaceFW/fineweb-edu",
+  "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+  "subset": "sample-10BT",
+  "source_split": "train",
+  "source_license": "odc-by",
+  "attribution_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu/tree/87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+  "code_revision": "6f10e31642c7df2e8a99f68af37f78a63a20da3d",
+  "max_docs": 20000,
+  "max_bytes": 200000000,
+  "max_rows_scanned": 200000,
+  "seed": 42,
+  "validation_per_mille": 20,
+  "split_policy": "seeded SHA256 URL host/path; global normalized-content deduplication",
+  "decontamination": "reject any training document sharing a normalized 13-word span with validation",
+  "external_benchmarks_decontaminated": false,
+  "filters": {
+    "int_score_min": 3,
+    "utf8_bytes_min": 400,
+    "utf8_bytes_max": 50000,
+    "normalized_words_min": 30
+  },
+  "sampling": "bounded prefix of sample-10BT; not a representative final training mixture",
+  "stats": {
+    "rows_seen": 20204,
+    "selected_docs": 20000,
+    "selected_bytes": 88254555,
+    "quality_or_length_rejected": 203,
+    "duplicate_rejected": 1,
+    "document_cap_reached": 1,
+    "heldout_overlap_rejected": 55,
+    "train_docs": 19569,
+    "train_bytes": 86282982,
+    "validation_docs": 376,
+    "validation_bytes": 1751847
+  },
+  "artifacts": {
+    "train/fineweb-edu/part-00000.jsonl": {
+      "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e",
+      "bytes": 91838924,
+      "documents": 19569
+    },
+    "validation/fineweb-edu/part-00000.jsonl": {
+      "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939",
+      "bytes": 1858016,
+      "documents": 376
+    }
+  },
+  "complete": true
+}
