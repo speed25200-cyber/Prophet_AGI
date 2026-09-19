@@ -221,12 +221,19 @@ record individual document sums, runtime precision and artifact hashes. The CLI 
 tested against independent unpadded, window-by-window losses from a real miniature
 Qwen donor and Prophet initialization, including Unicode and empty documents.
 
-Full development evaluation of the actual donor has started locally on CPU; no
-completed score is claimed yet. A separate Colab CPU queue evaluates the unchanged
-donor, attention initialization and GDN initialization sequentially on all 372
-development documents, at sequence length 512 / batch one, in one fixed runtime.
+The Colab CPU evaluation of the unchanged donor has completed on all **372
+development documents**, at sequence length 512 / batch one: **3.157755304
+nats/token** and **0.969985530 bits/byte**, scoring 366,762 targets and 1,722,551
+payload bytes. All document identities, target/byte counts and loss aggregates
+were independently checked after download. The run took 3,390.19 seconds, including
+tokenization and CE, with two CPU threads, Torch 2.11.0+cu128 and Transformers 5.17.0.
+[Donor report and runtime](experiments/2026-09-19-qwen-colab-development/donor.json).
+The queue has moved to the attention initialization; its result and the GDN
+initialization result remain pending. A separate local donor evaluation is still running.
 These reports must use the same sequence length and precision for a paired
 comparison; the previous four-prefix numbers are not their recovery baselines.
+The R04 scores use a different tokenizer, document set and window length, so the
+donor's CE/BPB here must not be presented as a controlled comparison against R04.
 
 ### Colab reconstruction is a separate initialization pair
 
@@ -252,10 +259,12 @@ checks all 111 shared backbone tensors exactly. Their archive SHA-256 values are
 - GDN: `1b440d1ab490dfc3263a3fb37e1e9ccbde9b72db0c87b4efed4a5e68de0574c8`.
 - Attention: `013f6845b9e084aaa7fa1f740878ce65dd9b8c2dd40c3368784ff2f0ee89cfa4`.
 
-All three CPU baselines are being measured afresh in Colab before comparing recovery.
+All three CPU baselines use the same Colab runtime before comparing recovery;
+the donor has completed and the two initialized students remain pending.
 The local candidate's prefix/cache reports are not measurements of these new weights;
 the real-size GPU and cache gates must be run for the actual training initialization.
-The new weights are currently on the Colab local disk, not yet remotely persisted.
+The new weights are on local disk and now also have a verified Drive snapshot,
+including file-by-file checks after flushing and remounting (persistence proof below).
 [Conversion, pair, cross-host failure and identity evidence](experiments/2026-09-19-qwen-colab-initialization/colab-pair-manifest.json).
 
 Before budgeted recovery, measure actual A100 forward/backward memory and kernel
@@ -356,6 +365,34 @@ initialization files still matched their source sizes and SHA256 digests.
 [Post-remount verification](experiments/2026-09-19-r04-step4096/loop-persistence.json).
 The earlier copy manifest retains its historical pre-flush scope:
 [Mounted-copy manifest](experiments/2026-09-19-qwen-colab-cache/initialization-snapshot.json).
+
+### Attention and reduced-depth controls
+
+The audit now derives the core identity from the loaded configuration and accepts
+an explicit fixed depth. Three additional checks use the exact Colab pair, prefix,
+CPU FP32 runtime and unchanged elementwise tolerance. The analysis script is pinned
+to `5c117d1`; the model checkout remains at `8ad19d3` while its baseline queue runs.
+
+| Initialization and depth | Prefill max error / tolerance ratio | Tokenwise max error / tolerance ratio | Tokenwise argmax matches |
+|---|---:|---:|---:|
+| Attention, k=5 | 0.000029564 / 0.234 (pass) | 0.000165224 / 1.073 (fail) | 128/128 |
+| Attention, k=1 | 0.000058174 / 0.466 (pass) | 0.000646591 / 4.997 (fail) | 128/128 |
+| GDN, k=1 | 0.000311971 / 2.044 (fail) | 0.001334071 / 8.885 (fail) | 127/128 |
+
+All logits remain finite. **GDN is not required for a strict tokenwise failure**:
+the attention control also fails. Reducing the depth to one does not remove the
+failure, and the GDN depth-one diagnostic changes one argmax prediction. That last
+observation concerns the depth-one control, not the planned k=5 recovery candidate.
+The results reject a GDN-only explanation and a simple reduction of loop count as
+a numerical fix. They do not isolate the cause or establish a monotonic relationship
+between depth and error. Production execution and tolerance remain unchanged.
+[Reports, block traces and execution records](experiments/2026-09-19-qwen-colab-cache-controls/summary.json).
+
+Three CLI regression cases cover both core types, explicit depth and preservation
+of a deliberately corrupted cached-output failure report. The focused recovery and
+model tests pass (68 cases); CI at `5c117d1` passes 748 cases with 10 CUDA-only skips.
+The cache-control and donor evidence ZIP is 39,499 bytes, SHA256
+`3c39c3802fc0cdb758c0215422ebcb064e4f08b9508c65e1a26c19b19b6cab2b`.
 
 ## Reproduction and stopped attempts
 
