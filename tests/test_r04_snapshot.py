@@ -1,10 +1,10 @@
 import json
 
 import pytest
-from tests.test_checkpoint_audit import publish
 
 import scripts.snapshot_r04 as snapshot_module
 from scripts.snapshot_r04 import snapshot
+from tests.test_checkpoint_audit import publish
 
 
 def test_snapshot_copies_exact_published_checkpoint_and_preserves_source(tmp_path):
