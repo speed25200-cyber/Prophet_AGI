@@ -40,6 +40,7 @@ FIELD_MAP: dict[str, str] = {
     "ffn_hidden": "intermediate_size",
     "vocab_size": "vocab_size",
     "tie_word_embeddings": "tie_word_embeddings",
+    "rope_theta": "rope_theta",
 }
 
 

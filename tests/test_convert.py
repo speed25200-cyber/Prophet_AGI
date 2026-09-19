@@ -112,6 +112,16 @@ def test_all_donors_are_marked_unverified():
     assert all(not d.verified for d in DONORS.values())
 
 
+def test_donor_verification_rejects_a_changed_rotary_base():
+    from scripts.verify_donors import FIELD_MAP, compare
+
+    donor = get_donor("qwen3-1.7b")
+    config = {key: getattr(donor, field) for field, key in FIELD_MAP.items()}
+    assert compare(donor, config) == []
+    config["rope_theta"] = 10000.0
+    assert any("rope_theta" in issue for issue in compare(donor, config))
+
+
 # --------------------------------------------------------------------------------------
 # Planning
 # --------------------------------------------------------------------------------------
