@@ -228,8 +228,17 @@ payload bytes. All document identities, target/byte counts and loss aggregates
 were independently checked after download. The run took 3,390.19 seconds, including
 tokenization and CE, with two CPU threads, Torch 2.11.0+cu128 and Transformers 5.17.0.
 [Donor report and runtime](experiments/2026-09-19-qwen-colab-development/donor.json).
-The queue has moved to the attention initialization; its result and the GDN
-initialization result remain pending.
+The attention initialization has also completed in that same runtime:
+**9.221052384 nats/token** and **2.832482736 bits/byte**, in 3,377.27 seconds.
+All 372 document identities and denominators, input/runtime hashes and aggregate
+losses match the donor protocol; its own initialization hash matches the audited
+Colab pair. Its CE exceeds the donor by 6.063297080 nats/token, and every document
+has higher loss. The severe conversion loss therefore persists without a GDN core
+on the complete development split. This is an untrained initialization baseline,
+not a recovery result. The GDN CPU evaluation is now running.
+[Attention report](experiments/2026-09-19-qwen-colab-development/attention.json).
+The downloaded two-file evidence ZIP is 27,452 bytes, SHA256
+`fcc94d09e282bd49ee9b863c4e8c3ee9bc38d8ebdeb5f1e68a6666786edaad8e`.
 These reports must use the same sequence length and precision for a paired
 comparison; the previous four-prefix numbers are not their recovery baselines.
 The R04 scores use a different tokenizer, document set and window length, so the
@@ -272,7 +281,7 @@ checks all 111 shared backbone tensors exactly. Their archive SHA-256 values are
 - Attention: `013f6845b9e084aaa7fa1f740878ce65dd9b8c2dd40c3368784ff2f0ee89cfa4`.
 
 All three CPU baselines use the same Colab runtime before comparing recovery;
-the donor has completed and the two initialized students remain pending.
+the donor and attention initialization have completed; the GDN result remains pending.
 The local candidate's prefix/cache reports are not measurements of these new weights;
 the real-size GPU and cache gates must be run for the actual training initialization.
 The new weights are on local disk and now also have a verified Drive snapshot,
