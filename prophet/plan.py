@@ -131,9 +131,10 @@ ASKS: list[Ask] = [
         "buys the asymptotic argument rather than the working model. First in line if a "
         "gate frees hours."),
     Ask("R04", "depth ablations", 24.0, "ablation", 3,
-        "Recurrence depth schedule, injection, truncation depth. Must run at >=350M: "
-        "recursion underperforms vanilla at 135M and only wins from ~360M, so a 130M "
-        "ablation would produce a false negative."),
+        "Recurrence depth schedule, injection, truncation depth. Retain the chosen "
+        ">=350M scale for this experiment. Published scale trends depend on routing, "
+        "sharing and token budget; they are not a universal lower bound for useful "
+        "recurrence. See docs/15_R04_SOURCE_AUDIT.md."),
     Ask("R08", "quantisation ladder", 20.0, "ablation", 3,
         "Trimmed from 100-200 hours. Establishes how far the over-trained mini can be "
         "quantised before the on-device claim fails."),

@@ -244,6 +244,26 @@ def test_slots_alternate_so_a_torn_write_cannot_destroy_both(tmp_path):
     assert slots == [0, 1, 0, 1]
 
 
+def test_same_step_checkpoint_prefers_last_save_and_can_fall_back(tmp_path):
+    cm = CheckpointManager(tmp_path)
+    older = cm.save({"v": 1}, step=512)
+    newest = cm.save({"v": 2}, step=512)
+    state, recovered = cm.load_latest()
+    assert recovered == newest and state["v"] == 2
+    with cm.slot_path(newest.slot).open("ab") as stream:
+        stream.write(b"interrupted-write")
+    state, recovered = cm.load_latest()
+    assert recovered == older and state["v"] == 1
+
+
+def test_checkpoint_step_still_takes_priority_over_save_order(tmp_path):
+    cm = CheckpointManager(tmp_path)
+    highest = cm.save({"v": 2}, step=512)
+    cm.save({"v": 1}, step=256)
+    state, recovered = cm.load_latest()
+    assert recovered == highest and state["v"] == 2
+
+
 def test_corrupted_checkpoint_falls_back_to_the_previous_slot(tmp_path):
     """The exact failure this design exists to survive: preemption mid-write."""
     cm = CheckpointManager(tmp_path)

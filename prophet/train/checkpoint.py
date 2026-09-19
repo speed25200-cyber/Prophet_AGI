@@ -167,7 +167,9 @@ class CheckpointManager:
         """Load the newest intact checkpoint, falling back to the older slot."""
         import torch
 
-        metas = sorted(self.read_manifest(), key=lambda m: m.step, reverse=True)
+        # The manifest is in save order. A periodic save followed by a session-end
+        # save can have the same step: prefer the last write when steps tie.
+        metas = sorted(reversed(self.read_manifest()), key=lambda m: m.step, reverse=True)
         failures: list[str] = []
 
         for meta in metas:

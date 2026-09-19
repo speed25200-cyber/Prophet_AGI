@@ -300,11 +300,10 @@ sans paramètres — n'avait jamais été mesuré par le projet. À iso-paramèt
 | constante, *k* = 1 | 1 | 1 × 2 blocs | **2.179** |
 
 À cette échelle la boucle n'achète **rien** et coûte 2.1× les FLOPs du cœur : l'écart
-(0.005 bits/octet) est dans le bruit, dans le mauvais sens. C'est le résultat que R04
-annonçait — la récurrence sous-performe une pile simple à 135M et ne gagne qu'à partir de
-~360M — et la raison pour laquelle la porte R04 du plan est à ≥ 350M. Le pari central
-reste un pari ; ce nombre dit seulement qu'il ne se gagne pas petit, et qu'un run qui le
-testerait en dessous de l'échelle où il peut gagner produirait exactement ce faux négatif.
+(0.005 bits/octet) est dans le bruit, dans le mauvais sens. Ce résultat concerne
+cette recette à 7M. Le seuil de ≥ 350M reste le choix du protocole R04 en cours,
+sans constituer une loi d'échelle ni rendre tout résultat plus petit « faux négatif ».
+Voir [l'audit des sources R04](15_R04_SOURCE_AUDIT.md).
 
 **(a′) La profondeur latente contre les tokens de chaîne de pensée.** Le test le plus
 direct du pari : mêmes poids, `k` passes du cœur et un seul token de réponse, contre une
@@ -347,9 +346,10 @@ cœur n'apprennent pas du tout. À trois opérations la chaîne stagne à son to
 par pas, inchangé entre 3 000 et 12 000 pas) : un plafond d'apprentissage de ce modèle de
 150k paramètres sur la localisation, pas une propriété de la chaîne, et hors sujet ici.
 Ce que ce nombre dit du projet : le pari central de Prophet — la profondeur latente
-remplace les tokens de raisonnement — n'a **aucun** support à petite échelle, ni en
-bits/octet (§3a) ni en composition ; il ne se joue qu'au-dessus de la porte R04 (≥ 350M),
-et tout ce dépôt peut faire d'ici là est de garder la boucle réversible (elle l'est :
+remplace les tokens de raisonnement — n'a **aucun** support dans ces expériences,
+ni en bits/octet (§3a) ni en composition. Le prochain test choisi est la porte R04
+(≥ 350M) ; ce choix ne prouve pas un seuil universel (voir l'audit des sources, doc 15).
+La boucle reste réversible (elle l'est :
 `train_loop_min = train_loop_max = 1`, `halting = "none"`) et le test prêt.
 
 **(a″) La chaîne latente : deux ingrédients de la chaîne déplacés dans la profondeur.**
@@ -393,8 +393,9 @@ chaîne. La différence qui reste est la chaîne elle-même : un token *nouveau*
 position nouvelle, sur lequel **toute la pile** se relance. À cette échelle, composer deux
 consultations de table en profondeur ne s'optimise pas ; émettre le symbole entre les deux,
 si. C'est le résultat de R04 sur un test de raisonnement : le pari « la profondeur latente
-remplace les tokens de chaîne » n'a **aucun support** sous la porte de 350M, et chacune de
-ses sept variantes reste un interrupteur à `false` avec son test, prêt pour l'échelle.
+remplace les tokens de chaîne » n'a **aucun support** dans ces essais à 150k paramètres.
+Chacune de ses sept variantes reste un interrupteur à `false` avec son test, prêt pour
+une ablation à plus grande échelle.
 
 **(b) À l'inférence.** Un agent qui *copie* un argument le paie un pas au lieu de douze,
 et un agent qui appelle un outil au lieu de raisonner en tokens paie l'appel. Le benchmark
