@@ -421,7 +421,7 @@ The attention-only pair member was rerun on the same Colab CPU and prefix with
 double-precision weights, attention, residual arithmetic and RMS reductions.
 Rotary values retain the production FP32 construction. This diagnostic changes
 only its private model instance; production code, weights on disk and the FP32
-acceptance tolerance remain unchanged. GDN is explicitly rejected by this oracle
+acceptance tolerance remain unchanged. GDN is explicitly rejected by this attention-only mode
 because its internal recurrence and gates otherwise retain FP32 arithmetic.
 
 The oracle uses the stricter threshold `1e-8 + 1e-8 * abs(reference)`:
@@ -450,6 +450,42 @@ The focused suite now passes 71 cases; CI at `4490d66` passes 751 with 10 CUDA s
 Tests include an independent double RMS formula, exact preservation of initialized
 parameter values, rejection of GDN, and deliberate cached-output corruption that
 must still fail the stricter oracle.
+
+### Separate FP64 GDN recurrence also passes
+
+Revision `3c141c9` adds an explicit hybrid diagnostic rather than routing GDN through
+its production FP32 internals. Projections, short convolution, key normalization,
+gates, sequential rank-one state updates and output normalization use FP64. The
+production rotary construction stays FP32. A separate test checks the recurrence
+against the dense transition-matrix equation with a nonempty recurrent and
+convolution cache, including chunk boundaries and the final state. CLI tests also
+inject a cached-logit error that must fail and leave its report intact.
+
+On the same actual Colab hybrid and original 128-token prefix:
+
+| Depth | Prefill/decode maximum logit error | Tokenwise maximum logit error | Result |
+|---|---:|---:|---|
+| k=5 | 1.454e-13 | 3.534e-12 | Both pass; 128/128 argmax matches |
+| k=1 | 2.673e-13 | 2.270e-12 | Both pass; 128/128 argmax matches |
+
+The tolerance remains the stricter `1e-8 + 1e-8 * abs(reference)` for this diagnostic.
+The k=5 FP32 sequential control previously failed at 0.001148224 tokenwise error,
+so the disappearance cannot be attributed merely to replacing the chunked scan.
+The FP32 depth-one control had one argmax disagreement; the two FP64 execution
+paths now agree at every position. No comparison of FP32 against FP64 argmax
+predictions or semantic correctness is implied.
+
+Together with the attention controls, this supports precision-dependent errors in
+both initializations on this prefix. It does not isolate a single offending FP32
+operation or clear the production FP32 gate. The hybrid oracle takes 244.52 seconds
+at k=5 and 78.11 seconds at k=1 on this CPU, including setup and both cache paths;
+these are diagnostic runtimes, not a deployment speed measurement.
+[Hybrid oracle reports and traces](experiments/2026-09-19-qwen-colab-hybrid-fp64/summary.json).
+The downloaded ZIP is 12,102 bytes, SHA256
+`758d19bca831a6992ac863e88a778deb0ce13556dbdd77ce25361547bd3f7c45`.
+Its script, model and input identities were independently checked, as were the
+finite results and doubled attention/recurrent cache bytes. The focused suite
+passes 74 tests; CI at `3c141c9` passes 754 with 10 CUDA-only skips.
 
 ## Reproduction and stopped attempts
 
@@ -502,6 +538,8 @@ Use a new output path with `--reference-scan`, `--donor-control`, or `--trace-bl
 to reproduce the additional controls.
 For the attention initialization, `--attention-fp64-oracle --loop-k 5` (or `1`)
 selects the diagnostic double-precision path, not the production acceptance gate.
+For the hybrid, use `--hybrid-fp64-oracle` for the separately checked sequential
+double-precision recurrence; it cannot be combined with `--reference-scan`.
 
 The local dependency versions were Transformers 5.17.0, safetensors 0.8.0 and
 tokenizers 0.23.2. CPU and recovery test results are reported with their execution environment in the PR.
