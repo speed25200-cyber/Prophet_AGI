@@ -127,6 +127,26 @@ generalization, significance, or a best initialization strategy. Unseen validati
 and equal-budget recovery runs are required. The current initialization remains
 an experimental artifact, not an adopted Prophet-main model.
 
+## Recovery rationale and next gate
+
+The conversion literature does not establish quality from weight transfer alone.
+Relaxed Recursive Transformers tests layer-specific low-rank residuals initialized
+from donor/shared weight differences, followed by uptraining. Its extended Gemma
+experiment uses 60B tokens with forward-KL distillation, beyond the 15B-token
+setting. Those budgets and architectures cannot be assumed to transfer to this
+Qwen/GDN candidate. [Primary paper, sections 2.3 and 3.6](https://arxiv.org/html/2410.20672v3).
+
+Before spending a recovery budget, retain the unchanged donor control and separate
+an all-attention shared candidate from the GDN candidate. Compare plain language
+modeling against the same initialization and data order with a frozen-donor
+forward-KL objective. Keep the donor tokenizer, record teacher inference cost as
+well as student tokens, and use a held-out evaluation not selected by these seven
+prefix diagnostics. Restore optimizer, data cursor and RNG under an immutable
+teacher/checkpoint contract. Additional per-depth adapters are another architectural
+change and require their own parameter/memory accounting and ablation. These are
+requirements for the next experiment, not implemented recovery or evidence that
+this initialization will recover within the available budget.
+
 ## Real-size cached decoding: strict gate remains open
 
 The hybrid was checked on the first diagnostic prefix, with 128 positions, fixed
