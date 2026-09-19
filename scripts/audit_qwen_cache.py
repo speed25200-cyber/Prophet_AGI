@@ -8,15 +8,46 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from types import MethodType
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch  # noqa: E402
 
 from prophet.config import ProphetConfig  # noqa: E402
-from prophet.modeling.layers import GatedDeltaNet  # noqa: E402
+from prophet.modeling.layers import (  # noqa: E402
+    CausalSelfAttention,
+    GatedDeltaNet,
+    RMSNorm,
+    RotaryEmbedding,
+)
 from prophet.modeling.model import ProphetCache, ProphetModel  # noqa: E402
 from scripts.rehearse_qwen_conversion import digest  # noqa: E402
+
+
+def attention_fp64_oracle(model: ProphetModel) -> None:
+    """Diagnostic instance only: double arithmetic, including the RMS reductions.
+
+    Preserve the production FP32 rotary tables so position construction remains
+    identical. Do not change the production normalization implementation or accept
+    mixers whose internal arithmetic would silently remain FP32 (notably GDN).
+    """
+    if any(not isinstance(block.mixer, CausalSelfAttention)
+           for blocks in model.sections.values() for block in blocks):
+        raise ValueError("FP64 oracle requires attention-only Prophet sections")
+
+    def rms_forward(layer, x):
+        if x.dtype != torch.float64:
+            raise TypeError("FP64 diagnostic received a lower-precision RMS input")
+        out = x * torch.rsqrt(x.square().mean(-1, keepdim=True) + layer.eps)
+        return out * layer.weight if layer.weight is not None else out
+
+    model.double()
+    for layer in model.modules():
+        if isinstance(layer, RMSNorm):
+            layer.forward = MethodType(rms_forward, layer)
+        elif isinstance(layer, RotaryEmbedding):
+            layer.float()
 
 
 def main():
@@ -27,9 +58,13 @@ def main():
     parser.add_argument("--donor-control", action="store_true")
     parser.add_argument("--trace-blocks", action="store_true")
     parser.add_argument("--loop-k", type=int, default=5)
+    parser.add_argument("--attention-fp64-oracle", action="store_true",
+                        help="diagnostic only: double attention/residual/RMS arithmetic; not the FP32 gate")
     args = parser.parse_args()
     if args.loop_k < 1:
         parser.error("--loop-k must be positive")
+    if args.attention_fp64_oracle and (args.donor_control or args.reference_scan):
+        parser.error("FP64 oracle is only supported for an attention-only Prophet initialization")
     if args.out.exists():
         raise FileExistsError("preserve existing evidence")
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -69,8 +104,15 @@ def main():
             raise ValueError("--reference-scan requires at least one GDN layer")
         for layer in gdn_layers:
             layer.chunk_size = None
+    if args.attention_fp64_oracle:
+        attention_fp64_oracle(model)
+    tolerance = 1e-8 if args.attention_fp64_oracle else 1e-4
     result = {
-        "scope": "one fixed 128-token prefix, CPU float32; unchanged elementwise tolerance",
+        "scope": "one fixed 128-token prefix; diagnostic FP64 oracle, not the production FP32 gate"
+        if args.attention_fp64_oracle
+        else "one fixed 128-token prefix, CPU float32; unchanged elementwise tolerance",
+        "precision": "float64 with FP32 rotary tables" if args.attention_fp64_oracle else "float32",
+        "attention_fp64_oracle": args.attention_fp64_oracle,
         "model": "unchanged_donor" if args.donor_control else "converted_initialization",
         "core_pattern": None if args.donor_control else model.cfg.recurrent.core_pattern,
         "loop_k": None if args.donor_control else args.loop_k,
@@ -84,8 +126,8 @@ def main():
         else ("sequential_reference" if args.reference_scan else "chunk64"),
         "document_sha256": reference["document_sha256"],
         "input_ids_sha256": hashlib.sha256(ids.numpy().tobytes()).hexdigest(),
-        "atol": 1e-4,
-        "rtol": 1e-4,
+        "atol": tolerance,
+        "rtol": tolerance,
         "paths": {},
     }
     full_hidden, stage_counts, trace = {}, {}, {}
@@ -103,14 +145,14 @@ def main():
                     full_hidden[key] = output.detach().clone()
                 else:
                     expected = full_hidden[key][:, position : position + output.shape[1]]
-                    difference = (output - expected).float()
+                    difference = output - expected
                     row = trace.setdefault(
                         key, {"max_absolute_error": 0.0, "max_relative_l2_error": 0.0}
                     )
                     row["max_absolute_error"] = max(
                         row["max_absolute_error"], difference.abs().max().item()
                     )
-                    relative = difference.norm() / expected.float().norm().clamp_min(1e-12)
+                    relative = difference.norm() / expected.norm().clamp_min(1e-12)
                     row["max_relative_l2_error"] = max(
                         row["max_relative_l2_error"], relative.item()
                     )
@@ -127,6 +169,7 @@ def main():
             else model(ids, loop_k=args.loop_k, return_mtp=False)
         ).logits
         assert torch.isfinite(full).all()
+        assert full.dtype == (torch.float64 if args.attention_fp64_oracle else torch.float32)
         tracing_reference = False
         for name, lengths in (
             ("chunked_prefill_then_decode", [64, 63, 1]),
@@ -156,7 +199,7 @@ def main():
                 error = (output - expected).abs()
                 max_error = max(max_error, error.max().item())
                 max_scaled_error = max(
-                    max_scaled_error, (error / (1e-4 + 1e-4 * expected.abs())).max().item()
+                    max_scaled_error, (error / (tolerance + tolerance * expected.abs())).max().item()
                 )
                 argmax_matches += (output.argmax(-1) == expected.argmax(-1)).sum().item()
                 position += length

@@ -102,10 +102,12 @@ def test_recovery_config_freezes_depth_without_changing_initial_config():
     assert original == tiny_model_config().to_dict()
 
 
-@pytest.mark.parametrize("mixer,corrupt", [("gdn", False), ("full_attn", False),
-                                           ("full_attn", True)])
+@pytest.mark.parametrize("mixer,corrupt,oracle", [
+    ("gdn", False, False), ("full_attn", False, False), ("full_attn", True, False),
+    ("full_attn", False, True), ("full_attn", True, True),
+])
 def test_cache_audit_identifies_core_and_preserves_numerical_failure(
-    recovery_fixture, tmp_path, monkeypatch, mixer, corrupt
+    recovery_fixture, tmp_path, monkeypatch, mixer, corrupt, oracle
 ):
     import hashlib
 
@@ -140,6 +142,8 @@ def test_cache_audit_identifies_core_and_preserves_numerical_failure(
     args = ["audit_qwen_cache.py", "--source", str(tmp_path / "source"),
             "--checkpoint", str(checkpoint), "--audit", str(audit), "--reference", str(reference),
             "--validation", str(validation), "--out", str(out), "--loop-k", "2", "--trace-blocks"]
+    if oracle:
+        args.append("--attention-fp64-oracle")
     monkeypatch.setattr(sys, "argv", args)
     if corrupt:
         forward = ProphetModel.forward
@@ -158,12 +162,39 @@ def test_cache_audit_identifies_core_and_preserves_numerical_failure(
     result = json.loads(out.read_text())
     assert result["core_pattern"] == [mixer] and result["loop_k"] == 2
     assert result["passed"] is (not corrupt)
+    assert result["attention_fp64_oracle"] is oracle
+    assert result["atol"] == result["rtol"] == (1e-8 if oracle else 1e-4)
     assert result["gdn_scan"] == ("chunk64" if mixer == "gdn" else None)
     for path in result["paths"].values():
         assert path["all_logits_finite"] and path["positions"] == 128
         assert "core/0/iteration-1" in path["block_errors"]
     with pytest.raises(FileExistsError):
         audit_qwen_cache.main()
+
+
+def test_fp64_oracle_preserves_values_rotary_tables_and_rejects_gdn():
+    from prophet.modeling.layers import RMSNorm, RotaryEmbedding
+    from scripts.audit_qwen_cache import attention_fp64_oracle
+
+    cfg = tiny_model_config()
+    model = ProphetModel(cfg)
+    with pytest.raises(ValueError, match="attention-only"):
+        attention_fp64_oracle(model)
+    assert all(p.dtype == torch.float32 for p in model.parameters())
+    cfg.recurrent.core_pattern = ["full_attn"]
+    model = ProphetModel(cfg)
+    original = {name: value.detach().clone() for name, value in model.state_dict().items()}
+    attention_fp64_oracle(model)
+    for name, value in model.state_dict().items():
+        assert torch.equal(value, original[name].double())
+    assert model.embed.weight is model.lm_head.weight
+    for layer in model.modules():
+        if isinstance(layer, RotaryEmbedding):
+            assert layer.inv_freq.dtype == torch.float32
+        if isinstance(layer, RMSNorm):
+            x = torch.randn(2, 3, layer.weight.numel(), dtype=torch.float64)
+            expected = x / (x.square().mean(-1, keepdim=True) + layer.eps).sqrt() * layer.weight
+            torch.testing.assert_close(layer(x), expected, atol=1e-14, rtol=1e-14)
 
 
 @pytest.mark.parametrize("arm", ["donor", "initialization"])
