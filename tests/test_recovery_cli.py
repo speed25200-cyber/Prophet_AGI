@@ -138,13 +138,14 @@ def test_fp32_recovery_resumes_exactly_and_rejects_precision_switch(recovery_fix
         torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32 = old
 
 
-@pytest.mark.parametrize("mixer,corrupt,oracle", [
-    ("gdn", False, None), ("full_attn", False, None), ("full_attn", True, None),
-    ("full_attn", False, "attention"), ("full_attn", True, "attention"),
-    ("gdn", False, "hybrid"), ("gdn", True, "hybrid"),
+@pytest.mark.parametrize("mixer,corrupt,oracle,trained", [
+    ("gdn", False, None, False), ("full_attn", False, None, False), ("full_attn", True, None, False),
+    ("full_attn", False, "attention", False), ("full_attn", True, "attention", False),
+    ("gdn", False, "hybrid", False), ("gdn", True, "hybrid", False),
+    ("gdn", False, None, True), ("gdn", True, None, True),
 ])
 def test_cache_audit_identifies_core_and_preserves_numerical_failure(
-    recovery_fixture, tmp_path, monkeypatch, mixer, corrupt, oracle
+    recovery_fixture, tmp_path, monkeypatch, mixer, corrupt, oracle, trained
 ):
     import hashlib
 
@@ -177,8 +178,23 @@ def test_cache_audit_identifies_core_and_preserves_numerical_failure(
     }))
     out = tmp_path / "cache-audit.json"
     args = ["audit_qwen_cache.py", "--source", str(tmp_path / "source"),
-            "--checkpoint", str(checkpoint), "--audit", str(audit), "--reference", str(reference),
+            "--reference", str(reference),
             "--validation", str(validation), "--out", str(out), "--loop-k", "2", "--trace-blocks"]
+    if trained:
+        initial = tmp_path / "initial.pt"
+        payload = torch.load(initial, weights_only=True)
+        payload["config"]["max_seq_len"] = 256
+        torch.save(payload, initial)
+        conversion_path = tmp_path / "audit.json"
+        conversion = json.loads(conversion_path.read_bytes())
+        conversion["config"] = payload["config"]
+        conversion["checkpoint_sha256"] = recover_qwen.digest(initial)
+        conversion_path.write_text(json.dumps(conversion))
+        run = tmp_path / "trained-run"
+        recovery_fixture(run, "ce", precision="float32")
+        args += ["--recovery-run", str(run), "--step", "2"]
+    else:
+        args += ["--checkpoint", str(checkpoint), "--audit", str(audit)]
     if oracle:
         args.append(f"--{oracle}-fp64-oracle")
     monkeypatch.setattr(sys, "argv", args)
@@ -199,6 +215,10 @@ def test_cache_audit_identifies_core_and_preserves_numerical_failure(
     result = json.loads(out.read_text())
     assert result["core_pattern"] == [mixer] and result["loop_k"] == 2
     assert result["passed"] is (not corrupt)
+    assert result["model"] == ("recovered_checkpoint" if trained else "converted_initialization")
+    if trained:
+        assert result["recovery_checkpoint_audit"]["step"] == 2
+        assert result["recovery_checkpoint_audit"]["complete"]
     assert result["attention_fp64_oracle"] is (oracle == "attention")
     assert result["hybrid_fp64_oracle"] is (oracle == "hybrid")
     assert result["atol"] == result["rtol"] == (1e-8 if oracle else 1e-4)
@@ -209,6 +229,49 @@ def test_cache_audit_identifies_core_and_preserves_numerical_failure(
         assert "core/0/iteration-1" in path["block_errors"]
     with pytest.raises(FileExistsError):
         audit_qwen_cache.main()
+
+
+@pytest.mark.parametrize("corruption", [None, "model_nan", "optimizer_nan", "tokens", "identity", "bytes"])
+def test_evaluated_recovery_checkpoint_audit_detects_corruption(recovery_fixture, tmp_path, corruption):
+    from scripts.audit_recovery_checkpoint import load_evaluated_checkpoint
+
+    run = tmp_path / "run"
+    recovery_fixture(run, "ce", precision="float32")
+    report_path = run / "evaluation-step-000002.json"
+    report = json.loads(report_path.read_bytes())
+    meta = report["checkpoint"]
+    checkpoint = run / f"ckpt_slot{meta['slot']}.pt"
+    if corruption == "identity":
+        report["identity"]["train_sha256"] = "wrong"
+        report_path.write_text(json.dumps(report))
+    elif corruption == "bytes":
+        with checkpoint.open("ab") as stream:
+            stream.write(b"corrupt")
+    elif corruption:
+        state = torch.load(checkpoint, weights_only=True)
+        if corruption == "model_nan":
+            next(iter(state["model"].values())).reshape(-1)[0] = float("nan")
+        elif corruption == "optimizer_nan":
+            tensors = [t for opt in state["optimizers"] for entry in opt["state"].values()
+                       for t in entry.values() if isinstance(t, torch.Tensor) and t.is_floating_point()]
+            assert tensors
+            tensors[0].reshape(-1)[0] = float("nan")
+        else:
+            state["tokens_seen"] += 1
+        torch.save(state, checkpoint)
+        meta.update(sha256=recover_qwen.digest(checkpoint), bytes=checkpoint.stat().st_size)
+        report_path.write_text(json.dumps(report))
+        (run / "manifest.json").write_text(json.dumps({"checkpoints": [meta]}))
+    if corruption:
+        with pytest.raises(ValueError):
+            load_evaluated_checkpoint(run, 2)
+    else:
+        state, audit = load_evaluated_checkpoint(run, 2)
+        assert audit["complete"] and audit["step"] == state["step"] == 2
+        assert audit["tokens_seen"] == 16 and all(audit["finite_tensor_counts"].values())
+        recovery_fixture(run, "ce", precision="float32")
+        with pytest.raises(ValueError, match="rotated"):
+            load_evaluated_checkpoint(run, 2)
 
 
 def test_fp64_oracle_preserves_values_rotary_tables_and_rejects_gdn():

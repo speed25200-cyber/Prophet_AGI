@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check cached execution of a donor or converted initialization on one fixed prefix."""
+"""Check cached execution of a donor, initialization or recovery checkpoint."""
 
 from __future__ import annotations
 
@@ -87,8 +87,13 @@ def attention_fp64_oracle(model: ProphetModel) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("source", "checkpoint", "audit", "reference", "validation", "out"):
+    for name in ("source", "reference", "validation", "out"):
         parser.add_argument("--" + name, type=Path, required=True)
+    artifact = parser.add_mutually_exclusive_group(required=True)
+    artifact.add_argument("--checkpoint", type=Path)
+    artifact.add_argument("--recovery-run", type=Path)
+    parser.add_argument("--audit", type=Path)
+    parser.add_argument("--step", type=int)
     parser.add_argument("--reference-scan", action="store_true")
     parser.add_argument("--donor-control", action="store_true")
     parser.add_argument("--trace-blocks", action="store_true")
@@ -99,6 +104,10 @@ def main():
     oracle.add_argument("--hybrid-fp64-oracle", action="store_true",
                         help="diagnostic only: double arithmetic with a sequential GDN oracle")
     args = parser.parse_args()
+    if args.checkpoint is not None and (args.audit is None or args.step is not None):
+        parser.error("initialization requires --audit and does not accept --step")
+    if args.recovery_run is not None and (args.step is None or args.audit is not None or args.donor_control):
+        parser.error("recovery requires --step and does not accept --audit or --donor-control")
     if args.loop_k < 1:
         parser.error("--loop-k must be positive")
     fp64 = args.attention_fp64_oracle or args.hybrid_fp64_oracle
@@ -108,8 +117,16 @@ def main():
         raise FileExistsError("preserve existing evidence")
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    audit = json.loads(args.audit.read_text())
-    assert digest(args.checkpoint) == audit["checkpoint_sha256"]
+    recovery_audit, payload = None, None
+    if args.recovery_run is not None:
+        from scripts.audit_recovery_checkpoint import load_evaluated_checkpoint
+        payload, recovery_audit = load_evaluated_checkpoint(args.recovery_run, args.step)
+        identity = recovery_audit["training_contract"]["run_identity"]
+        audit = {"checkpoint_sha256": recovery_audit["checkpoint"]["sha256"],
+                 "donor_weights_sha256": identity["donor_weights_sha256"]}
+    else:
+        audit = json.loads(args.audit.read_text())
+        assert digest(args.checkpoint) == audit["checkpoint_sha256"]
     reference = json.loads(args.reference.read_text())["arms"]["donor"]["documents"][0]
     tokenizer = AutoTokenizer.from_pretrained(args.source, local_files_only=True)
     ids = None
@@ -132,7 +149,8 @@ def main():
             args.source, local_files_only=True, dtype=torch.float32, attn_implementation="sdpa"
         )
     else:
-        payload = torch.load(args.checkpoint, map_location="cpu", weights_only=True, mmap=True)
+        if payload is None:
+            payload = torch.load(args.checkpoint, map_location="cpu", weights_only=True, mmap=True)
         model = ProphetModel(ProphetConfig.from_dict(payload["config"]))
         model.load_state_dict(payload["model"], strict=True)
         del payload
@@ -153,7 +171,9 @@ def main():
         "precision": "float64 with FP32 rotary tables" if fp64 else "float32",
         "attention_fp64_oracle": args.attention_fp64_oracle,
         "hybrid_fp64_oracle": args.hybrid_fp64_oracle,
-        "model": "unchanged_donor" if args.donor_control else "converted_initialization",
+        "model": ("unchanged_donor" if args.donor_control else
+                  "recovered_checkpoint" if recovery_audit else "converted_initialization"),
+        "recovery_checkpoint_audit": recovery_audit,
         "core_pattern": None if args.donor_control else model.cfg.recurrent.core_pattern,
         "loop_k": None if args.donor_control else args.loop_k,
         "torch": torch.__version__,
