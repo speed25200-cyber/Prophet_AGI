@@ -84,8 +84,9 @@ de qualité R04 sur plusieurs graines restent à entraîner. Le [premier point c
 cette graine. À [1 024 étapes dans les deux bras](docs/17_R04_CONTINUATION.md),
 le témoin conserve l'avantage : 4.6821 contre 4.7085 nats/token sur la validation complète. Passer de
 quatre à huit boucles à l'inférence dégrade ce checkpoint entraîné à profondeur fixe.
-Le modèle partagé atteint ensuite 2 048 étapes et 4,3574 nats/token ; le témoin
-poursuit sa reprise vers ce palier, sans résultat apparié disponible pour l'instant.
+À 2 048 étapes, l'ordre s'inverse : 4,3574 nats/token pour le modèle partagé contre
+4,3676 pour le témoin. Cet avantage reste limité à ce palier et à cette graine ;
+le protocole complet de 4 096 étapes sur trois graines reste à terminer.
 Les [sources R04](docs/15_R04_SOURCE_AUDIT.md) et les [recoupements avec les benchmarks](docs/16_PILOT_BENCHMARK_OVERLAP.md)
 sont audités séparément. Une [première conversion de poids Qwen3-0.6B](docs/18_DONOR_CONVERSION_REHEARSAL.md)
 est auditée, mais sa perte sur quatre extraits est fortement dégradée : la récupération

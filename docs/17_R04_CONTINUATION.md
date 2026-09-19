@@ -116,13 +116,59 @@ All per-document sums, target identities and 128 training log rows were independ
 checked on the workstation. The previous step-1,024 evidence is preserved separately.
 [Evaluation and checkpoint audit](experiments/2026-09-19-r04-step2048/loop-seed0).
 
-After this audit, the bounded Colab queue launched the unshared continuation from
-its exact evaluated step-1,024 checkpoint toward 2,048. Shared snapshot copying runs
-separately from the unshared GPU training, which uses local files. The queue stops
-on errors, audits the unshared result after exit code 0, then creates its fresh
-snapshot. Remote flush/remount verification is a separate remaining action.
-**No matched comparison at step 2,048 is available yet.** The original 4,096-step
-schedule and training source remain frozen; the full three-seed gate remains open.
+## Matched seed-0 comparison at step 2,048
+
+The unshared continuation also completed with exit code 0 under the same frozen
+protocol. Both arms have seen **33,554,432 training tokens**. Full validation still
+scores exactly the same 376 documents, 393,040 targets and 1,750,592 payload bytes.
+
+| Measurement | Shared k=4 | Unshared k=1 |
+|---|---:|---:|
+| Parameters | 374,688,512 | 920,675,072 |
+| Held-out nats/token | 4.357405080 | 4.367619376 |
+| Held-out bits/byte | 1.411413562 | 1.414722089 |
+| Median logged step time, 128 samples | 1.9674 s | 2.1556 s |
+| Skipped non-finite steps | 0 | 0 |
+
+Shared minus unshared is **-0.010214295 nats/token**, with a 95% paired document
+bootstrap interval **[-0.014071717, -0.006317731]** (10,000 resamples, seed 0).
+The BPB difference is -0.003308528, interval [-0.004559218, -0.002053992]. Shared
+has lower document loss on 56.65% of documents. **This checkpoint favors sharing**,
+reversing the step-1,024 ordering. The result is conditional on these two trained
+models; the interval excludes training-seed uncertainty and does not establish an
+architecture-wide advantage. The fixed 4,096-step, three-seed gate remains open.
+Timing medians exclude setup, compilation, checkpointing and evaluation.
+[Paired summary](experiments/2026-09-19-r04-step2048-summary.json).
+
+The unshared checkpoint is slot 0, 7,605,983,483 bytes, SHA256
+`268b685cc47ac90728eb0072e631250ab20ea1864c619b1e1f544bde6969eeb7`.
+All 865 model/optimizer tensors are finite. The evidence ZIP is 62,669 bytes,
+SHA256 `5e9167b1737f1d8146e35696b8129de4df942ad7eb7eb85292eccd7f692d15a5`.
+Its 376 document sums/identities, CE/BPB denominators, checkpoint metadata and all
+128 log rows were independently validated after download.
+[Unshared reports](experiments/2026-09-19-r04-step2048/plain-seed0).
+
+```bash
+python scripts/summarize_r04.py \
+  --root docs/experiments/2026-09-19-r04-step2048 \
+  --step 2048 --seed 0 --out /tmp/r04-step2048-summary.json
+```
+
+Both fresh step-2,048 Drive snapshots passed their filesystem copy/checkpoint audits.
+Drive was confirmed mounted, flushed successfully in 93.84 seconds, then remounted.
+Both complete tensor audits matched their local originals exactly (313 shared,
+865 unshared tensors). The downloaded persistence proof has SHA256
+`0512f90a28088a63ac3fcead39e4c61fce9c1355603165e406e2aeffc62a00dd`.
+[Post-remount persistence evidence](experiments/2026-09-19-r04-step2048-persistence.json).
+
+The exact published checkpoints were also staged into separate local directories
+with one-entry manifests and full audits. A bounded queue now continues seed 0
+toward the original 4,096-step endpoint, shared first, then unshared, with an audit
+and a fresh snapshot between arms. Each process uses local files/stdout and its
+own process session. Its operational limit is 2,048 additional steps or 90 minutes;
+the original total schedule and all numerical settings stay fixed. Unexpected early
+exit, missing evaluation or failed audit stops the queue for inspection. Final
+snapshot flushing remains a separate step after those future runs complete.
 
 ## Inference depth sensitivity on the same weights
 
