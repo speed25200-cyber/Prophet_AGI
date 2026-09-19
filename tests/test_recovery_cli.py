@@ -275,15 +275,17 @@ def test_evaluated_recovery_checkpoint_audit_detects_corruption(recovery_fixture
 
 
 @pytest.mark.parametrize("corrupt", [False, True])
-def test_recovery_cache_suite_checks_longer_prefix_and_retains_failure(recovery_fixture, tmp_path, monkeypatch, corrupt):
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA recovered cache suite"))])
+def test_recovery_cache_suite_checks_longer_prefix_and_retains_failure(recovery_fixture, tmp_path, monkeypatch, corrupt, device):
     from scripts import audit_recovery_cache_suite
 
     run = tmp_path / "suite-run"
-    recovery_fixture(run, "ce", precision="float32")
+    recovery_fixture(run, "ce", precision="float32", device=device)
     out = tmp_path / "suite.json"
     argv = ["audit_recovery_cache_suite.py", "--run", str(run), "--step", "2",
             "--source", str(tmp_path / "source"), "--validation", str(tmp_path / "validation.jsonl"),
-            "--out", str(out), "--documents", "1", "--lengths", "4", "8"]
+            "--out", str(out), "--documents", "1", "--lengths", "4", "8", "--device", device]
     monkeypatch.setattr(sys, "argv", argv)
     if corrupt:
         forward = ProphetModel.forward
@@ -306,6 +308,11 @@ def test_recovery_cache_suite_checks_longer_prefix_and_retains_failure(recovery_
     assert report["cases"][1]["passed"] is (not corrupt)
     assert report["atol"] == report["rtol"] == 1e-4
     assert report["recovery_checkpoint_audit"]["step"] == 2
+    assert report["device"] == device
+    assert report["gdn_scan"] == ("fla_chunk32" if device == "cuda" else "chunk64")
+    assert report["allow_tf32_matmul"] is report["allow_tf32_cudnn"] is False
+    if device == "cuda":
+        assert report["peak_cuda_allocated_bytes"] > 0 and report["device_name"]
     with pytest.raises(FileExistsError):
         audit_recovery_cache_suite.main()
 
