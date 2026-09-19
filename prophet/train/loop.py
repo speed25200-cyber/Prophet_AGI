@@ -13,7 +13,7 @@ import math
 import time
 import warnings
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import torch
@@ -34,7 +34,7 @@ TOOL_ID = N_BYTES + SPECIAL_TOKENS.index("<|tool|>")
 
 __all__ = ["TrainConfig", "Trainer", "TrainMetrics"]
 
-_TRAINER_STATE_VERSION = 2
+_TRAINER_STATE_VERSION = 3
 
 
 def tool_span_mask(batch: Tensor, tool_id: int, assistant_id: int) -> Tensor:
@@ -262,6 +262,18 @@ class Trainer:
 
     # -- state -------------------------------------------------------------------------
 
+    def training_contract(self) -> dict[str, Any]:
+        """Numerical settings that must stay fixed for an exact continuation.
+
+        Session length, logging and checkpoint placement are operational controls.
+        Changing the optimizer schedule or objectives requires a separate warm start,
+        not a resume claimed to be the same experiment.
+        """
+        operational = {"checkpoint_every", "log_every", "checkpoint_dir", "keep_milestones",
+                       "max_wall_seconds", "device"}
+        return {**{k: v for k, v in asdict(self.cfg).items() if k not in operational},
+                "device_type": self.device.type, "schedule": asdict(self.schedule)}
+
     def state_dict(self) -> dict[str, Any]:
         return {
             "trainer_state_version": _TRAINER_STATE_VERSION,
@@ -277,6 +289,9 @@ class Trainer:
             "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             "config": self.model_config.to_dict() if self.model_config else None,
             "loss_chunk_tokens": self.cfg.loss_chunk_tokens,
+            "training_contract": self.training_contract(),
+            "skipped_nonfinite": self.skipped_nonfinite,
+            "consecutive_nonfinite": self._consecutive_skips,
         }
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
@@ -286,9 +301,21 @@ class Trainer:
         if version is not None and (
             not isinstance(version, int)
             or isinstance(version, bool)
-            or version not in (1, _TRAINER_STATE_VERSION)
+            or version not in (1, 2, _TRAINER_STATE_VERSION)
         ):
             raise ValueError(f"unsupported trainer state version: {version!r}")
+        saved_contract = state.get("training_contract")
+        if saved_contract is None:
+            if version == _TRAINER_STATE_VERSION:
+                raise ValueError("checkpoint does not contain the training contract")
+            warnings.warn("legacy checkpoint has no training contract; optimizer schedule and "
+                          "objective consistency cannot be verified", RuntimeWarning, stacklevel=2)
+        elif saved_contract != self.training_contract():
+            raise ValueError("checkpoint training contract does not match the current trainer")
+        skipped = state.get("skipped_nonfinite", 0)
+        consecutive = state.get("consecutive_nonfinite", 0)
+        if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in (skipped, consecutive)) or consecutive > skipped:
+            raise ValueError("invalid non-finite step counters")
 
         current_config = self.model_config.to_dict() if self.model_config else None
         has_saved_config = "config" in state and state["config"] is not None
@@ -301,14 +328,14 @@ class Trainer:
             # fields added since they were written receive their historical defaults.
             saved_config = (
                 dict(raw_saved_config)
-                if version == _TRAINER_STATE_VERSION
+                if version in (2, _TRAINER_STATE_VERSION)
                 else ProphetConfig.from_dict(dict(raw_saved_config)).to_dict()
             )
             if current_config is None or saved_config != current_config:
                 raise ValueError(
                     "checkpoint model config does not match the current trainer config"
                 )
-        elif version == _TRAINER_STATE_VERSION:
+        elif version in (2, _TRAINER_STATE_VERSION):
             if current_config is not None or "config" not in state:
                 raise ValueError(
                     "checkpoint does not contain a model config compatible with the "
@@ -341,6 +368,8 @@ class Trainer:
             opt.load_state_dict(opt_state)
         self.step = int(state["step"])
         self.tokens_seen = int(state["tokens_seen"])
+        self.skipped_nonfinite = skipped
+        self._consecutive_skips = consecutive
         self.loader.load_state(loader_state)
         if "torch_rng" in state and state["torch_rng"] is not None:
             torch.set_rng_state(state["torch_rng"].cpu().to(torch.uint8))

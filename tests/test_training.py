@@ -508,6 +508,49 @@ def test_no_resume_on_an_empty_directory(tmp_path):
     assert trainer.step == 0
 
 
+@pytest.mark.parametrize("field,value", [("total_steps", 6), ("peak_lr_muon", 0.003),
+    ("warmup_frac", 0.1), ("grad_accum_steps", 2), ("z_loss_weight", 0), ("dtype", "float32")])
+def test_resume_rejects_changed_training_contract_without_mutation(tmp_path, field, value):
+    cfg = tiny_model_config()
+    first = Trainer(ProphetModel(cfg), make_loader(),
+                    TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path)), model_config=cfg)
+    state = first.state_dict()
+    state["step"] = 3
+    changed = TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path))
+    setattr(changed, field, value)
+    second = Trainer(ProphetModel(cfg), make_loader(), changed, model_config=cfg)
+    before = {k: v.clone() for k, v in second.model.state_dict().items()}
+    with pytest.raises(ValueError, match="training contract"):
+        second.load_state_dict(state)
+    assert second.step == 0
+    assert all(torch.equal(v, before[k]) for k, v in second.model.state_dict().items())
+
+
+def test_resume_allows_new_session_controls_and_restores_failure_counters(tmp_path):
+    cfg = tiny_model_config()
+    first = Trainer(ProphetModel(cfg), make_loader(), TrainConfig(total_steps=5,
+                    checkpoint_dir=str(tmp_path / "first")), model_config=cfg)
+    first.skipped_nonfinite, first._consecutive_skips = 3, 1
+    second = Trainer(ProphetModel(cfg), make_loader(), TrainConfig(total_steps=5,
+        checkpoint_dir=str(tmp_path / "second"), max_wall_seconds=30, log_every=2,
+        checkpoint_every=1), model_config=cfg)
+    second.load_state_dict(first.state_dict())
+    assert (second.skipped_nonfinite, second._consecutive_skips) == (3, 1)
+
+
+def test_current_checkpoint_requires_training_contract_and_legacy_warns(tmp_path):
+    cfg = tiny_model_config()
+    trainer = Trainer(ProphetModel(cfg), make_loader(),
+                      TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path)), model_config=cfg)
+    state = trainer.state_dict()
+    del state["training_contract"]
+    with pytest.raises(ValueError, match="training contract"):
+        trainer.load_state_dict(state)
+    state["trainer_state_version"] = 2
+    with pytest.warns(RuntimeWarning, match="no training contract"):
+        trainer.load_state_dict(state)
+
+
 def test_gradient_accumulation_matches_the_token_count(tmp_path):
     trainer = Trainer(
         ProphetModel(tiny_model_config()), make_loader(),

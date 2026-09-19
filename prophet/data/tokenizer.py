@@ -358,6 +358,21 @@ class ProphetTokenizer:
         self._encode_cache[raw] = result
         return result
 
+    def byte_length(self, ids: Iterable[int]) -> int:
+        """Exact payload bytes; control tokens contribute zero.
+
+        Unlike decoding a token slice and re-encoding UTF-8, this remains exact when
+        a slice boundary falls inside a multibyte character represented by byte fallback.
+        """
+        total = 0
+        for token_id in ids:
+            if int(token_id) not in self._id_to_token:
+                raise ValueError(f"unknown or unused token id: {token_id}")
+            token = self._id_to_token[int(token_id)]
+            if isinstance(token, bytes):
+                total += len(token)
+        return total
+
     def encode(
         self,
         text: str,
