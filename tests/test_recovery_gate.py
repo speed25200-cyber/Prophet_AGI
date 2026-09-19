@@ -14,6 +14,23 @@ from tests.test_distillation import fresh
 from tests.test_training import ProphetModel, tiny_model_config
 
 
+def test_fp32_policy_disables_inherited_tf32_and_selects_teacher_storage():
+    from scripts.recover_qwen import recovery_precision
+
+    old = torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
+    try:
+        torch.backends.cuda.matmul.allow_tf32 = torch.backends.cudnn.allow_tf32 = True
+        assert recovery_precision("float32", "cuda") == torch.float32
+        assert not torch.backends.cuda.matmul.allow_tf32
+        assert not torch.backends.cudnn.allow_tf32
+        assert recovery_precision("bfloat16", "cuda") == torch.bfloat16
+        assert recovery_precision("bfloat16", "cpu") == torch.float32
+        with pytest.raises(ValueError, match="precision"):
+            recovery_precision("float16", "cuda")
+    finally:
+        torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32 = old
+
+
 def test_numerical_gate_preserves_weights_rng_and_execution_policy():
     torch.manual_seed(71)
     cfg = tiny_model_config()

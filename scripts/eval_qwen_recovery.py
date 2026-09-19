@@ -51,6 +51,7 @@ def main():
     parser.add_argument("--chunk-tokens", type=int, default=128)
     parser.add_argument("--cpu-threads", type=int, default=2)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--precision", choices=("bfloat16", "float32"), default="bfloat16")
     args = parser.parse_args()
     if (
         args.seq_len < 2
@@ -75,6 +76,7 @@ def main():
         raise ValueError("validation document count differs from the data audit")
     source_config, tokenizer = recovery.load_source(args.source)
     device = torch.device(args.device)
+    donor_dtype = recovery.recovery_precision(args.precision, device)
     if device.type not in ("cpu", "cuda"):
         raise ValueError("this evaluation protocol supports CPU or CUDA only")
     torch.set_num_threads(args.cpu_threads)
@@ -91,7 +93,7 @@ def main():
                 args.source,
                 local_files_only=True,
                 trust_remote_code=False,
-                dtype=torch.bfloat16 if device.type == "cuda" else torch.float32,
+                dtype=donor_dtype,
                 attn_implementation="sdpa",
             )
         )
@@ -133,6 +135,7 @@ def main():
         device=args.device,
         loss_chunk_tokens=args.chunk_tokens,
         loop_k=loop_k,
+        precision=args.precision,
     )
     if device.type == "cuda":
         torch.cuda.synchronize(device)
@@ -161,6 +164,9 @@ def main():
             "cuda": torch.version.cuda,
             "fla": version("fla-core") if device.type == "cuda" and HAS_FLA else None,
             "triton_f32_default": os.environ.get("TRITON_F32_DEFAULT"),
+            "requested_precision": args.precision,
+            "allow_tf32_matmul": torch.backends.cuda.matmul.allow_tf32,
+            "allow_tf32_cudnn": torch.backends.cudnn.allow_tf32,
         },
         "peak_cuda_allocated_bytes": torch.cuda.max_memory_allocated(device)
         if device.type == "cuda"

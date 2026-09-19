@@ -212,7 +212,11 @@ def main():
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--gdn-fp32-diagnostic", action="store_true",
                         help="disable autocast inside GDN on this discarded gate instance only")
+    parser.add_argument("--precision", choices=("bfloat16", "float32"), default="bfloat16",
+                        help="precision policy being gated; float32 does not certify BF16")
     args = parser.parse_args()
+    if args.gdn_fp32_diagnostic and args.precision == "float32":
+        parser.error("the GDN-only diagnostic requires the outer BF16 policy")
     if args.out.exists():
         raise FileExistsError("preserve previous gate evidence")
     if args.seq_len < 67 or min(args.batch_size, args.grad_accum, args.loop_k, args.chunk_tokens) < 1:
@@ -227,6 +231,7 @@ def main():
     if os.environ.get("TRITON_F32_DEFAULT") != "tf32x3":
         raise RuntimeError("use the validated TRITON_F32_DEFAULT=tf32x3 policy")
     torch.set_num_threads(2)
+    teacher_dtype = recovery.recovery_precision(args.precision, "cuda")
     source_config, tokenizer = recovery.load_source(args.source)
     payload, initialization_sha = recovery.load_initialization(args.initialization, args.audit)
     cfg = recovery.recovery_config(payload["config"], args.loop_k, args.seq_len)
@@ -255,13 +260,15 @@ def main():
               "triton": version("triton"), "triton_f32_default": os.environ["TRITON_F32_DEFAULT"],
               "device_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
               "objective": args.objective, "numerical": {},
+              "precision": args.precision,
+              "numerical_gate_scope": "FP32 only" if args.precision == "float32" else "FP32 and BF16",
               "gdn_fp32_diagnostic": bool(diagnostic_layers),
               "diagnostic_gdn_layers": diagnostic_layers,
               "scope": "initialized training path and measured allocation; not cached decoding or quality"
               + ("; diagnostic FP32 GDN override, not production BF16 acceptance" if diagnostic_layers else "")}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     recovery.write_report(args.out, report)
-    for autocast in (False, True):
+    for autocast in ((False,) if args.precision == "float32" else (False, True)):
         label = "bf16" if autocast else "fp32"
         try:
             result = training_kernel_agreement(model, ids, loop_k=args.loop_k,
@@ -284,7 +291,7 @@ def main():
     if args.objective == "kl":
         teacher = AutoModelForCausalLM.from_pretrained(
             args.source, local_files_only=True, trust_remote_code=False,
-            dtype=torch.bfloat16, attn_implementation="sdpa")
+            dtype=teacher_dtype, attn_implementation="sdpa")
         objective = DistillationObjective(teacher, identity={"donor_sha256": recovery.WEIGHTS_SHA256},
                                           settings=settings)
     source = TokenisedSource(LocalTextSource("recovery", 1.0, [args.train]), tokenizer, max_epochs=4)
@@ -296,7 +303,8 @@ def main():
                                 grad_accum_steps=args.grad_accum, checkpoint_every=0, checkpoint_dir=scratch,
                                 log_every=1, peak_lr_muon=args.muon_lr, peak_lr_adamw=args.adamw_lr,
                                 mtp_weight=0, confidence_weight=0, z_loss_weight=0, ponder_weight=0,
-                                loss_chunk_tokens=args.chunk_tokens, device="cuda")
+                                loss_chunk_tokens=args.chunk_tokens, device="cuda",
+                                dtype=args.precision, allow_tf32=args.precision != "float32")
         trainer = Trainer(model, loader, train_cfg, model_config=cfg, tokenizer=tokenizer,
                           distillation=objective)
         try:

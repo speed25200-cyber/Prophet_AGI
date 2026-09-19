@@ -54,13 +54,14 @@ def recovery_fixture(tmp_path, monkeypatch):
     train.write_text(json.dumps({"text": "abc def " * 100}) + "\n", encoding="utf-8")
     validation.write_text(json.dumps({"text": "unique test"}) + "\n", encoding="utf-8")
 
-    def run(out, objective, session_steps=2):
+    def run(out, objective, session_steps=2, precision="bfloat16"):
         args = ["recover_qwen.py", "--source", str(source), "--initialization", str(initialization),
                 "--audit", str(audit), "--train", str(train), "--validation", str(validation),
                 "--out", str(out), "--objective", objective, "--steps", "4", "--loop-k", "2",
                 "--seq-len", "8", "--batch-size", "1", "--checkpoint-every", "2",
                 "--muon-lr", "0.01", "--adamw-lr", "0.001", "--device", "cpu",
-                "--chunk-tokens", "3", "--max-session-steps", str(session_steps)]
+                "--chunk-tokens", "3", "--max-session-steps", str(session_steps),
+                "--precision", precision]
         monkeypatch.setattr(sys, "argv", args)
         recover_qwen.main()
     return run
@@ -100,6 +101,29 @@ def test_recovery_config_freezes_depth_without_changing_initial_config():
     assert config.recurrent.train_loop_min == config.recurrent.train_loop_max == 3
     assert config.recurrent.default_loop_k == config.recurrent.truncated_backprop_steps == 3
     assert original == tiny_model_config().to_dict()
+
+
+@pytest.mark.parametrize("objective", ["ce", "kl"])
+def test_fp32_recovery_resumes_exactly_and_rejects_precision_switch(recovery_fixture, tmp_path, objective):
+    old = torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
+    try:
+        run, reference = tmp_path / "fp32", tmp_path / "reference"
+        recovery_fixture(run, objective, precision="float32")
+        with pytest.raises(ValueError, match="another recovery experiment"):
+            recovery_fixture(run, objective, precision="bfloat16")
+        recovery_fixture(run, objective, precision="float32")
+        recovery_fixture(reference, objective, 4, precision="float32")
+        result = json.loads((run / "evaluation-step-000004.json").read_bytes())
+        expected = json.loads((reference / "evaluation-step-000004.json").read_bytes())
+        assert result["evaluation"] == expected["evaluation"]
+        assert result["evaluation"]["precision"] == "fp32"
+        assert result["identity"]["teacher_dtype"] == result["identity"]["precision"] == "float32"
+        resumed, _ = CheckpointManager(run).load_latest()
+        full, _ = CheckpointManager(reference).load_latest()
+        for key, value in resumed["model"].items():
+            assert torch.equal(value, full["model"][key]), key
+    finally:
+        torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32 = old
 
 
 @pytest.mark.parametrize("mixer,corrupt,oracle", [

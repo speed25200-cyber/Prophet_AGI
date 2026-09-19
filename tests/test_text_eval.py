@@ -68,3 +68,39 @@ def test_empty_evaluation_refused_and_mode_restored():
     with pytest.raises(ValueError, match="no scored"):
         evaluate_documents(model, [""], ProphetTokenizer([], vocab_size=512), seq_len=4)
     assert model.training
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA precision execution")
+def test_cuda_evaluation_precision_changes_execution_and_matches_manual_fp32():
+    from prophet.train.chunked_loss import shifted_token_losses
+
+    class ProjectionModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embed = nn.Embedding(512, 32)
+            self.proj = nn.Linear(32, 512)
+            self.dtypes = []
+
+        def forward(self, ids, **kwargs):
+            logits = self.proj(self.embed(ids))
+            self.dtypes.append(logits.dtype)
+            return SimpleNamespace(logits=logits)
+
+    torch.manual_seed(119)
+    model = ProjectionModel().cuda().eval()
+    tokenizer = ProphetTokenizer([], vocab_size=512)
+    text = "precision"
+    ids = torch.tensor([tokenizer.encode(text, add_eos=True)], device="cuda")
+    with torch.no_grad(), torch.autocast("cuda", enabled=False):
+        ce, _ = shifted_token_losses(model(ids).logits, ids, 1, 3)
+        expected = ce.double().sum().item()
+    model.dtypes.clear()
+    result = evaluate_documents(model, [text], tokenizer, seq_len=ids.shape[1], batch_size=1,
+                                device="cuda", loss_chunk_tokens=3, precision="float32")
+    assert result["total_nats"] == expected and result["precision"] == "fp32"
+    assert model.dtypes == [torch.float32]
+    model.dtypes.clear()
+    bf16 = evaluate_documents(model, [text], tokenizer, seq_len=ids.shape[1], batch_size=1,
+                              device="cuda", precision="bfloat16")
+    assert model.dtypes == [torch.bfloat16] and bf16["precision"] == "bf16 autocast"
+    assert bf16["total_nats"] != expected

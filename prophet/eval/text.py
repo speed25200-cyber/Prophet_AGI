@@ -25,7 +25,8 @@ class DocumentScore:
 @torch.no_grad()
 def evaluate_documents(model, documents: Iterable[str], tokenizer: ProphetTokenizer, *,
                        seq_len: int = 2048, batch_size: int = 8, device: str = "cpu",
-                       loss_chunk_tokens: int = 512, loop_k: int | None = None) -> dict:
+                       loss_chunk_tokens: int = 512, loop_k: int | None = None,
+                       precision: str = "bfloat16") -> dict:
     """Score all tokens after the first token of each document, including EOS.
 
     Windows overlap by one context token; every target occurs exactly once. Rows
@@ -35,7 +36,10 @@ def evaluate_documents(model, documents: Iterable[str], tokenizer: ProphetTokeni
     """
     if seq_len < 2 or batch_size < 1:
         raise ValueError("seq_len must be >=2 and batch_size positive")
+    if precision not in ("bfloat16", "float32"):
+        raise ValueError("precision must be bfloat16 or float32")
     device = torch.device(device)
+    use_autocast = device.type == "cuda" and precision == "bfloat16"
     scores: list[DocumentScore] = []
     pending: list[tuple[int, list[int]]] = []
     was_training = model.training
@@ -49,7 +53,7 @@ def evaluate_documents(model, documents: Iterable[str], tokenizer: ProphetTokeni
         for row, (_, ids) in enumerate(pending):
             inputs[row, :len(ids)] = torch.tensor(ids, device=device)
             targets[row, :len(ids)] = inputs[row, :len(ids)]
-        with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
+        with torch.autocast(device.type, dtype=torch.bfloat16, enabled=use_autocast):
             output = model(inputs, return_mtp=False, **({"loop_k": loop_k} if loop_k is not None else {}))
         logits = output.logits if hasattr(output, "logits") else output
         ce, _ = shifted_token_losses(logits, targets, 1, loss_chunk_tokens)
@@ -86,6 +90,6 @@ def evaluate_documents(model, documents: Iterable[str], tokenizer: ProphetTokeni
         "total_nats": total_nats, "scored_tokens": tokens, "scored_bytes": byte_count,
         "nats_per_token": total_nats / tokens, "bits_per_byte": total_nats / byte_count / math.log(2),
         "documents": [asdict(s) for s in scores], "seq_len": seq_len, "batch_size": batch_size,
-        "loop_k": loop_k, "precision": "bf16 autocast" if device.type == "cuda" else "fp32",
+        "loop_k": loop_k, "precision": "bf16 autocast" if use_autocast else "fp32",
         "protocol": "window-local positions; one-token overlap; first token unscored; EOS scored with zero payload bytes",
     }

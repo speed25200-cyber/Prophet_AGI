@@ -37,6 +37,20 @@ from scripts.verify_donors import compare  # noqa: E402
 TOKENIZER_SHA256 = "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
 
 
+def recovery_precision(precision, device):
+    """Choose the teacher storage dtype and enforce the strict FP32 policy.
+
+    FLA retains its separately recorded tf32x3 accumulation implementation.
+    CPU always uses FP32; CUDA BF16 keeps the existing recovery defaults.
+    """
+    if precision not in ("bfloat16", "float32"):
+        raise ValueError("precision must be bfloat16 or float32")
+    if precision == "float32":
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+    return torch.bfloat16 if torch.device(device).type == "cuda" and precision == "bfloat16" else torch.float32
+
+
 def load_source(source):
     """Verify the pinned local donor and construct the shared text/byte policy."""
     if (digest(source / "model.safetensors") != WEIGHTS_SHA256
@@ -121,6 +135,7 @@ def main():
     parser.add_argument("--chunk-tokens", type=int, default=128)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--precision", choices=("bfloat16", "float32"), default="bfloat16")
     parser.add_argument("--checkpoint-every", type=int, default=128)
     parser.add_argument("--max-session-steps", type=int)
     parser.add_argument("--session-minutes", type=float, default=45)
@@ -143,6 +158,7 @@ def main():
     if cfg.frontend.vocab_size != tokenizer.vocab_size:
         raise ValueError("student vocabulary differs from the pinned donor")
     device = torch.device(args.device)
+    teacher_dtype = recovery_precision(args.precision, device)
     if device.type == "cuda" and not HAS_FLA:
         raise RuntimeError("CUDA recovery requires the pinned FLA kernel and a separate GPU gate")
     identity = {"protocol": "qwen-recovery-v1", "initialization_sha256": initialization_sha,
@@ -151,7 +167,8 @@ def main():
                 "train_sha256": digest(args.train), "validation_sha256": digest(args.validation),
                 "objective": args.objective, "torch": str(torch.__version__),
                 "transformers": transformers.__version__,
-                "teacher_dtype": "bfloat16" if device.type == "cuda" else "float32",
+                "teacher_dtype": str(teacher_dtype).removeprefix("torch."),
+                "precision": args.precision,
                 "teacher_attention": "sdpa", "evaluation_loop_k": args.loop_k,
                 "cuda": torch.version.cuda,
                 "fla": version("fla-core") if device.type == "cuda" else None,
@@ -168,7 +185,7 @@ def main():
     if args.objective == "kl":
         teacher = AutoModelForCausalLM.from_pretrained(
             args.source, local_files_only=True, trust_remote_code=False,
-            dtype=torch.bfloat16 if device.type == "cuda" else torch.float32,
+            dtype=teacher_dtype,
             attn_implementation="sdpa",
         )
         objective = DistillationObjective(teacher, identity=identity, settings=settings)
@@ -181,7 +198,7 @@ def main():
         mtp_weight=0.0, confidence_weight=0.0, z_loss_weight=0.0, ponder_weight=0.0,
         checkpoint_dir=str(args.out), checkpoint_every=args.checkpoint_every,
         log_every=1, max_wall_seconds=args.session_minutes * 60, seed=args.seed,
-        device=args.device,
+        device=args.device, dtype=args.precision, allow_tf32=args.precision != "float32",
     )
     metrics_path = args.out / "training.jsonl"
 
@@ -232,7 +249,7 @@ def main():
     evaluation = evaluate_documents(model, read_documents(args.validation), tokenizer,
                                     seq_len=args.seq_len, batch_size=args.batch_size,
                                     device=args.device, loss_chunk_tokens=args.chunk_tokens,
-                                    loop_k=args.loop_k)
+                                    loop_k=args.loop_k, precision=args.precision)
     report = {"step": trainer.step, "tokens_seen": trainer.tokens_seen,
               "checkpoint": checkpoint.to_dict(), "evaluation": evaluation,
               "skipped_nonfinite": trainer.skipped_nonfinite, "identity": identity,
