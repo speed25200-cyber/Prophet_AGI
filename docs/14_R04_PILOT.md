@@ -77,6 +77,11 @@ changes saved.
 
 ## Evidence and reproduction
 
+The later [retrospective benchmark overlap screen](16_PILOT_BENCHMARK_OVERLAP.md)
+records nine training documents with short lexical overlaps and incomplete
+benchmark coverage. It does not modify this frozen corpus or establish that the
+pilot is benchmark-clean.
+
 - [Summary with paired uncertainty](experiments/2026-09-19-r04-stability-summary.json)
 - [Shared reports and audits](experiments/2026-09-19-r04-stability/loop-seed0)
 - [Unshared reports and audit](experiments/2026-09-19-r04-stability/plain-seed0)

@@ -35,7 +35,7 @@ jobs:
             prophet/modeling/layers.py prophet/modeling/model.py \
             prophet/train/checkpoint.py prophet/train/loop.py \
             prophet/train/loss.py prophet/train/chunked_loss.py \
-            scripts/build_data_docs.py scripts/verify_datasets.py scripts/prepare_pilot.py \
+            scripts/build_data_docs.py scripts/verify_datasets.py scripts/prepare_pilot.py scripts/audit_pilot_overlap.py \
             scripts/gpu_check.py scripts/train.py scripts/pilot_smoke.py scripts/train_tokenizer.py scripts/run_r04_pilot.py scripts/summarize_r04.py scripts/eval_r04_depth.py scripts/audit_r04_checkpoint.py \
             tests/test_config_budget.py tests/test_continual.py tests/test_data.py \
             tests/test_memory.py tests/test_modeling.py tests/test_tokenizer.py \
