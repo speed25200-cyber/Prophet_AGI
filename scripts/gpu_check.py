@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 import time
+from importlib.metadata import version
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -154,6 +155,8 @@ def main() -> int:
         report = {
             "revision": revision, "config": args.config, "device": torch.cuda.get_device_name(0),
             "torch": torch.__version__, "cuda": torch.version.cuda,
+            "python": sys.version.split()[0], "fla_core": version("fla-core"),
+            "triton": version("triton"), "fused_chunk_size": 32,
             "triton_f32_default": os.environ.get("TRITON_F32_DEFAULT", "tf32"),
             "device_memory_gib": torch.cuda.get_device_properties(0).total_memory / 1024**3,
             "batch_size": args.batch_size, "seq_len": args.seq_len, "measured_steps": args.steps,

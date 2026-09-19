@@ -42,7 +42,7 @@ __all__ = [
 # matmul policy. The recurrent state and its gate gradients need FP32 accuracy.
 # Set before FLA import/compilation; an explicit operator choice is preserved,
 # but must pass the GPU gate before training.
-os.environ.setdefault("TRITON_F32_DEFAULT", "ieee")
+os.environ.setdefault("TRITON_F32_DEFAULT", "tf32x3")
 
 try:  # pragma: no cover - availability depends on the environment
     from fla.ops.gated_delta_rule import chunk_gated_delta_rule as _fla_gated_delta
@@ -833,6 +833,10 @@ class GatedDeltaNet(nn.Module):
             out, fla_state = _fla_gated_delta(
                 q=q.float(), k=k.float(), v=v.float(), g=log_alpha, beta=beta, scale=1.0,
                 initial_state=init, output_final_state=state is not None,
+                # FLA 0.5.2 hard-codes TF32 in its fused 64-token triangular solve,
+                # ignoring TRITON_F32_DEFAULT. The public 32-token route uses the
+                # accurate generic solve and preserves the same recurrence.
+                chunk_size=32,
             )
             out = out.to(q.dtype)
             new_state = None if fla_state is None else fla_state.transpose(-1, -2).contiguous()
