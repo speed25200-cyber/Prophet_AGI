@@ -1,0 +1,27 @@
+name: fineweb-pilot-v1
+total_tokens: 67108864
+description: >-
+  Bounded local pilot, not the full pretraining mixture. Use the train directory
+  produced by prepare_pilot.py and its 32768-entry tokenizer; do not use --hub.
+  Source and shard hashes are recorded in docs/experiments/2026-09-19-pilot-corpus.json.
+phases:
+- name: pilot
+  weight: 1.0
+  lr_schedule: warmup_then_constant
+  context_len: 2048
+  purpose: Matched R04 early-learning comparison; multiple seeds required.
+  sources:
+  - name: fineweb-edu
+    hf_id: HuggingFaceFW/fineweb-edu
+    config: sample-10BT
+    domain: web
+    weight: 1.0
+    available_tokens: 19419613
+    license: ODC-By-1.0
+    filters:
+      int_score_min: 3
+    notes: >-
+      Local normalized-deduplicated training split, held-out 13-gram overlap removed.
+      19569 documents; token count includes one EOS per document. This size is the
+      prepared local shard, not the complete Hub dataset. Maximum planned repetition
+      is 3.456 epochs at this budget.

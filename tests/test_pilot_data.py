@@ -47,6 +47,19 @@ def test_recipe_filters_match_published_fineweb_schema():
                 assert not row_passes({"text": "example", "score": 2.1, "int_score": 2}, source.filters)
 
 
+def test_pilot_recipe_respects_measured_corpus_repetition_cap():
+    from pathlib import Path
+
+    from prophet.data.mixture import Mixture, MixtureError
+    root = Path(__file__).resolve().parent.parent
+    mixture = Mixture.from_yaml(root / "configs/data_mixture_pilot.yaml")
+    counts = json.loads((root / "docs/experiments/2026-09-19-pilot-token-counts.json").read_text())
+    assert mixture.phases[0].sources[0].available_tokens == counts["splits"]["train"]["tokens"]
+    mixture.validate()
+    with pytest.raises(MixtureError, match="epoch"):
+        mixture.rescale(100000000).validate()
+
+
 def test_caps_are_strict_and_schema_errors_fail_closed():
     groups, stats = partition_rows(rows(), max_docs=10, max_bytes=100000)
     assert stats["selected_docs"] == 10

@@ -82,3 +82,44 @@ The script now explicitly saves at the interruption and final boundaries. A CLI 
 executes training, reload and report generation, then verifies the final saved step
 and token count. The pipeline smoke uses width 64 to keep CPU validation inexpensive;
 the measured R04 configurations are unchanged.
+
+The corrected real-text smoke at `b9fe83c` completed 64 steps, with a checkpoint
+written at step 32, restored into a new trainer, and a final checkpoint at step 64.
+It consumed 16,384 tokens with zero non-finite skipped steps. Held-out cross entropy
+on the fixed 1,016 scored tokens fell from 10.41136 to 8.60454 nats/token. The model
+has 2,468,360 parameters; this only validates data ingestion, optimization, scoring
+and persistence. See [the report](experiments/2026-09-19-real-pilot-smoke.json).
+
+## Sized next comparison, not yet executed
+
+An exact encoding pass counted **19,419,613 training tokens** and **393,416 validation
+tokens**, including EOS per document, and verified lossless decoding of every
+document. [Token counts](experiments/2026-09-19-pilot-token-counts.json) include the
+tokenizer and shard fingerprints. A 100M-token run would exceed the project's
+four-epoch limit on this corpus.
+
+The [pilot recipe](../configs/data_mixture_pilot.yaml) instead sets 67,108,864 tokens,
+or 4,096 updates at batch 8 / sequence 2048 and 3.456 nominal corpus repetitions.
+For both R04 configurations on seeds 0, 1 and 2, the measured synthetic throughput
+projects about **13.69 A100 hours total**, excluding data loading, evaluation,
+checkpoint I/O and compilation. It is a planning estimate, not an executed result
+or a promise that the full language model is trained in that time.
+
+Before a long Colab run, establish persistent checkpoint storage and retain identical
+source, tokenizer, learning rates, token budget and loss settings across resumes.
+Run a short learning-rate/stability check first. A command for one planned arm is:
+
+```bash
+python scripts/train.py --config configs/prophet_r04_loop.json \
+  --mixture configs/data_mixture_pilot.yaml --data-root data/fineweb-pilot-v1/train \
+  --tokenizer data/fineweb-pilot-v1/tokenizer.json --tokens 67108864 \
+  --batch-size 8 --seq-len 2048 --grad-accum 1 --loss-chunk-tokens 512 \
+  --muon-lr 0.01 --adamw-lr 0.0003 --seed 0 --session-minutes 45 \
+  --checkpoint-every 512 --checkpoint-dir checkpoints/r04-loop-seed0 --device cuda
+```
+
+The learning rates above are pilot starting values, not tuned results. Repeat the
+same settings for the unshared arm and the other seeds. Use fixed held-out
+document-level scores and record all failed or stopped runs. This early-learning
+comparison alone cannot establish behavior after large-scale pretraining or the
+project's persistent-memory and agent capabilities.
