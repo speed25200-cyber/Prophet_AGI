@@ -67,14 +67,15 @@ def _kernel_agreement(cfg: ProphetConfig, *, seq_len: int, seed: int) -> float:
     torch.manual_seed(seed)
     model = ProphetModel(cfg).cuda().eval()
     ids = torch.randint(0, cfg.frontend.vocab_size, (2, seq_len), device="cuda")
+    loop_k = cfg.recurrent.default_loop_k if cfg.recurrent.enabled else None
     worst = 0.0
     with torch.no_grad():
         _set_fused(model, False)
         ref_cache = ProphetCache()
-        ref = model(ids, cache=ref_cache, loop_k=3).logits.float()
+        ref = model(ids, cache=ref_cache, loop_k=loop_k).logits.float()
         _set_fused(model, True)
         cache = ProphetCache()
-        out = model(ids, cache=cache, loop_k=3).logits.float()
+        out = model(ids, cache=cache, loop_k=loop_k).logits.float()
         worst = max(worst, float((ref - out).abs().max()))
         for key, slot in ref_cache.slots.items():
             state = getattr(slot, "state", None)
@@ -173,6 +174,7 @@ def main() -> int:
             "device_memory_gib": torch.cuda.get_device_properties(0).total_memory / 1024**3,
             "batch_size": args.batch_size, "seq_len": args.seq_len, "measured_steps": args.steps,
             "kernel_max_abs_error": worst, "seconds_per_step": seconds, "tokens_per_second": tps,
+            "kernel_loop_k": cfg.recurrent.default_loop_k if cfg.recurrent.enabled else None,
             "peak_allocated_gib": peak, "predicted_gib": predicted.total_gb,
             "projected_tokens": args.tokens, "projected_hours": hours,
         }
