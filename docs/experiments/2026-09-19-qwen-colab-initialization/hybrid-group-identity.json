@@ -1,0 +1,34 @@
+{
+  "embed": {
+    "sha256": "f094201cef8582cd194f7ccc6fdf2209f8feb159215f246968f2db16d78f1450",
+    "tensors": 1
+  },
+  "sections.prelude": {
+    "sha256": "b8f84e9f79c1ab9f63ceba24da68be47773673d764483c51335304c33fa1f489",
+    "tensors": 44
+  },
+  "sections.core": {
+    "sha256": "129d6ded01ed5a80dd47e548de0d8bed45d5c4c058c9f3a71cd073e4aaf4673b",
+    "tensors": 60
+  },
+  "sections.coda": {
+    "sha256": "fff9c85ee74cd3dc2c8f11b2067e3ea9b714bd8f2fc050d9b2dd350d67dd6983",
+    "tensors": 44
+  },
+  "norm_out": {
+    "sha256": "872a7975b2e25fb414132270d514bdd03d3070ecffcd7730025acafe43f5ff5a",
+    "tensors": 1
+  },
+  "lm_head": {
+    "sha256": "ed6692cff9f343ef3def6dddae6b775d640a7b056ca67af2d172b4ce2c3c541a",
+    "tensors": 1
+  },
+  "mtp_heads": {
+    "sha256": "0645383bc3551db1808bdebe7c2dc86796f6e3306189a9163ba79620a659ceff",
+    "tensors": 11
+  },
+  "confidence_head": {
+    "sha256": "e44510972c3d3fd0df5d02825f1c473aad18dcc1f512c150f18d904514615ae0",
+    "tensors": 3
+  }
+}

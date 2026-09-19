@@ -214,10 +214,41 @@ tested against independent unpadded, window-by-window losses from a real miniatu
 Qwen donor and Prophet initialization, including Unicode and empty documents.
 
 Full development evaluation of the actual donor has started locally on CPU; no
-completed score is claimed yet. The matching attention and GDN initializations
-will follow separately. These reports must use the same sequence length and
-precision for a paired comparison; the previous four-prefix numbers are not the
-baseline for a complete development-set recovery claim.
+completed score is claimed yet. A separate Colab CPU queue evaluates the unchanged
+donor, attention initialization and GDN initialization sequentially on all 372
+development documents, at sequence length 512 / batch one, in one fixed runtime.
+These reports must use the same sequence length and precision for a paired
+comparison; the previous four-prefix numbers are not their recovery baselines.
+
+### Colab reconstruction is a separate initialization pair
+
+An isolated checkout and virtual environment now hold the pinned donor and the exact
+prepared development corpus. R04's checkout and dependency versions were checked
+before/after setup and remained unchanged. Recovery uses Transformers 5.17.0 and
+tokenizers 0.23.2 in its own venv; the shared system Torch remains 2.11.0+cu128.
+All preparation and queued baseline evaluation processes hide CUDA explicitly.
+
+The attempted seed-zero reconstruction **failed exact cross-host tensor identity**.
+The hybrid's embedding, prelude, coda, output norm and LM head match the Windows
+artifacts exactly, while core and auxiliary-head group hashes differ. Both config
+hashes match their local counterparts. This does not diagnose which runtime/platform
+difference caused the mismatch, and the original initialization was not overwritten.
+A small transfer bundle of the original fresh tensors was prepared locally, but the
+browser file chooser did not complete and the Drive connector was not connected.
+No bundle was uploaded; the notebook upload was cancelled.
+
+The Colab-generated artifacts therefore define a **separate pair**, each with a
+successful finite-parameter and exact save/reload audit. Their own pair audit again
+checks all 111 shared backbone tensors exactly. Their archive SHA-256 values are:
+
+- GDN: `1b440d1ab490dfc3263a3fb37e1e9ccbde9b72db0c87b4efed4a5e68de0574c8`.
+- Attention: `013f6845b9e084aaa7fa1f740878ce65dd9b8c2dd40c3368784ff2f0ee89cfa4`.
+
+All three CPU baselines are being measured afresh in Colab before comparing recovery.
+The local candidate's prefix/cache reports are not measurements of these new weights;
+the real-size GPU and cache gates must be run for the actual training initialization.
+The new weights are currently on the Colab local disk, not yet remotely persisted.
+[Conversion, pair, cross-host failure and identity evidence](experiments/2026-09-19-qwen-colab-initialization/colab-pair-manifest.json).
 
 Before budgeted recovery, measure actual A100 forward/backward memory and kernel
 agreement, and freeze equal-token
