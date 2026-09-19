@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from test_checkpoint_audit import publish
+from tests.test_checkpoint_audit import publish
 
 import scripts.snapshot_r04 as snapshot_module
 from scripts.snapshot_r04 import snapshot
