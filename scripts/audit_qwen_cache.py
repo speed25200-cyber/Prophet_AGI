@@ -13,6 +13,7 @@ from types import MethodType
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch  # noqa: E402
+from torch.nn import functional as F  # noqa: E402
 
 from prophet.config import ProphetConfig  # noqa: E402
 from prophet.modeling.layers import (  # noqa: E402
@@ -25,16 +26,44 @@ from prophet.modeling.model import ProphetCache, ProphetModel  # noqa: E402
 from scripts.rehearse_qwen_conversion import digest  # noqa: E402
 
 
-def attention_fp64_oracle(model: ProphetModel) -> None:
-    """Diagnostic instance only: double arithmetic, including the RMS reductions.
+def gdn_fp64_forward(layer, x, *, state=None):
+    """Diagnostic rank-one delta recurrence; no production FP32 scan or fused kernel."""
+    if x.dtype != torch.float64:
+        raise TypeError("FP64 diagnostic received a lower-precision GDN input")
+    b, length, _ = x.shape
+    h, dk, dv = layer.n_heads, layer.head_k, layer.head_v
+    qkv = torch.cat([layer.q_proj(x), layer.k_proj(x), layer.v_proj(x)], dim=-1)
+    qkv = F.silu(layer._causal_conv(qkv, state))
+    q, k, v = qkv.split([h * dk, h * dk, h * dv], dim=-1)
+    q, k, v = q.reshape(b, length, h, dk), k.reshape(b, length, h, dk), v.reshape(b, length, h, dv)
+    k = F.normalize(k, dim=-1, eps=1e-6)
+    alpha, beta = torch.sigmoid(layer.a_proj(x)), layer.beta_max * torch.sigmoid(layer.b_proj(x))
+    memory = x.new_zeros(b, h, dv, dk) if state is None or state.state is None else state.state.to(x)
+    outputs = []
+    for t in range(length):
+        key = k[:, t].unsqueeze(-1)
+        memory = alpha[:, t, :, None, None] * memory
+        correction = beta[:, t, :, None, None] * (v[:, t].unsqueeze(-1) - memory @ key)
+        memory = memory + correction @ key.transpose(-1, -2)
+        outputs.append((memory @ q[:, t].unsqueeze(-1)).squeeze(-1))
+    if state is not None:
+        state.state = memory.detach()
+        state.seen += length
+    return layer.o_proj(layer.o_norm(torch.stack(outputs, dim=1)).reshape(b, length, h * dv))
+
+
+def configure_fp64_oracle(model: ProphetModel, *, include_gdn: bool = False) -> None:
+    """Diagnostic instance only: double arithmetic, including RMS and optional GDN.
 
     Preserve the production FP32 rotary tables so position construction remains
-    identical. Do not change the production normalization implementation or accept
-    mixers whose internal arithmetic would silently remain FP32 (notably GDN).
+    identical. Do not change production implementations or silently use FP32 scans.
     """
-    if any(not isinstance(block.mixer, CausalSelfAttention)
+    allowed = (CausalSelfAttention, GatedDeltaNet) if include_gdn else (CausalSelfAttention,)
+    if any(not isinstance(block.mixer, allowed)
            for blocks in model.sections.values() for block in blocks):
-        raise ValueError("FP64 oracle requires attention-only Prophet sections")
+        raise ValueError("FP64 oracle requires attention-only sections or explicitly enabled GDN")
+    if include_gdn and not any(isinstance(m, GatedDeltaNet) for m in model.modules()):
+        raise ValueError("hybrid FP64 oracle requires GDN")
 
     def rms_forward(layer, x):
         if x.dtype != torch.float64:
@@ -48,6 +77,12 @@ def attention_fp64_oracle(model: ProphetModel) -> None:
             layer.forward = MethodType(rms_forward, layer)
         elif isinstance(layer, RotaryEmbedding):
             layer.float()
+        elif isinstance(layer, GatedDeltaNet):
+            layer.forward = MethodType(gdn_fp64_forward, layer)
+
+
+def attention_fp64_oracle(model: ProphetModel) -> None:
+    configure_fp64_oracle(model)
 
 
 def main():
@@ -58,13 +93,17 @@ def main():
     parser.add_argument("--donor-control", action="store_true")
     parser.add_argument("--trace-blocks", action="store_true")
     parser.add_argument("--loop-k", type=int, default=5)
-    parser.add_argument("--attention-fp64-oracle", action="store_true",
+    oracle = parser.add_mutually_exclusive_group()
+    oracle.add_argument("--attention-fp64-oracle", action="store_true",
                         help="diagnostic only: double attention/residual/RMS arithmetic; not the FP32 gate")
+    oracle.add_argument("--hybrid-fp64-oracle", action="store_true",
+                        help="diagnostic only: double arithmetic with a sequential GDN oracle")
     args = parser.parse_args()
     if args.loop_k < 1:
         parser.error("--loop-k must be positive")
-    if args.attention_fp64_oracle and (args.donor_control or args.reference_scan):
-        parser.error("FP64 oracle is only supported for an attention-only Prophet initialization")
+    fp64 = args.attention_fp64_oracle or args.hybrid_fp64_oracle
+    if fp64 and (args.donor_control or args.reference_scan):
+        parser.error("FP64 oracles require a Prophet initialization and select their own scan")
     if args.out.exists():
         raise FileExistsError("preserve existing evidence")
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -104,15 +143,16 @@ def main():
             raise ValueError("--reference-scan requires at least one GDN layer")
         for layer in gdn_layers:
             layer.chunk_size = None
-    if args.attention_fp64_oracle:
-        attention_fp64_oracle(model)
-    tolerance = 1e-8 if args.attention_fp64_oracle else 1e-4
+    if fp64:
+        configure_fp64_oracle(model, include_gdn=args.hybrid_fp64_oracle)
+    tolerance = 1e-8 if fp64 else 1e-4
     result = {
         "scope": "one fixed 128-token prefix; diagnostic FP64 oracle, not the production FP32 gate"
-        if args.attention_fp64_oracle
+        if fp64
         else "one fixed 128-token prefix, CPU float32; unchanged elementwise tolerance",
-        "precision": "float64 with FP32 rotary tables" if args.attention_fp64_oracle else "float32",
+        "precision": "float64 with FP32 rotary tables" if fp64 else "float32",
         "attention_fp64_oracle": args.attention_fp64_oracle,
+        "hybrid_fp64_oracle": args.hybrid_fp64_oracle,
         "model": "unchanged_donor" if args.donor_control else "converted_initialization",
         "core_pattern": None if args.donor_control else model.cfg.recurrent.core_pattern,
         "loop_k": None if args.donor_control else args.loop_k,
@@ -123,7 +163,8 @@ def main():
         "donor_weights_sha256": audit["donor_weights_sha256"],
         "gdn_scan": None
         if not gdn_layers
-        else ("sequential_reference" if args.reference_scan else "chunk64"),
+        else ("fp64_sequential_oracle" if args.hybrid_fp64_oracle else
+              "sequential_reference" if args.reference_scan else "chunk64"),
         "document_sha256": reference["document_sha256"],
         "input_ids_sha256": hashlib.sha256(ids.numpy().tobytes()).hexdigest(),
         "atol": tolerance,
@@ -169,7 +210,7 @@ def main():
             else model(ids, loop_k=args.loop_k, return_mtp=False)
         ).logits
         assert torch.isfinite(full).all()
-        assert full.dtype == (torch.float64 if args.attention_fp64_oracle else torch.float32)
+        assert full.dtype == (torch.float64 if fp64 else torch.float32)
         tracing_reference = False
         for name, lengths in (
             ("chunked_prefill_then_decode", [64, 63, 1]),

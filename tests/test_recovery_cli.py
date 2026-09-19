@@ -103,8 +103,9 @@ def test_recovery_config_freezes_depth_without_changing_initial_config():
 
 
 @pytest.mark.parametrize("mixer,corrupt,oracle", [
-    ("gdn", False, False), ("full_attn", False, False), ("full_attn", True, False),
-    ("full_attn", False, True), ("full_attn", True, True),
+    ("gdn", False, None), ("full_attn", False, None), ("full_attn", True, None),
+    ("full_attn", False, "attention"), ("full_attn", True, "attention"),
+    ("gdn", False, "hybrid"), ("gdn", True, "hybrid"),
 ])
 def test_cache_audit_identifies_core_and_preserves_numerical_failure(
     recovery_fixture, tmp_path, monkeypatch, mixer, corrupt, oracle
@@ -143,7 +144,7 @@ def test_cache_audit_identifies_core_and_preserves_numerical_failure(
             "--checkpoint", str(checkpoint), "--audit", str(audit), "--reference", str(reference),
             "--validation", str(validation), "--out", str(out), "--loop-k", "2", "--trace-blocks"]
     if oracle:
-        args.append("--attention-fp64-oracle")
+        args.append(f"--{oracle}-fp64-oracle")
     monkeypatch.setattr(sys, "argv", args)
     if corrupt:
         forward = ProphetModel.forward
@@ -162,9 +163,11 @@ def test_cache_audit_identifies_core_and_preserves_numerical_failure(
     result = json.loads(out.read_text())
     assert result["core_pattern"] == [mixer] and result["loop_k"] == 2
     assert result["passed"] is (not corrupt)
-    assert result["attention_fp64_oracle"] is oracle
+    assert result["attention_fp64_oracle"] is (oracle == "attention")
+    assert result["hybrid_fp64_oracle"] is (oracle == "hybrid")
     assert result["atol"] == result["rtol"] == (1e-8 if oracle else 1e-4)
-    assert result["gdn_scan"] == ("chunk64" if mixer == "gdn" else None)
+    assert result["gdn_scan"] == ("fp64_sequential_oracle" if oracle == "hybrid" else
+                                  "chunk64" if mixer == "gdn" else None)
     for path in result["paths"].values():
         assert path["all_logits_finite"] and path["positions"] == 128
         assert "core/0/iteration-1" in path["block_errors"]
@@ -195,6 +198,53 @@ def test_fp64_oracle_preserves_values_rotary_tables_and_rejects_gdn():
             x = torch.randn(2, 3, layer.weight.numel(), dtype=torch.float64)
             expected = x / (x.square().mean(-1, keepdim=True) + layer.eps).sqrt() * layer.weight
             torch.testing.assert_close(layer(x), expected, atol=1e-14, rtol=1e-14)
+
+
+def test_hybrid_fp64_oracle_matches_explicit_transition_with_nonempty_cache():
+    from torch.nn import functional as F
+
+    from prophet.modeling.layers import GatedDeltaNet, RecurrentState
+    from scripts.audit_qwen_cache import configure_fp64_oracle
+
+    model = ProphetModel(tiny_model_config()).eval()
+    configure_fp64_oracle(model, include_gdn=True)
+    layer = next(m for m in model.modules() if isinstance(m, GatedDeltaNet))
+    torch.manual_seed(93)
+    x = torch.randn(2, 7, model.cfg.d_model, dtype=torch.float64)
+    h, dk, dv = layer.n_heads, layer.head_k, layer.head_v
+    memory = torch.randn(2, h, dv, dk, dtype=torch.float64)
+    history = torch.randn(2, 2*h*dk+h*dv, layer.conv_kernel-1, dtype=torch.float64)
+    full_cache = RecurrentState(state=memory.clone(), conv_state=history.clone(), seen=11)
+    split_cache = RecurrentState(state=memory.clone(), conv_state=history.clone(), seen=11)
+    # Independent dense transition equation, rather than the oracle's rank-one update.
+    raw = torch.cat([layer.q_proj(x), layer.k_proj(x), layer.v_proj(x)], dim=-1)
+    convolved = F.conv1d(torch.cat([history, raw.transpose(1, 2)], dim=-1),
+                        layer.conv.weight, groups=raw.shape[-1]).transpose(1, 2)
+    q, k, v = F.silu(convolved).split([h*dk, h*dk, h*dv], dim=-1)
+    q, k, v = q.reshape(2, 7, h, dk), k.reshape(2, 7, h, dk), v.reshape(2, 7, h, dv)
+    k = k / k.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+    alpha, beta = layer.a_proj(x).sigmoid(), layer.beta_max * layer.b_proj(x).sigmoid()
+    outputs = []
+    for t in range(7):
+        key = k[:, t].unsqueeze(-1)
+        strength = beta[:, t, :, None, None]
+        transition = torch.eye(dk, dtype=torch.float64) - strength * (key @ key.transpose(-1, -2))
+        memory = alpha[:, t, :, None, None] * (memory @ transition) + strength * (
+            v[:, t].unsqueeze(-1) @ key.transpose(-1, -2))
+        outputs.append((memory @ q[:, t].unsqueeze(-1)).squeeze(-1))
+    expected = torch.stack(outputs, dim=1)
+    expected = expected / (expected.square().mean(-1, keepdim=True) + layer.o_norm.eps).sqrt()
+    expected = layer.o_proj((expected * layer.o_norm.weight).reshape(2, 7, h*dv))
+    actual = layer(x, state=full_cache)
+    split = torch.cat([layer(x[:, :2], state=split_cache), layer(x[:, 2:3], state=split_cache),
+                       layer(x[:, 3:], state=split_cache)], dim=1)
+    torch.testing.assert_close(actual, expected, rtol=1e-12, atol=1e-12)
+    torch.testing.assert_close(split, expected, rtol=1e-12, atol=1e-12)
+    for cache in [full_cache, split_cache]:
+        torch.testing.assert_close(cache.state, memory, rtol=1e-12, atol=1e-12)
+        assert cache.state.dtype == cache.conv_state.dtype == torch.float64
+        assert cache.seen == 18
+        torch.testing.assert_close(cache.conv_state, raw.transpose(1, 2)[:, :, -(layer.conv_kernel-1):])
 
 
 @pytest.mark.parametrize("arm", ["donor", "initialization"])
