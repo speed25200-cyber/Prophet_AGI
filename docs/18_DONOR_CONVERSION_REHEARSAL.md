@@ -350,8 +350,11 @@ quality. [Reports, runtime identity and logs](experiments/2026-09-19-qwen-colab-
 
 The two Colab initializations and their metadata, 1,491,373,352 bytes in total,
 were copied to `Prophet_AGI/R04/donor-recovery/colab-initializations-seed0` and
-verified file by file against the source SHA256 digests. Remote flushing and a
-post-remount audit remain required before treating that copy as durable.
+verified file by file against the source SHA256 digests. Drive was subsequently
+flushed and remounted alongside the shared R04 step-4,096 snapshot. All nine
+initialization files still matched their source sizes and SHA256 digests.
+[Post-remount verification](experiments/2026-09-19-r04-step4096/loop-persistence.json).
+The earlier copy manifest retains its historical pre-flush scope:
 [Mounted-copy manifest](experiments/2026-09-19-qwen-colab-cache/initialization-snapshot.json).
 
 ## Reproduction and stopped attempts

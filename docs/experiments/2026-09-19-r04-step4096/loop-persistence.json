@@ -1,0 +1,115 @@
+{
+  "complete": true,
+  "flush_completed_with_drive_mounted": true,
+  "flush_seconds": 2.8936748069991154,
+  "r04_step": 4096,
+  "seed": 0,
+  "audits_after_remount": {
+    "loop": {
+      "variant": "loop",
+      "seed": 0,
+      "checkpoint": {
+        "step": 4096,
+        "slot": 1,
+        "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+        "bytes": 3233905547,
+        "extra": {}
+      },
+      "step": 4096,
+      "tokens_seen": 67108864,
+      "trainer_state_version": 3,
+      "skipped_nonfinite": 0,
+      "consecutive_nonfinite": 0,
+      "all_model_optimizer_tensors_finite": true,
+      "inspected_tensors": 313,
+      "nonfinite_tensor_paths": [],
+      "training_contract": {
+        "total_steps": 4096,
+        "batch_size": 8,
+        "seq_len": 2048,
+        "grad_accum_steps": 1,
+        "peak_lr_muon": 0.01,
+        "peak_lr_adamw": 0.0003,
+        "weight_decay": 0.1,
+        "warmup_frac": 0.02,
+        "decay_frac": 0.18,
+        "grad_clip": 1.0,
+        "mtp_weight": 0.3,
+        "confidence_weight": 0.1,
+        "z_loss_weight": 0.0001,
+        "loss_chunk_tokens": 512,
+        "ponder_weight": 0.0,
+        "max_consecutive_nonfinite": 20,
+        "ledger_write": "all",
+        "segment_by_bos": false,
+        "sel_weight": 0.5,
+        "ptr_weight": 0.5,
+        "gate_weight": 0.1,
+        "jumped_lm_weight": 0.1,
+        "ponder_target_steps": 4.0,
+        "seed": 0,
+        "dtype": "bfloat16",
+        "activation_checkpointing": true,
+        "allow_tf32": true,
+        "device_type": "cuda",
+        "schedule": {
+          "peak_lr": 1.0,
+          "total_steps": 4096,
+          "warmup_frac": 0.02,
+          "decay_frac": 0.18,
+          "final_lr_frac": 0.0,
+          "decay_shape": "one_minus_sqrt",
+          "min_warmup_steps": 100
+        }
+      }
+    }
+  },
+  "recovery_initialization_files_verified_after_remount": [
+    {
+      "name": "attention-conversion.json",
+      "bytes": 11706,
+      "sha256": "bb326d04bbbf798d6077595613a8229434a9385e45c7ed64321dd7b7d1ae16ae"
+    },
+    {
+      "name": "attention-identity.json",
+      "bytes": 575,
+      "sha256": "b96ac8b8c9187e1fb830bb7076946465d3930316fe258bfde62e65255aa26a88"
+    },
+    {
+      "name": "attention.pt",
+      "bytes": 720237145,
+      "sha256": "013f6845b9e084aaa7fa1f740878ce65dd9b8c2dd40c3368784ff2f0ee89cfa4"
+    },
+    {
+      "name": "colab-pair-manifest.json",
+      "bytes": 7071,
+      "sha256": "3e130cd7d4f9bb5f19a31345051d8dc2e11a9eab3b4d8ef9aabb96527078b927"
+    },
+    {
+      "name": "hybrid-conversion.json",
+      "bytes": 12147,
+      "sha256": "ed4e3c430cbe3dba0ab436638c9e1cf186ccca06329f13637dd91a9de5b03c5d"
+    },
+    {
+      "name": "hybrid-group-identity.json",
+      "bytes": 988,
+      "sha256": "58287a79251818e5cfa13f440e1d0300b34d4053d135908eaa4760c7e62b4eda"
+    },
+    {
+      "name": "hybrid-identity.json",
+      "bytes": 575,
+      "sha256": "69c5c1ef762b10979d3eed5633bb7a61813f850c8b156c7ed63368eeb01a3bd8"
+    },
+    {
+      "name": "hybrid.pt",
+      "bytes": 771098059,
+      "sha256": "1b440d1ab490dfc3263a3fb37e1e9ccbde9b72db0c87b4efed4a5e68de0574c8"
+    },
+    {
+      "name": "pair.json",
+      "bytes": 5086,
+      "sha256": "dc1b52d6a75c840e64a379aaed9a2927bc4720f9d1339f1aa7ac46a2a9b47ea7"
+    }
+  ],
+  "scope": "shared R04 only plus the two separate Colab recovery initializations; plain R04 still training"
+}

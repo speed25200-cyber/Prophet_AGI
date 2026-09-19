@@ -170,6 +170,32 @@ the original total schedule and all numerical settings stay fixed. Unexpected ea
 exit, missing evaluation or failed audit stops the queue for inspection. Final
 snapshot flushing remains a separate step after those future runs complete.
 
+## Shared seed 0 completes step 4,096
+
+The shared arm completed the original schedule with **67,108,864 training tokens**,
+zero skipped non-finite updates, and all 313 checkpoint model/optimizer tensors
+finite. Full validation scores the same 376 documents, 393,040 targets and
+1,750,592 UTF-8 payload bytes: **3.855913359 nats/token** and **1.248974632 bits/byte**.
+The median of the final 128 logged step durations is 1.9679 seconds, excluding
+checkpointing, evaluation and compilation. All 256 log rows and document aggregates
+were independently checked after download.
+
+The checkpoint is slot 1, 3,233,905,547 bytes, SHA256
+`e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4`.
+Its fresh Drive snapshot is under `snapshots/step-004096-seed0/loop-seed0`.
+After a successful 2.89-second flush with Drive mounted and a remount, the complete
+checkpoint audit matched the local original. The same persistence check verified
+all nine files of the separate Colab donor-recovery initialization pair.
+[Evaluation, checkpoint audit and logs](experiments/2026-09-19-r04-step4096/loop-seed0),
+[post-remount persistence proof](experiments/2026-09-19-r04-step4096/loop-persistence.json).
+The downloaded evidence ZIP is 70,667 bytes, SHA256
+`3593420b49f73bd97b9571cb5812de98fc663b1d6640be3366dd9d886ec1f02d`.
+
+The queue has started the unshared continuation from step 2,048. Its final
+evaluation remains pending. This is a **single-arm endpoint**, not a matched
+step-4,096 comparison; the latest paired result remains the step-2,048 table above.
+Training seeds 1 and 2 remain pending as well.
+
 ## Inference depth sensitivity on the same weights
 
 `scripts/eval_r04_depth.py`, from revision
@@ -205,8 +231,11 @@ Both step-1,024 snapshots are stored below
 Drive was confirmed mounted before each successful flush. After remounting, both
 checkpoints were read and audited again: the entire audits matched their local
 sources, including all 313 shared and 865 unshared model/optimizer tensors.
-The earlier Drive runs were preserved. The current shared continuation uses local
-files throughout these operations.
+The step-1,024 and step-2,048 snapshots remain available. With user authorization,
+three obsolete checkpoints from the earlier Drive runs (shared steps 512 and 576,
+unshared step 128) were permanently removed, releasing 14,073,783,633 bytes.
+Their manifests were archived and retired. Training uses local files throughout
+these storage operations.
 [Persistence evidence](experiments/2026-09-19-r04-step1024-persistence.json),
 downloaded with SHA256
 `af529d2545186fb43ef639a9685aec02b6a9e0eb8d58f4a5fcc86ec5b07758c5`.
@@ -227,5 +256,5 @@ frozen training revision without changing its numerical implementation.
 validation into a fresh directory, audits the destination independently, then
 writes `SNAPSHOT_COMPLETE.json`. It never overwrites an existing snapshot or
 inherits an old completion marker. A partial copy must not be used as a completed
-snapshot. The previous Drive run remains available as a fallback; remote flushing
-is a separate requirement before releasing the VM.
+snapshot. The audited step-1,024 and step-2,048 snapshots remain fallback sources;
+remote flushing is a separate requirement before releasing the VM.
