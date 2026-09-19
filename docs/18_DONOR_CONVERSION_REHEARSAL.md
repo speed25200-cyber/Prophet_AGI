@@ -654,7 +654,13 @@ python scripts/audit_recovery_pair.py --hybrid /tmp/qwen-initialization.pt \
   --attention /tmp/qwen-attention.pt --out /tmp/qwen-pair.json
 ```
 
-The hybrid cache audit currently writes its failure report and exits nonzero.
+The untrained hybrid cache audit writes its failure report and exits nonzero.
+The [recovered step-256 checkpoint](19_FP32_RECOVERY_PILOT.md#recovered-checkpoint-the-former-cache-failure-now-passes)
+passes that same FP32 prefix with unchanged tolerances, for both chunk64 and
+sequential scans. This later result does not alter the initial failure reports or
+certify other inputs. Recovered weights use `--recovery-run <run> --step <step>`
+instead of `--checkpoint` and `--audit`, and undergo an exact evaluated-checkpoint
+audit before inference.
 Use a new output path with `--reference-scan`, `--donor-control`, or `--trace-blocks`
 to reproduce the additional controls.
 For the attention initialization, `--attention-fp64-oracle --loop-k 5` (or `1`)

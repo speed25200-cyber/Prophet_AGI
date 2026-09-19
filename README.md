@@ -92,14 +92,19 @@ supérieure sur cette graine. Les deux entraînements sont terminés et leurs sa
 vérifiées après remontage de Drive ; les deux autres graines restent à entraîner.
 Les [sources R04](docs/15_R04_SOURCE_AUDIT.md) et les [recoupements avec les benchmarks](docs/16_PILOT_BENCHMARK_OVERLAP.md)
 sont audités séparément. Une [première conversion de poids Qwen3-0.6B](docs/18_DONOR_CONVERSION_REHEARSAL.md)
-est auditée, mais sa perte sur quatre extraits est fortement dégradée : la récupération
-par entraînement reste à effectuer. Son décodage token par token échoue aussi au nouveau
-contrôle numérique strict sur poids réels, tandis que le donneur original le réussit.
-La récupération CE ou guidée par le donneur dispose maintenant d'une commande de
-training avec reprise exacte testée sur petits modèles. Son corpus de développement
+est auditée, mais la conversion dégrade fortement sa qualité. Un
+[pilote de récupération en FP32](docs/19_FP32_RECOVERY_PILOT.md) compare quatre
+variantes sur des poids réels. Après 256 mises à jour, le premier modèle GDN passe
+de 11,3084 à 5,6497 nats/token sur les 372 documents de développement ; le donneur
+reste meilleur, à 3,1578. Ce checkpoint réussit aussi le contrôle numérique de
+décodage qui échouait sur l'extrait initial, avec les mêmes seuils. Cela ne certifie
+pas encore la génération sur d'autres textes. Le premier bras poursuit ses 2 048
+étapes prévues ; les trois autres sont en file d'attente. Le corpus de récupération
 exclut les neuf chevauchements connus et les quatre extraits du diagnostic initial.
-Le protocole reste à exécuter sur les poids réels. Les tests CPU et les huit tests
-sur A100 ne remplacent pas le contrôle numérique de ce candidat.
+La reprise exacte CE/KL est testée sur CUDA. Le contrôle des gradients GDN échoue
+encore en BF16 ; les essais FP32 réussis constituent une politique expérimentale
+explicite. La comparaison finale, les autres graines et les évaluations de capacités
+restent à effectuer.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
