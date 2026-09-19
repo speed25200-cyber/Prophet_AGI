@@ -54,14 +54,14 @@ def recovery_fixture(tmp_path, monkeypatch):
     train.write_text(json.dumps({"text": "abc def " * 100}) + "\n", encoding="utf-8")
     validation.write_text(json.dumps({"text": "unique test"}) + "\n", encoding="utf-8")
 
-    def run(out, objective, session_steps=2, precision="bfloat16", device="cpu"):
+    def run(out, objective, session_steps=2, precision="bfloat16", device="cpu", eval_batch_size=1):
         args = ["recover_qwen.py", "--source", str(source), "--initialization", str(initialization),
                 "--audit", str(audit), "--train", str(train), "--validation", str(validation),
                 "--out", str(out), "--objective", objective, "--steps", "4", "--loop-k", "2",
                 "--seq-len", "8", "--batch-size", "1", "--checkpoint-every", "2",
                 "--muon-lr", "0.01", "--adamw-lr", "0.001", "--device", device,
                 "--chunk-tokens", "3", "--max-session-steps", str(session_steps),
-                "--precision", precision]
+                "--precision", precision, "--eval-batch-size", str(eval_batch_size)]
         monkeypatch.setattr(sys, "argv", args)
         recover_qwen.main()
     return run
@@ -101,6 +101,16 @@ def test_recovery_config_freezes_depth_without_changing_initial_config():
     assert config.recurrent.train_loop_min == config.recurrent.train_loop_max == 3
     assert config.recurrent.default_loop_k == config.recurrent.truncated_backprop_steps == 3
     assert original == tiny_model_config().to_dict()
+
+
+def test_recovery_evaluation_batch_is_explicit_and_bound_to_resume(recovery_fixture, tmp_path):
+    run = tmp_path / "run"
+    recovery_fixture(run, "ce", eval_batch_size=3)
+    report = json.loads((run / "evaluation-step-000002.json").read_bytes())
+    assert report["evaluation"]["batch_size"] == report["identity"]["evaluation_batch_size"] == 3
+    assert report["tokens_seen"] == 2 * 8  # Training still uses batch one.
+    with pytest.raises(ValueError, match="another recovery experiment"):
+        recovery_fixture(run, "ce", eval_batch_size=1)
 
 
 @pytest.mark.parametrize("objective", ["ce", "kl"])

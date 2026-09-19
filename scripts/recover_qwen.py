@@ -126,6 +126,8 @@ def main():
     parser.add_argument("--steps", type=int, required=True)
     parser.add_argument("--seq-len", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--eval-batch-size", type=int,
+                        help="evaluation batch size, defaulting to the training batch size")
     parser.add_argument("--grad-accum", type=int, default=1)
     parser.add_argument("--loop-k", type=int, default=5)
     parser.add_argument("--muon-lr", type=float, required=True)
@@ -146,6 +148,9 @@ def main():
         parser.error("steps, batch sizes, intervals, rates and session length must be positive")
     if args.max_session_steps is not None and args.max_session_steps < 1:
         parser.error("--max-session-steps must be positive")
+    if args.eval_batch_size is not None and args.eval_batch_size < 1:
+        parser.error("--eval-batch-size must be positive")
+    eval_batch_size = args.eval_batch_size or args.batch_size
     if args.objective == "ce" and (args.alpha != 0.5 or args.temperature != 1.0):
         parser.error("--alpha and --temperature only apply to the KL arm")
     settings = DistillationSettings(args.alpha, args.temperature, args.chunk_tokens)
@@ -170,6 +175,7 @@ def main():
                 "teacher_dtype": str(teacher_dtype).removeprefix("torch."),
                 "precision": args.precision,
                 "teacher_attention": "sdpa", "evaluation_loop_k": args.loop_k,
+                "evaluation_batch_size": eval_batch_size,
                 "cuda": torch.version.cuda,
                 "fla": version("fla-core") if device.type == "cuda" else None,
                 "triton": version("triton") if device.type == "cuda" else None,
@@ -247,7 +253,7 @@ def main():
     if objective is not None:
         objective.teacher.to("cpu")
     evaluation = evaluate_documents(model, read_documents(args.validation), tokenizer,
-                                    seq_len=args.seq_len, batch_size=args.batch_size,
+                                    seq_len=args.seq_len, batch_size=eval_batch_size,
                                     device=args.device, loss_chunk_tokens=args.chunk_tokens,
                                     loop_k=args.loop_k, precision=args.precision)
     report = {"step": trainer.step, "tokens_seen": trainer.tokens_seen,
