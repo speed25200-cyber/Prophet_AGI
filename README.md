@@ -85,7 +85,9 @@ cette graine. Le [modèle partagé a ensuite atteint 1 024 étapes](docs/17_R04_
 avec une validation complète à 4.7085 nats/token et une reprise vérifiée. Passer de
 quatre à huit boucles à l'inférence dégrade ce checkpoint entraîné à profondeur fixe.
 Les [sources R04](docs/15_R04_SOURCE_AUDIT.md) et les [recoupements avec les benchmarks](docs/16_PILOT_BENCHMARK_OVERLAP.md)
-sont audités séparément. **689 tests CPU passent**, ainsi que huit tests sur A100.
+sont audités séparément. Une [première conversion de poids Qwen3-0.6B](docs/18_DONOR_CONVERSION_REHEARSAL.md)
+est vérifiée, mais sa perte sur quatre extraits est fortement dégradée : la récupération
+par entraînement reste à effectuer. **693 tests CPU passent**, ainsi que huit tests sur A100.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

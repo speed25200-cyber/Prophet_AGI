@@ -1,0 +1,63 @@
+{
+  "passed": true,
+  "hf_id": "Qwen/Qwen3-0.6B",
+  "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+  "weights_sha256": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b",
+  "weights_bytes": 1503300328,
+  "config_sha256": "660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd",
+  "torch": "2.14.0+cpu",
+  "transformers": "5.17.0",
+  "precision": "CPU float32; donor tensors converted from saved precision",
+  "input_shape": [
+    2,
+    17,
+    1024
+  ],
+  "atol": 0.0001,
+  "rtol": 1e-05,
+  "scope": "three real full-attention blocks; synthetic inputs; not whole-model or hybrid quality",
+  "results": [
+    {
+      "donor_layer": 0,
+      "position_offset": 0,
+      "max_abs_error": 0.0,
+      "old_epsilon_max_abs_error": 8.976459503173828e-05,
+      "copied_tensors": 11
+    },
+    {
+      "donor_layer": 0,
+      "position_offset": 257,
+      "max_abs_error": 0.0,
+      "old_epsilon_max_abs_error": 8.952617645263672e-05,
+      "copied_tensors": 11
+    },
+    {
+      "donor_layer": 13,
+      "position_offset": 0,
+      "max_abs_error": 0.0,
+      "old_epsilon_max_abs_error": 0.0001850128173828125,
+      "copied_tensors": 11
+    },
+    {
+      "donor_layer": 13,
+      "position_offset": 257,
+      "max_abs_error": 0.0,
+      "old_epsilon_max_abs_error": 0.00019073486328125,
+      "copied_tensors": 11
+    },
+    {
+      "donor_layer": 27,
+      "position_offset": 0,
+      "max_abs_error": 0.0,
+      "old_epsilon_max_abs_error": 0.0013427734375,
+      "copied_tensors": 11
+    },
+    {
+      "donor_layer": 27,
+      "position_offset": 257,
+      "max_abs_error": 0.0,
+      "old_epsilon_max_abs_error": 0.001953125,
+      "copied_tensors": 11
+    }
+  ]
+}
