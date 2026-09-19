@@ -229,11 +229,23 @@ were independently checked after download. The run took 3,390.19 seconds, includ
 tokenization and CE, with two CPU threads, Torch 2.11.0+cu128 and Transformers 5.17.0.
 [Donor report and runtime](experiments/2026-09-19-qwen-colab-development/donor.json).
 The queue has moved to the attention initialization; its result and the GDN
-initialization result remain pending. A separate local donor evaluation is still running.
+initialization result remain pending.
 These reports must use the same sequence length and precision for a paired
 comparison; the previous four-prefix numbers are not their recovery baselines.
 The R04 scores use a different tokenizer, document set and window length, so the
 donor's CE/BPB here must not be presented as a controlled comparison against R04.
+
+The independent Windows CPU donor run has also completed: **3.157732405 nats/token**
+and **0.969978496 bits/byte**, in 5,042.85 seconds under Torch 2.14.0+cpu and
+Transformers 5.17.0, two threads. All 372 document identities and denominators match
+Colab, as do the source model, configuration and tokenizer hashes. The local-minus-
+Colab CE difference is -0.000022899; the maximum absolute per-document CE difference
+is 0.000037289. The two runtime results are retained separately, not treated as
+bit-identical or pooled. The data-audit file's byte hash differs because the local
+Git working copy uses CRLF and Colab uses the committed LF blob; each matches its
+own artifact, and the corpus bytes match exactly. Recovery comparisons will use
+the Colab donor baseline measured in the students' runtime.
+[Local donor report](experiments/2026-09-19-qwen-development-donor.json).
 
 ### Colab reconstruction is a separate initialization pair
 
