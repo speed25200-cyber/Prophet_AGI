@@ -2,7 +2,9 @@
 
 Training retains source `e5720d0b774977455b1920a6f67b5df078377f11`, seed 0,
 the frozen corpus and vocabulary, and the original 4,096-step optimizer schedule.
-The checkpoint is intermediate; the full paired, three-seed R04 gate remains open.
+Both seed-0 arms have completed step 4,096. The endpoint favors the unshared
+control in language loss; the shared model uses fewer parameters. Seeds 1 and 2
+remain untrained, so the three-seed architecture gate remains open.
 
 ## Verified shared checkpoint at step 576
 
@@ -191,10 +193,51 @@ all nine files of the separate Colab donor-recovery initialization pair.
 The downloaded evidence ZIP is 70,667 bytes, SHA256
 `3593420b49f73bd97b9571cb5812de98fc663b1d6640be3366dd9d886ec1f02d`.
 
-The queue has started the unshared continuation from step 2,048. Its final
-evaluation remains pending. This is a **single-arm endpoint**, not a matched
-step-4,096 comparison; the latest paired result remains the step-2,048 table above.
-Training seeds 1 and 2 remain pending as well.
+## Matched seed-0 endpoint at step 4,096
+
+The unshared continuation also completed successfully under the frozen training
+implementation. Both arms have processed **67,108,864 tokens**, with all 376
+validation documents, 393,040 targets and 1,750,592 scored payload bytes unchanged.
+
+| Measurement | Shared k=4 | Unshared k=1 |
+|---|---:|---:|
+| Parameters | 374,688,512 | 920,675,072 |
+| Held-out nats/token | 3.855913359 | 3.844324022 |
+| Held-out bits/byte | 1.248974632 | 1.245220713 |
+| Median logged step time, 256 samples | 1.9677 s | 2.1567 s |
+| Skipped non-finite steps | 0 | 0 |
+
+Shared minus unshared is **+0.011589337 nats/token**, with paired document
+bootstrap 95% interval **[+0.008332563, +0.014891672]**. The BPB difference is
++0.003753919, interval [+0.002707264, +0.004815489]. Sharing wins on 32.18% of
+documents. **The final endpoint favors the unshared control**, reversing the
+intermediate step-2,048 ordering again. Sharing stores 59.30% fewer parameters,
+with 0.3015% higher BPB on this seed. The intervals condition on these models and
+exclude training-seed uncertainty; no multi-seed superiority or noninferiority
+claim follows. Logged step times exclude setup, checkpointing and evaluation.
+[Paired endpoint summary](experiments/2026-09-19-r04-step4096-summary.json).
+
+The unshared checkpoint is slot 1, 7,605,978,171 bytes, SHA256
+`ca2f5f6decd29aa49d1301e4980b64052c2b1134851b6b360208fb72ecc5c31a`.
+Both snapshots were remotely flushed while Drive was mounted (101.23 seconds),
+then remounted and fully audited again. The post-remount audits exactly match the
+local originals: 313 shared and 865 unshared model/optimizer tensors, all finite,
+and no skipped updates. The paired report also matched its hash after remount.
+[Full persistence proof](experiments/2026-09-19-r04-step4096-persistence.json),
+[unshared reports](experiments/2026-09-19-r04-step4096/plain-seed0).
+
+The 140,432-byte evidence ZIP has SHA256
+`2fe9443c2ebab54cb8c9bd1bd7f7a9453415acb0eb7fad602e74f7138f54dc77`.
+After download, every document identity, denominator, aggregate loss and all 256
+training log rows per arm were checked. Independently rerunning the paired
+summary on the workstation reproduced the complete Colab result, including all
+10,000 bootstrap draws. Seeds 1 and 2 remain pending.
+
+```bash
+python scripts/summarize_r04.py \
+  --root docs/experiments/2026-09-19-r04-step4096 \
+  --step 4096 --seed 0 --out /tmp/r04-step4096-summary.json
+```
 
 ## Inference depth sensitivity on the same weights
 

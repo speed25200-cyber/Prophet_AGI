@@ -86,7 +86,10 @@ le témoin conserve l'avantage : 4.6821 contre 4.7085 nats/token sur la validati
 quatre à huit boucles à l'inférence dégrade ce checkpoint entraîné à profondeur fixe.
 À 2 048 étapes, l'ordre s'inverse : 4,3574 nats/token pour le modèle partagé contre
 4,3676 pour le témoin. Cet avantage reste limité à ce palier et à cette graine ;
-le protocole complet de 4 096 étapes sur trois graines reste à terminer.
+à 4 096 étapes, le témoin reprend l'avantage : 3,8443 contre 3,8559 pour le modèle
+partagé. Ce dernier utilise 59,3 % de paramètres en moins, avec une perte légèrement
+supérieure sur cette graine. Les deux entraînements sont terminés et leurs sauvegardes
+vérifiées après remontage de Drive ; les deux autres graines restent à entraîner.
 Les [sources R04](docs/15_R04_SOURCE_AUDIT.md) et les [recoupements avec les benchmarks](docs/16_PILOT_BENCHMARK_OVERLAP.md)
 sont audités séparément. Une [première conversion de poids Qwen3-0.6B](docs/18_DONOR_CONVERSION_REHEARSAL.md)
 est auditée, mais sa perte sur quatre extraits est fortement dégradée : la récupération
