@@ -90,7 +90,7 @@ on the fixed 1,016 scored tokens fell from 10.41136 to 8.60454 nats/token. The m
 has 2,468,360 parameters; this only validates data ingestion, optimization, scoring
 and persistence. See [the report](experiments/2026-09-19-real-pilot-smoke.json).
 
-## Sized next comparison, not yet executed
+## Sized full comparison, not yet completed
 
 An exact encoding pass counted **19,419,613 training tokens** and **393,416 validation
 tokens**, including EOS per document, and verified lossless decoding of every
@@ -160,3 +160,8 @@ Tokenizer JSON file bytes can differ between Windows and Linux. The runner check
  UTF-8 JSON vocabulary hash (`sort_keys=True`, `ensure_ascii=True`):
  `7d8d36adb2b2bf9dac7a6060294641ea16c59ce20506e2294c556c7abd99537b`.
  This keeps cross-platform serialization differences from changing the experiment.
+
+The first paired A100 sessions and an actual checkpoint continuation have now
+completed. See [the R04 pilot results](14_R04_PILOT.md): both arms reached step 128,
+and the shared arm resumed to step 160. The full 4,096-step, three-seed comparison
+remains pending; the shared model is slightly worse at the measured common boundary.
