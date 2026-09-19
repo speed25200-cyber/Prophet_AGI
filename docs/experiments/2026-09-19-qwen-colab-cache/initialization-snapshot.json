@@ -1,0 +1,53 @@
+{
+  "complete": true,
+  "files": [
+    {
+      "name": "attention-conversion.json",
+      "bytes": 11706,
+      "sha256": "bb326d04bbbf798d6077595613a8229434a9385e45c7ed64321dd7b7d1ae16ae"
+    },
+    {
+      "name": "attention-identity.json",
+      "bytes": 575,
+      "sha256": "b96ac8b8c9187e1fb830bb7076946465d3930316fe258bfde62e65255aa26a88"
+    },
+    {
+      "name": "attention.pt",
+      "bytes": 720237145,
+      "sha256": "013f6845b9e084aaa7fa1f740878ce65dd9b8c2dd40c3368784ff2f0ee89cfa4"
+    },
+    {
+      "name": "colab-pair-manifest.json",
+      "bytes": 7071,
+      "sha256": "3e130cd7d4f9bb5f19a31345051d8dc2e11a9eab3b4d8ef9aabb96527078b927"
+    },
+    {
+      "name": "hybrid-conversion.json",
+      "bytes": 12147,
+      "sha256": "ed4e3c430cbe3dba0ab436638c9e1cf186ccca06329f13637dd91a9de5b03c5d"
+    },
+    {
+      "name": "hybrid-group-identity.json",
+      "bytes": 988,
+      "sha256": "58287a79251818e5cfa13f440e1d0300b34d4053d135908eaa4760c7e62b4eda"
+    },
+    {
+      "name": "hybrid-identity.json",
+      "bytes": 575,
+      "sha256": "69c5c1ef762b10979d3eed5633bb7a61813f850c8b156c7ed63368eeb01a3bd8"
+    },
+    {
+      "name": "hybrid.pt",
+      "bytes": 771098059,
+      "sha256": "1b440d1ab490dfc3263a3fb37e1e9ccbde9b72db0c87b4efed4a5e68de0574c8"
+    },
+    {
+      "name": "pair.json",
+      "bytes": 5086,
+      "sha256": "dc1b52d6a75c840e64a379aaed9a2927bc4720f9d1339f1aa7ac46a2a9b47ea7"
+    }
+  ],
+  "scope": "mounted filesystem copy verified by SHA256; remote flush and remount audit pending",
+  "source_revision": "8ad19d3c60dafd85fc67caf759981f1d765c3405",
+  "cross_host_identity_equal": false
+}

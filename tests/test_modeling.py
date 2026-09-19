@@ -529,7 +529,34 @@ def test_budget_estimate_tracks_the_real_parameter_count():
     cfg = tiny_config(heads=HeadsConfig(n_multi_token_predict=1, confidence_head=True))
     estimated = count_parameters(cfg).total
     actual = ProphetModel(cfg).num_parameters()
-    assert abs(estimated / actual - 1.0) < 0.02, f"estimate {estimated} vs actual {actual}"
+    assert estimated == actual, f"estimate {estimated} vs actual {actual}"
+
+
+@pytest.mark.parametrize("filename", ["2026-09-19-qwen-conversion.json",
+                                     "2026-09-19-qwen-attention-conversion.json"])
+def test_budget_exactly_counts_audited_donor_initializations(filename):
+    import json
+    from pathlib import Path
+
+    audit = json.loads((Path(__file__).resolve().parent.parent / "docs/experiments" / filename).read_bytes())
+    cfg = ProphetConfig.from_dict(audit["config"])
+    with torch.device("meta"):
+        model = ProphetModel(cfg)
+    actual = sum(p.numel() for p in model.parameters())
+    assert actual == audit["total_parameters"]
+    assert count_parameters(cfg).total == actual
+
+
+@pytest.mark.parametrize("expand", [1.0, 1.3, 2.0])
+def test_budget_counts_gdn_gate_biases_norm_and_per_head_rounding(expand):
+    from prophet.budget import _linear_mixer_params
+
+    cfg = tiny_config()
+    cfg.mixer.linear_expand = expand
+    m = cfg.mixer
+    layer = GatedDeltaNet(cfg.d_model, n_heads=m.linear_heads, head_dim=m.linear_head_dim,
+                          expand=expand, conv_kernel=m.conv_kernel)
+    assert _linear_mixer_params(cfg) == sum(p.numel() for p in layer.parameters())
 
 
 def test_budget_estimate_matches_every_shipped_config():

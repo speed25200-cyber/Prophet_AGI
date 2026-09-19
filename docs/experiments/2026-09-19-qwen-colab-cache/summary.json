@@ -1,0 +1,25 @@
+{
+  "complete": true,
+  "results": {
+    "hybrid-trace": {
+      "exit_code": 1,
+      "passed": false,
+      "seconds": 48.55384686599973,
+      "sha256": "752dd73c05f2a6c2befb669f75c2706c0c66154365c3a95d46acf6ba4de31741"
+    },
+    "hybrid-reference": {
+      "exit_code": 1,
+      "passed": false,
+      "seconds": 52.013931675001004,
+      "sha256": "f58a7fa7d0cd78db8b97155397b85070b9fc554627473169becfad5aa5a8ca76"
+    },
+    "donor": {
+      "exit_code": 0,
+      "passed": true,
+      "seconds": 38.506924817000254,
+      "sha256": "9da2640fc2b4cff911979482c74070e906230963bdc248c11c60013c4a690113"
+    }
+  },
+  "revision": "8ad19d3c60dafd85fc67caf759981f1d765c3405",
+  "scope": "actual Colab weights, same diagnostic prefix and strict CPU FP32 tolerance; not a CUDA or quality gate"
+}

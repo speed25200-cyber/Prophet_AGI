@@ -148,13 +148,15 @@ def _linear_mixer_params(cfg: ProphetConfig) -> int:
     d = cfg.d_model
     m = cfg.mixer
     inner = m.linear_heads * m.linear_head_dim
-    v_inner = int(inner * m.linear_expand)
+    # The live mixer rounds each value head before concatenating heads.
+    head_v = int(m.linear_head_dim * m.linear_expand)
+    v_inner = m.linear_heads * head_v
     qk = 2 * d * inner
     v = d * v_inner
-    gates = 2 * d * m.linear_heads  # decay + write strength, one scalar per head
+    gates = 2 * (d + 1) * m.linear_heads  # both gate projections include a bias
     conv = (2 * inner + v_inner) * m.conv_kernel
     out = v_inner * d
-    return qk + v + gates + conv + out
+    return qk + v + gates + conv + out + head_v  # shared per-head output RMSNorm
 
 
 def _ffn_params(cfg: ProphetConfig, is_moe: bool) -> tuple[int, int]:
@@ -268,7 +270,7 @@ def count_parameters(cfg: ProphetConfig, loop_k: int | None = None) -> ParamBrea
     if cfg.heads.n_multi_token_predict:
         # Each extra prediction head is one transformer block plus a shared output
         # projection; cheap to train, and it doubles as a speculative-decoding draft.
-        per_head = _attention_params(cfg) + 3 * d * _swiglu_hidden(d, cfg.ffn.hidden_mult)
+        per_head = _attention_params(cfg) + 3 * d * _swiglu_hidden(d, cfg.ffn.hidden_mult) + 2 * d
         heads += cfg.heads.n_multi_token_predict * per_head
     if cfg.heads.confidence_head:
         heads += 2 * d + 1  # RMSNorm gain + Linear(d, 1)

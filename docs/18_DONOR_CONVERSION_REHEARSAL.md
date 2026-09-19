@@ -70,8 +70,16 @@ The local artifact is `checkpoints/qwen3-0.6b-rehearsal-init.pt`; it is not comm
 [Full conversion audit](experiments/2026-09-19-qwen-conversion.json).
 
 The budget, design search and compute allocation tools were run before proceeding.
-The analytical count is 3,200 parameters below the actual model; the report retains
-that difference and uses the actual count for coverage. Embeddings occupy about
+The original analytical count was 3,200 parameters below the actual model; the
+historical conversion report retains that difference and uses the actual count for
+coverage. The omission is now reproduced and corrected: four GDN output RMSNorms
+and gate biases contribute 4 × (256 + 32) = 1,152 parameters, and the MTP block's
+two RMSNorms contribute 2,048. The attention control lacked only those 2,048 MTP
+parameters. Exact tests construct both audited configurations on the meta device
+and now match all 385,515,905 hybrid and 360,087,809 attention parameters. A separate
+regression also verifies that fractional GDN expansion rounds per head, as the
+live mixer does. This changes the accounting, not the saved weights or frozen R04
+execution. Embeddings occupy about
 40.4% of the candidate, above the allocation guideline. Memory and device figures
 from the budget remain estimates; this candidate has not been profiled on A100.
 
@@ -315,13 +323,44 @@ Bounded recurrent state is not necessarily only a few kilobytes.
 [donor control](experiments/2026-09-19-qwen-cache-donor-control.json),
 [layer trace](experiments/2026-09-19-qwen-cache-trace.json).
 
+### Repeat on the separate Colab initialization
+
+The actual Colab hybrid (tensor-state SHA256 `4720d2cb...`) was checked afresh on
+the same 128-token diagnostic prefix, using CPU float32, PyTorch 2.11.0+cu128 and
+Transformers 5.17.0 with CUDA hidden. The separate Colab initialization is not
+tensor-identical to the local one; the earlier local numbers cannot certify it.
+The input document and token hashes match the original audit, and tolerances are
+unchanged.
+
+| Colab model and scan | Prefill 64 + 63 + 1: max error | Tokenwise: max error | Strict gates |
+|---|---:|---:|---|
+| Hybrid, chunk 64 | 0.000219822 | 0.001132488 | Both fail |
+| Hybrid, sequential reference | 0.000203729 | 0.001148224 | Both fail |
+| Unchanged donor | 0.000035286 | 0.000111580 | Both pass |
+
+All six paths remain finite and agree on all 128 argmax predictions. The hybrid's
+maximum elementwise tolerance ratios are 1.55/8.91 for prefill/tokenwise with the
+chunked scan and 1.61/8.56 with the sequential scan; the donor stays below one.
+The trace again finds differences before GDN, with relative L2 error rising from
+1.78e-6 after the first prelude block to 1.71e-5 after the last core pass and
+6.62e-5 after the last coda block. These checks reproduce the unresolved numerical
+limitation on the weights that would actually enter Colab recovery. They do not
+establish a wrong token on this prefix, a root cause, or general cached-generation
+quality. [Reports, runtime identity and logs](experiments/2026-09-19-qwen-colab-cache/summary.json).
+
+The two Colab initializations and their metadata, 1,491,373,352 bytes in total,
+were copied to `Prophet_AGI/R04/donor-recovery/colab-initializations-seed0` and
+verified file by file against the source SHA256 digests. Remote flushing and a
+post-remount audit remain required before treating that copy as durable.
+[Mounted-copy manifest](experiments/2026-09-19-qwen-colab-cache/initialization-snapshot.json).
+
 ## Reproduction and stopped attempts
 
 The first two rehearsal-harness attempts stopped before writing a checkpoint. A
 strict analytical-count assertion failed; a later identity assertion exposed that
 `load_state_dict(assign=True)` created separate Parameter objects for tied weights.
 The successful harness uses ordinary copying into the live model and records the
-remaining 3,200-parameter estimate difference. The existing production converter
+then-unresolved 3,200-parameter estimate difference, reconciled above. The existing production converter
 already used ordinary loading; the assignment issue was in this new rehearsal.
 
 ```bash
