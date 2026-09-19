@@ -90,10 +90,42 @@ This small prefix check is not full validation, a comparison with R04's differen
 vocabulary, or an estimate of recovery quality. No recovery training has occurred.
 [Raw forward smoke](experiments/2026-09-19-qwen-conversion-smoke.json).
 
-The next conversion experiment must separate weight sharing from replacement by
-GDN, with an unchanged donor baseline and recovery measurements on the same held-out
-targets. The current initialization is an experimental artifact, not an adopted
-Prophet-main model.
+## Controlled initialization diagnostics
+
+Seven arms were declared before this diagnostic and evaluated on the same four
+prefixes, with five loops and 28 executed blocks. Every original donor tensor is
+already BF16. Copied weights therefore incur no additional BF16 rounding; averaged
+weights and fresh hybrid parameters retain the rehearsal's BF16 storage. All
+forwards use CPU float32. This does not isolate rounding of averaged weights.
+
+| Core / initialization | Recurrence input | Attention positions | Nats/token |
+|---|---|---|---:|
+| Attention / contiguous average | Serial | RoPE | 14.605840 |
+| Attention / contiguous average | Reinjected | RoPE | 8.776271 |
+| Attention / stride selection | Serial | RoPE | 10.842782 |
+| GDN / contiguous average | Serial | RoPE | 14.012113 |
+| GDN / contiguous average | Reinjected | RoPE | 11.676625 |
+| GDN / contiguous average | Serial | NoPE at index 1 | 13.904784 |
+| GDN / contiguous average | Reinjected | NoPE at index 1 | 12.092936 |
+
+Serial means the initial state is the prelude output with no repeated injection;
+reinjected means zero initial state plus the prelude output at every loop. These
+produce the same input to the first core pass. GDN arms load exactly the same saved
+hybrid tensors; only these recurrence and positional controls change. Attention
+arms use the same donor mappings, embeddings, norms and FFNs. SWA in the outer
+sections is unchanged; all 128-token inputs fit within its 2,048-token window.
+The original hybrid result is reproduced exactly, and all logits remain finite.
+[Raw diagnostic](experiments/2026-09-19-qwen-initialization-ablation.json).
+
+Weight sharing with attention already causes severe loss here. Reinjection helps
+the averaged-attention and GDN/RoPE controls, while removing NoPE improves the
+reinjected GDN arm by about 0.4163 nats/token. The positional effect changes sign
+in the serial arm, so it is not an independent universal benefit. None approaches
+the unchanged donor's 2.992544. These four prefixes are now a repeatedly inspected
+diagnostic set: they cannot select a production architecture or establish recovery,
+generalization, significance, or a best initialization strategy. Unseen validation
+and equal-budget recovery runs are required. The current initialization remains
+an experimental artifact, not an adopted Prophet-main model.
 
 ## Reproduction and stopped attempts
 
@@ -115,6 +147,10 @@ python scripts/smoke_qwen_conversion.py --source data/donor-qwen3-0.6b/source \
 python scripts/audit_qwen_stack.py --source data/donor-qwen3-0.6b/source \
   --validation data/fineweb-pilot-v1/validation --reference /tmp/qwen-smoke.json \
   --out /tmp/qwen-stack.json
+python scripts/ablate_qwen_initialization.py --source data/donor-qwen3-0.6b/source \
+  --checkpoint /tmp/qwen-initialization.pt --audit /tmp/qwen-conversion.json \
+  --validation data/fineweb-pilot-v1/validation --reference /tmp/qwen-smoke.json \
+  --out /tmp/qwen-initialization-ablation.json
 ```
 
 The local dependency versions were Transformers 5.17.0, safetensors 0.8.0 and

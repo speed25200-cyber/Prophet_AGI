@@ -150,10 +150,9 @@ def prophet_config_for_donor(
 ) -> ProphetConfig:
     """Build a Prophet config whose attention slots match the donor's shapes.
 
-    Matching ``head_dim``, ``n_kv_heads`` and ``d_model`` is what makes the attention
-    weights transfer by direct copy instead of by interpolation, and direct copy is the
-    difference between a conversion that recovers in a few billion tokens and one that
-    does not recover at all.
+    Matching ``head_dim``, ``n_kv_heads`` and ``d_model`` permits direct copying of
+    attention weights. Shape compatibility alone does not establish retained quality
+    or the amount of recovery training needed.
     """
     return ProphetConfig(
         name=name or f"prophet-from-{donor.hf_id.split('/')[-1].lower()}",
@@ -217,10 +216,9 @@ def _group_middle_layers(
         step = max(len(layers) // n_groups, 1)
         return [(layers[min(i * step, len(layers) - 1)],) for i in range(n_groups)]
 
-    # "average": contiguous groups, each averaged. This is the recursive-transformer
-    # initialisation -- consecutive layers of a trained transformer compute similar
-    # updates, so their mean is a reasonable starting point for a block that will be
-    # applied repeatedly.
+    # "average": contiguous groups, each averaged. This is a candidate initialization,
+    # not a function-preserving transformation. Its quality and recovery cost must be
+    # measured; aligned shapes do not imply aligned features across donor layers.
     out: list[tuple[int, ...]] = []
     for i in range(n_groups):
         start = (i * len(layers)) // n_groups
