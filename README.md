@@ -121,7 +121,8 @@ Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 ## Outils
 
-Tout est sans dépendance lourde et exécutable immédiatement :
+Les outils de planification s'exécutent localement ; la validation A100 nécessite
+l'extra `gpu` (`pip install -e '.[dev,gpu]'` sur Linux).
 
 ```bash
 python -m prophet.scaling --sweep          # points de fonctionnement par budget
@@ -140,8 +141,12 @@ python scripts/gpu_check.py --config configs/prophet_mini.json   # sur A100 : no
 python scripts/colab_session.py --config configs/prophet_mini.json --work /content/drive/MyDrive/prophet \
     --session-minutes 600 -- --tokenizer tokenizer.json --data-root corpus/ --benchmarks benchmarks/
 python scripts/first_run_cpu.py --work /tmp/prophet-first-run --stage all   # 7M params sur CPU, ~50 min
-python -m pytest tests/ -q                 # ~460 tests (les tests GPU sont sautés sans CUDA)
+python -m pytest tests/ -q                 # les tests GPU sont sautés sans CUDA
 ```
+
+Le [notebook de validation A100](notebooks/validate_a100.ipynb) fixe une révision,
+vérifie le noyau puis mesure les deux configurations R04 avec l'optimiseur.
+Les mesures utilisent des tokens aléatoires et n'évaluent pas la qualité du modèle.
 
 Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant
 qu'elles ne coûtent quoi que ce soit — un budget de tokens surestimé d'un facteur 20, et
