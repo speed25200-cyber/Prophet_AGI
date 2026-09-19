@@ -274,6 +274,58 @@ def test_evaluated_recovery_checkpoint_audit_detects_corruption(recovery_fixture
             load_evaluated_checkpoint(run, 2)
 
 
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_recovery_cache_suite_checks_longer_prefix_and_retains_failure(recovery_fixture, tmp_path, monkeypatch, corrupt):
+    from scripts import audit_recovery_cache_suite
+
+    run = tmp_path / "suite-run"
+    recovery_fixture(run, "ce", precision="float32")
+    out = tmp_path / "suite.json"
+    argv = ["audit_recovery_cache_suite.py", "--run", str(run), "--step", "2",
+            "--source", str(tmp_path / "source"), "--validation", str(tmp_path / "validation.jsonl"),
+            "--out", str(out), "--documents", "1", "--lengths", "4", "8"]
+    monkeypatch.setattr(sys, "argv", argv)
+    if corrupt:
+        forward = ProphetModel.forward
+
+        def wrong_late_cache(self, *args, **kwargs):
+            result = forward(self, *args, **kwargs)
+            cache = kwargs.get("cache")
+            if cache is not None and cache.position > 4:
+                result.logits = result.logits + 0.01
+            return result
+
+        monkeypatch.setattr(ProphetModel, "forward", wrong_late_cache)
+        with pytest.raises(SystemExit, match="all requested cases retained"):
+            audit_recovery_cache_suite.main()
+    else:
+        audit_recovery_cache_suite.main()
+    report = json.loads(out.read_bytes())
+    assert report["complete"] and report["passed"] is (not corrupt)
+    assert len(report["cases"]) == 2 and report["cases"][0]["passed"]
+    assert report["cases"][1]["passed"] is (not corrupt)
+    assert report["atol"] == report["rtol"] == 1e-4
+    assert report["recovery_checkpoint_audit"]["step"] == 2
+    with pytest.raises(FileExistsError):
+        audit_recovery_cache_suite.main()
+
+
+def test_cache_prefix_selection_is_distinct_fixed_and_rejects_short_input():
+    from scripts.audit_recovery_cache_suite import select_prefixes
+
+    class Tokenizer:
+        def encode(self, text, add_eos):
+            assert not add_eos
+            return list(text.encode())
+
+    docs = ["long enough alpha", "long enough beta", "tiny", "long enough alpha"]
+    selected = select_prefixes(docs, Tokenizer(), 2, [4, 8])
+    assert selected == select_prefixes(list(reversed(docs)), Tokenizer(), 2, [4, 8])
+    assert len({sha for sha, ids in selected}) == 2 and all(len(ids) == 8 for sha, ids in selected)
+    with pytest.raises(ValueError, match="not enough"):
+        select_prefixes(docs, Tokenizer(), 3, [8])
+
+
 def test_fp64_oracle_preserves_values_rotary_tables_and_rejects_gdn():
     from prophet.modeling.layers import RMSNorm, RotaryEmbedding
     from scripts.audit_qwen_cache import attention_fp64_oracle

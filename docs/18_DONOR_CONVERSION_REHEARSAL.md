@@ -245,10 +245,20 @@ losses match the donor protocol; its own initialization hash matches the audited
 Colab pair. Its CE exceeds the donor by 6.063297080 nats/token, and every document
 has higher loss. The severe conversion loss therefore persists without a GDN core
 on the complete development split. This is an untrained initialization baseline,
-not a recovery result. The GDN CPU evaluation is now running.
+not a recovery result.
 [Attention report](experiments/2026-09-19-qwen-colab-development/attention.json).
 The downloaded two-file evidence ZIP is 27,452 bytes, SHA256
 `fcc94d09e282bd49ee9b863c4e8c3ee9bc38d8ebdeb5f1e68a6666786edaad8e`.
+The GDN initialization has now also completed in the same CPU runtime:
+**11.308378105 nats/token**, **3.473658365 bits/byte**, in 5,315.99 seconds.
+The unchanged 372 document identities and denominators, tokenizer/data/runtime
+identities, initialization hash and loss aggregates were independently verified.
+Every document has higher loss than the donor; 371 of 372 are worse than the
+attention initialization. All three full CPU baselines are therefore complete.
+[GDN report](experiments/2026-09-19-qwen-colab-development/hybrid.json).
+The three-file GDN ZIP is 27,742 bytes, SHA256
+`e316f2fe5d8f63a8ed10fe9cc3a24dc8d1a62593b1495dceeb1884a212d16204`.
+The recorded subprocess completed with exit code zero at frozen revision `8ad19d3`.
 These reports must use the same sequence length and precision for a paired
 comparison; the previous four-prefix numbers are not their recovery baselines.
 The R04 scores use a different tokenizer, document set and window length, so the
