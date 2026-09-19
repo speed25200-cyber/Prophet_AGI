@@ -98,6 +98,41 @@ untouched benchmark performance, cache reliability, architecture adoption or AGI
 Later R04 seeds, variable-depth training, persistent-memory/agent experiments and
 device deployment remain part of the larger project.
 
+## First measured recovery checkpoint: GDN CE, step 256
+
+The first segment completed 256 updates and 524,288 input tokens with no nonfinite
+skips. Full development validation uses the same batch-one FP32 protocol:
+
+| Model state | Nats/token | Bits/byte |
+|---|---:|---:|
+| GDN before recovery | 11.308395923 | 3.473663839 |
+| GDN CE after 256 updates | 5.649684912 | 1.735445620 |
+| Unchanged donor | 3.157778885 | 0.969992773 |
+
+All 372 documents improve relative to the initialization. The paired CE difference
+is -5.658711, with a 10,000-draw document-bootstrap interval of
+[-5.717977, -5.600104]. This closes 69.43% of the *initial CE gap* to the donor;
+it is not a percentage of recovered capabilities. The donor still has substantially
+lower loss, and the other three recovery arms have no matched trained checkpoint
+yet. The paired interval excludes training-seed uncertainty.
+
+The exact evaluated local checkpoint is 3,707,786,137 bytes, SHA256
+`edd4632ae4482c72ccf69a19b999c78696eb570cb55fbffd0ea15ad46c2d588a`.
+A separate CPU audit verifies its checksum, saved CUDA RNG, complete training
+contract/configuration and 165 model plus 301 optimizer tensors, all finite.
+Every one of the 256 training-log rows has the expected step/token count and
+finite loss/gradient norm. No remote durability claim is made for this intermediate
+checkpoint; local rotation may replace it as the same run continues.
+
+The downloaded 11-file evidence ZIP is 50,082 bytes, SHA256
+`7b867068b83b1777648e0aed60515856878644888cf8c1d2eb62d17b1525a653`.
+The archive and audit/evaluation/script hashes were independently checked, along
+with input identities, all document denominators and training rows. The paired
+comparison was computed independently after download.
+[Checkpoint evidence and comparison](experiments/2026-09-20-qwen-recovery-step256/paired-versus-initialization.json).
+The same frozen run is continuing from step 256 toward 2,048 under its original
+schedule, rather than changing its token budget after observing this checkpoint.
+
 ## Evidence
 
 [Baselines and four update probes](experiments/2026-09-20-qwen-colab-fp32/policy/queue.json)
