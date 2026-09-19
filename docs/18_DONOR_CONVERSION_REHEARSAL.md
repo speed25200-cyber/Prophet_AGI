@@ -38,6 +38,16 @@ The old epsilon produced maximum absolute errors from 8.95e-5 to 1.95e-3 on thes
 weights. This checks unchanged attention blocks, not SWA/NoPE/GDN adaptations or
 whole-model equivalence. [Raw block audit](experiments/2026-09-19-qwen-block-parity.json).
 
+The unchanged-stack control then streamed **all 28 copied attention blocks** through
+Prophet on the four held-out prefixes below. Its loss exactly reproduced the donor's
+2.992543936 nats/token. The ordinary, non-recurrent `trunk` mapping had first been
+found to assign no source layers; a failing regression reproduced this omission,
+and the planner now maps each trunk layer to its corresponding donor layer.
+This control keeps donor precision converted to float32, full attention and rotary
+positions throughout. It does not isolate the hybrid's sharing, GDN, NoPE or BF16
+initialization changes individually.
+[Complete copied-stack audit](experiments/2026-09-19-qwen-stack-parity.json).
+
 ## Hybrid initialization and negative forward result
 
 The candidate has four prelude, four shared GDN core and four coda blocks, with
@@ -102,6 +112,9 @@ python scripts/rehearse_qwen_conversion.py --source data/donor-qwen3-0.6b/source
 python scripts/smoke_qwen_conversion.py --source data/donor-qwen3-0.6b/source \
   --checkpoint /tmp/qwen-initialization.pt --audit /tmp/qwen-conversion.json \
   --validation data/fineweb-pilot-v1/validation --out /tmp/qwen-smoke.json
+python scripts/audit_qwen_stack.py --source data/donor-qwen3-0.6b/source \
+  --validation data/fineweb-pilot-v1/validation --reference /tmp/qwen-smoke.json \
+  --out /tmp/qwen-stack.json
 ```
 
 The local dependency versions were Transformers 5.17.0, safetensors 0.8.0 and

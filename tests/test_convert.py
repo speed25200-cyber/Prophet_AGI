@@ -146,6 +146,30 @@ def test_generated_config_matches_the_donor_shapes():
     assert cfg.frontend.vocab_size == d.vocab_size
 
 
+def test_unshared_donor_baseline_copies_each_trunk_layer():
+    donor = tiny_donor()
+    cfg = prophet_config_for_donor(donor)
+    cfg.recurrent.enabled = False
+    cfg.n_layers = donor.n_layers
+    cfg.mixer.pattern = ["full_attn"]
+    cfg.mixer.nope_layers = ()
+    cfg.heads.n_multi_token_predict = 0
+    cfg.heads.confidence_head = False
+    plan = plan_conversion(donor, cfg)
+    assert [block.donor_layers for block in plan.blocks] == [(i,) for i in range(donor.n_layers)]
+    model = ProphetModel(cfg)
+    source = synthetic_donor_state(donor)
+    result, report = convert_state_dict(source, plan, model.state_dict())
+    assert not report.fresh and not report.mismatched
+    for i in range(donor.n_layers):
+        torch.testing.assert_close(
+            result[f"sections.trunk.{i}.mixer.q_proj.weight"],
+            source[f"model.layers.{i}.self_attn.q_proj.weight"],
+            rtol=0,
+            atol=0,
+        )
+
+
 def test_converted_qwen_norms_preserve_the_donor_function():
     """Same weights with Prophet's default epsilon do not compute Qwen's norm."""
     cfg = prophet_config_for_donor(tiny_donor(), prelude_layers=1, core_layers=1, coda_layers=1)

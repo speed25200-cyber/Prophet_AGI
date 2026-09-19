@@ -273,7 +273,7 @@ def plan_conversion(
     blocks: list[BlockSource] = []
     core_seen = 0
     for section, index, kind in layout:
-        if section == "prelude":
+        if section in ("prelude", "trunk"):
             src = (index,) if index < donor.n_layers else ()
             note = "direct copy" if src else "no donor layer available"
         elif section == "coda":
