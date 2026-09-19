@@ -134,8 +134,8 @@ The archive and audit/evaluation/script hashes were independently checked, along
 with input identities, all document denominators and training rows. The paired
 comparison was computed independently after download.
 [Checkpoint evidence and comparison](experiments/2026-09-20-qwen-recovery-step256/paired-versus-initialization.json).
-The same frozen run is continuing from step 256 toward 2,048 under its original
-schedule, rather than changing its token budget after observing this checkpoint.
+The same frozen run subsequently completed step 2,048 under its original schedule,
+without changing its token budget after observing this intermediate checkpoint.
 
 ## Recovered checkpoint: the former cache failure now passes
 
@@ -173,7 +173,7 @@ and all four results were independently verified after download. CI at `25d24cc`
 passes 767 CPU cases with 13 CUDA-only skips, including deliberate corruption and
 rotated-slot rejection tests for the new recovery checkpoint path.
 
-The remaining three arms are now queued behind the live first run. The queue keeps
+The remaining three arms were queued behind the first run. The queue keeps
 the original 2,048-step budget and frozen training revision, resumes bounded
 segments if needed and stops on process failure, no progress or audit failure.
 Each final endpoint receives a CPU checkpoint audit and training-row checks before
@@ -181,6 +181,84 @@ the next arm proceeds. The first final is scheduled for a checksummed Drive copy
 that copy will still need a flush/remount verification. The other finals currently
 have local storage allocated, with remote persistence pending available Drive
 space. Queuing is not evidence that those arms have completed.
+
+The final GDN CE endpoint has completed a separate CPU FP32 development cache suite
+at analysis revision `ed72c86`. Before model execution, it selects the
+first four distinct eligible document hashes in ascending order, requiring at
+least 512 payload tokens. Each document is checked at 128 and 512 tokens, with
+chunked prefill/decode and tokenwise execution. Corpus/tokenizer identities are
+bound to the audited recovery contract; depth remains the trained k=5 and both
+tolerances remain 1e-4. All eight cases are retained, including numerical failures.
+These are development texts, not untouched benchmark or deployment certification.
+All eight cases pass in 547.09 seconds, covering both paths in each case. All
+positions have matching argmax tokens and finite logits. Across 128-token cases,
+the maximum logit error is 0.000024319 and the largest tolerance ratio is 0.16183;
+across 512-token cases, these are 0.000028610 and 0.24302. A ratio above one would
+fail. This covers four selected development documents, CPU FP32 and fixed k=5;
+CUDA/BF16 generation, longer contexts, variable depth and wider coverage remain
+separate requirements. Thirty focused local tests pass
+with two CUDA-only skips; an injected cache error beyond a shorter prefix makes
+the longer case fail while preserving both results.
+[Full eight-case report](experiments/2026-09-20-qwen-recovery-hybrid-ce-final/cache/chunk64.json).
+
+```bash
+python scripts/audit_recovery_cache_suite.py --run <recovery-run> --step 2048 \
+  --source <donor-source> --validation <recovery-validation.jsonl> \
+  --documents 4 --lengths 128 512 --out <new-report.json>
+```
+
+## First final endpoint: GDN CE, step 2,048
+
+The first arm completed its frozen budget of **2,048 updates and 4,194,304 input
+tokens**, with zero skipped updates. Full development evaluation gives:
+
+| Model state | Nats/token | Bits/byte |
+|---|---:|---:|
+| GDN before recovery | 11.308395923 | 3.473663839 |
+| GDN CE, step 256 | 5.649684912 | 1.735445620 |
+| GDN CE, step 2,048 | **4.571112242** | **1.404134362** |
+| Unchanged donor | 3.157778885 | 0.969992773 |
+
+All 372 documents improve both against initialization and against step 256.
+The final-minus-initial CE difference is -6.737284, with paired document-bootstrap
+95% interval [-6.804932, -6.671657]. Final-minus-step-256 is -1.078573, with interval
+[-1.111891, -1.045251]. The endpoint closes 82.66% of the initial *CE gap* to the
+donor; this is not a percentage of recovered capabilities. The donor still has
+lower loss. These intervals condition on the measured models and do not cover
+training-seed uncertainty or establish a winning architecture.
+
+The exact evaluated checkpoint is 3,707,786,649 bytes, SHA256
+`9d511123800d71cac0ed4399546ab152e1d70f5b31b4655aa6661ec92da242f8`.
+Its CPU audit passes checksum, complete contract/configuration, saved CUDA RNG and
+165 model plus 301 optimizer tensor checks. All 2,048 training rows have the exact
+expected step/token count and finite losses, rates, durations and auxiliary values.
+Evaluation identity is unchanged from step 256; all document identities,
+denominators and aggregates are checked independently after download.
+
+The final-evidence ZIP is 166,039 bytes, SHA256
+`b811a665c59fec1d06906f2abd59d919798b6f0f3bb258e2f15ef1da4a622883`.
+Its 13 files include the frozen plan, exact notebook queue sources, training rows,
+evaluation, checkpoint metadata and audit. The downloaded hashes match the audit
+and queue records. [Independent paired comparisons](experiments/2026-09-20-qwen-recovery-hybrid-ce-final/paired-comparisons.json)
+are computed locally from the downloaded per-document losses.
+
+The attention CE arm has started with the same frozen revision, schedule and token
+budget. Both KL arms remain queued. The final GDN CE weights have a checksummed
+Drive copy, verified again after a successful 2.85-second flush and remount.
+The full CPU audit of the remounted weights reproduces the local audit exactly,
+including the checkpoint checksum and all 466 model/optimizer tensors; training
+rows, evaluation, configuration, frozen plan and snapshot manifest also match.
+The earlier mounted-copy and queue records predate this verification and retain
+their original pending flags. The expanded cache suite completed independently
+on CPU while attention CE used the GPU. CI at `ed72c86` passes 770 CPU cases with
+13 CUDA-only skips.
+
+The downloaded seven-file cache/persistence proof archive is 9,684 bytes, SHA256
+`b3f19af9d2d6bf4932f7abfacf1bd7cf856426a716092a33bc5fb507c9e0d4c7`.
+Its remounted audit is byte-identical to the local audit. Archive/report hashes,
+all sixteen cached path results, exact prefix token hashes and the deterministic
+four-document selection were independently verified against the local corpus and
+pinned tokenizer. [Persistence proof](experiments/2026-09-20-qwen-recovery-hybrid-ce-final/persistence/hybrid-ce-final-persistence.json).
 
 ## Evidence
 

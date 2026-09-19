@@ -1,0 +1,40 @@
+{
+  "status": "passed",
+  "revision": "ed72c867d5f90fc614e82aca1866a9aad5f3dcfe",
+  "documents": 4,
+  "lengths": [
+    128,
+    512
+  ],
+  "atol": 0.0001,
+  "rtol": 0.0001,
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "/content/prophet-recovery/checkpoint-analysis-ed72c86/scripts/audit_recovery_cache_suite.py",
+    "--run",
+    "/content/prophet-recovery/recovery-fp32-v1/hybrid-ce-seed0",
+    "--step",
+    "2048",
+    "--source",
+    "/content/prophet-recovery/source",
+    "--validation",
+    "/content/prophet-recovery/data/validation.jsonl",
+    "--out",
+    "/content/prophet-recovery/recovered-cache-final-suite/chunk64.json",
+    "--documents",
+    "4",
+    "--lengths",
+    "128",
+    "512"
+  ],
+  "checkpoint": {
+    "step": 2048,
+    "slot": 0,
+    "sha256": "9d511123800d71cac0ed4399546ab152e1d70f5b31b4655aa6661ec92da242f8",
+    "bytes": 3707786649,
+    "extra": {}
+  },
+  "pid": 118465,
+  "exit_code": 0,
+  "report_sha256": "542f5c1cf56c17db2abc319eaeb4bebcfa5458d902fbe7c5d4a0e64965ea3b33"
+}

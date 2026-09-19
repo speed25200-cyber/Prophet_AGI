@@ -94,12 +94,14 @@ Les [sources R04](docs/15_R04_SOURCE_AUDIT.md) et les [recoupements avec les ben
 sont audités séparément. Une [première conversion de poids Qwen3-0.6B](docs/18_DONOR_CONVERSION_REHEARSAL.md)
 est auditée, mais la conversion dégrade fortement sa qualité. Un
 [pilote de récupération en FP32](docs/19_FP32_RECOVERY_PILOT.md) compare quatre
-variantes sur des poids réels. Après 256 mises à jour, le premier modèle GDN passe
-de 11,3084 à 5,6497 nats/token sur les 372 documents de développement ; le donneur
-reste meilleur, à 3,1578. Ce checkpoint réussit aussi le contrôle numérique de
-décodage qui échouait sur l'extrait initial, avec les mêmes seuils. Cela ne certifie
-pas encore la génération sur d'autres textes. Le premier bras poursuit ses 2 048
-étapes prévues ; les trois autres sont en file d'attente. Le corpus de récupération
+variantes sur des poids réels. Le premier modèle GDN a terminé ses 2 048 mises à
+jour et 4,19 millions de tokens : sa perte passe de 11,3084 à **4,5711 nats/token**
+sur les 372 documents de développement ; le donneur reste meilleur, à 3,1578.
+Son checkpoint intermédiaire à 256 étapes réussit le contrôle numérique de
+décodage qui échouait sur l'extrait initial, avec les mêmes seuils. Le checkpoint
+final passe aussi les huit cas CPU FP32 sur quatre textes à 128 et 512 tokens ;
+ses poids sont vérifiés après remontage de Drive. Le témoin à attention s'entraîne maintenant,
+puis suivront les deux variantes guidées par le donneur. Le corpus de récupération
 exclut les neuf chevauchements connus et les quatre extraits du diagnostic initial.
 La reprise exacte CE/KL est testée sur CUDA. Le contrôle des gradients GDN échoue
 encore en BF16 ; les essais FP32 réussis constituent une politique expérimentale

@@ -1,0 +1,32 @@
+{
+  "protocol": "qwen-recovery-fp32-pilot-v1",
+  "revision": "467d7c89e3914faa82df0d8c940c0537dc828b49",
+  "precision": "float32",
+  "allow_tf32": false,
+  "triton_f32_default": "tf32x3",
+  "arms": [
+    "hybrid-ce",
+    "attention-ce",
+    "hybrid-kl",
+    "attention-kl"
+  ],
+  "seed": 0,
+  "steps_per_arm": 2048,
+  "batch_size": 4,
+  "seq_len": 512,
+  "grad_accum": 1,
+  "loop_k": 5,
+  "input_tokens_per_arm": 4194304,
+  "evaluation_batch_size": 1,
+  "muon_peak_lr": 0.001,
+  "adamw_peak_lr": 3e-05,
+  "kl_alpha": 0.5,
+  "kl_temperature": 1.0,
+  "warmup_steps": 100,
+  "decay_steps": 368,
+  "checkpoint_every": 256,
+  "first_segment_steps": 256,
+  "train_sha256": "542508d6418b13e7c06def4b3de7cbcbd3ff0d21dd1f045487e1d0f4f3a2f3d6",
+  "validation_sha256": "06903e9925fb4e2ceed27eedc09f5d4b33b32e3e2ce1bfe6e1deed62a491e8af",
+  "scope": "exploratory matched-token recovery; no architecture adoption or cache certification; untrained initialization baselines at batch one"
+}
