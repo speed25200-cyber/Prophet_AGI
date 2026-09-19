@@ -46,3 +46,10 @@ I/O; the exact cause of the transient Drive stalls was not established.
 
 The continuation toward 1,024 is in progress; no result at that boundary is
 claimed by this report yet.
+
+`scripts/snapshot_r04.py` copies only the checkpoint referenced by the completed
+validation into a fresh directory, audits the destination independently, then
+writes `SNAPSHOT_COMPLETE.json`. It never overwrites an existing snapshot or
+inherits an old completion marker. A partial copy must not be used as a completed
+snapshot. The previous Drive run remains available as a fallback; remote flushing
+is a separate requirement before releasing the VM.
