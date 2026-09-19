@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -63,10 +64,11 @@ def forward_kl(student: Tensor, teacher: Tensor, *, temperature=1.0, chunk_token
     return _ForwardKL.apply(student, teacher.detach(), float(temperature), chunk_tokens)
 
 
-def state_sha256(model: nn.Module) -> str:
+def state_sha256(model: nn.Module | Mapping[str, Tensor]) -> str:
     """Hash names, shapes, dtypes and actual tensor bytes, with bounded CPU copies."""
     digest = hashlib.sha256()
-    for name, tensor in sorted(model.state_dict().items()):
+    state = model.state_dict() if isinstance(model, nn.Module) else model
+    for name, tensor in sorted(state.items()):
         header = json.dumps([name, list(tensor.shape), str(tensor.dtype)], separators=(",", ":"))
         digest.update(header.encode() + b"\0")
         flat = tensor.detach().reshape(-1)

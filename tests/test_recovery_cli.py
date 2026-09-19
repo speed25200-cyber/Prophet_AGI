@@ -176,3 +176,35 @@ def test_recovery_artifact_preflight_rejects_tampering(recovery_fixture, tmp_pat
     audit.write_text(json.dumps(record))
     with pytest.raises(ValueError, match="metadata mismatch"):
         recover_qwen.load_initialization(tmp_path / "initial.pt", audit)
+
+
+def test_initialization_identity_ignores_archive_container(recovery_fixture, tmp_path, monkeypatch):
+    from prophet.train.distillation import state_sha256
+    from scripts import audit_initialization_identity
+
+    original = tmp_path / "initial.pt"
+    payload = torch.load(original, weights_only=True)
+    other = tmp_path / "different_archive_name.pt"
+    torch.save(payload, other)
+    assert recover_qwen.digest(other) != recover_qwen.digest(original)
+    reports = []
+    for index, artifact in enumerate((original, other)):
+        audit = json.loads((tmp_path / "audit.json").read_bytes())
+        audit["checkpoint_sha256"] = recover_qwen.digest(artifact)
+        audit_path = tmp_path / f"audit-{index}.json"
+        audit_path.write_text(json.dumps(audit))
+        out = tmp_path / f"identity-{index}.json"
+        monkeypatch.setattr(sys, "argv", ["identity", "--initialization", str(artifact),
+                                         "--audit", str(audit_path), "--out", str(out)])
+        audit_initialization_identity.main()
+        reports.append(json.loads(out.read_bytes()))
+    assert reports[0]["checkpoint_sha256"] != reports[1]["checkpoint_sha256"]
+    assert reports[0]["state_sha256"] == reports[1]["state_sha256"]
+    assert reports[0]["config_sha256"] == reports[1]["config_sha256"]
+    model = ProphetModel(recover_qwen.recovery_config(payload["config"], 2, 8))
+    model.load_state_dict(payload["model"])
+    assert state_sha256(model) == reports[0]["state_sha256"]
+    reordered = dict(reversed(list(payload["model"].items())))
+    assert state_sha256(reordered) == reports[0]["state_sha256"]
+    payload["model"]["embed.weight"][0, 0] += 1
+    assert state_sha256(payload["model"]) != reports[0]["state_sha256"]

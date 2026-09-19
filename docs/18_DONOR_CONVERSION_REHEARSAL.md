@@ -194,6 +194,15 @@ diagnostic. Auxiliary heads are disabled in recovery and excluded from that equa
 claim. [Attention audit](experiments/2026-09-19-qwen-attention-conversion.json),
 [pair audit](experiments/2026-09-19-qwen-recovery-initialization-pair.json).
 
+The original artifacts also have serialization-independent identities covering all
+tensor names, shapes, dtypes and bytes plus a separate canonical configuration hash:
+[hybrid identity](experiments/2026-09-19-qwen-hybrid-identity.json) and
+[attention identity](experiments/2026-09-19-qwen-attention-identity.json).
+`scripts/audit_initialization_identity.py` checks the conversion audit before hashing
+the restricted-loaded state directly, without allocating a second model. This allows
+a Colab reconstruction to be checked against the exact local tensors even when
+PyTorch archive metadata differs. Cross-host identity is not assumed from the seed.
+
 `scripts/eval_qwen_recovery.py` now scores the unchanged donor and either audited
 initialization over the complete prepared development split. It shares the exact
 tokenizer, document/window policy and CE/BPB implementation with the recovery
