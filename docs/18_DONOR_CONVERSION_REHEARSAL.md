@@ -402,13 +402,39 @@ establish sustained recovery quality or clear either candidate's cache gate.
 The complete 17-file evidence ZIP is 102,129 bytes, SHA256
 `dd188f7d16b89fb7b3a73af476eb5c86629212da7b2fd853929bd20f37dc651f`.
 
-The next diagnostic disables autocast for the complete GDN mixer on a disposable
+The isolated diagnostic disables autocast for the complete GDN mixer on a disposable
 gate instance, including projections and convolution. The normal recurrence was
 already FP32; this tests its input/output rounding boundaries as well. Other
 modules and all acceptance thresholds stay unchanged. The explicit
 `--gdn-fp32-diagnostic` flag records the override and cannot certify the default
 BF16 policy. A CPU test checks its outputs and gradients against explicit FP32,
 unchanged weights, and preservation of the original instance's autocast behavior.
+
+The A100 probe at `e1480fe` completed in 30.45 seconds. FP32 still passes, but
+keeping all four GDN mixers in FP32 **does not clear the outer BF16 gate**:
+
+| BF16 comparison | Production GDN policy | Complete GDN in FP32 |
+|---|---:|---:|
+| Logit relative L2 | 0.051686 | 0.017012 |
+| Maximum absolute logit error | 1.78125 | 0.455078 |
+| Failed tensor comparisons, unchanged 3% bound | 148 | 118 |
+| Largest gradient relative L2 | 0.731887 | 0.158535 |
+
+The largest remaining discrepancy is on the last prelude query-normalization
+weight. Reference/fused losses are 10.962306 and 10.963264. The logit comparison now
+passes, but the gradients do not; no optimizer update ran and KL was skipped.
+This rules out keeping only the GDN mixers in FP32 as a sufficient remedy on this
+prefix. It does not isolate the responsible operations or establish a kernel bug.
+The full FP32 comparison already passes; practical recovery still needs a measured
+precision policy and matching baselines before a budgeted run.
+
+The three downloaded files were checked against Colab's archive/report hashes and
+the original initialization, configuration, corpus, tokenizer and runtime identities.
+[Diagnostic report and execution record](experiments/2026-09-20-qwen-colab-gdn-fp32/queue.json).
+The evidence ZIP is 12,139 bytes, SHA256
+`fd0aba9e1e648f0060a26478d9431b9bbe6603b90b4c84d88501e44b80f179f3`.
+CI at `e1480fe` passes 755 CPU tests with 10 CUDA-only skips; the separate A100
+execution above covers all ten CUDA tests without skips.
 
 ## Real-size cached decoding: strict gate remains open
 
