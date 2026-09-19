@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gpu = [
+    "fla-core==0.5.2; sys_platform == 'linux'",
+]
 train = [
     "datasets>=3.0",
     "huggingface-hub>=0.26",

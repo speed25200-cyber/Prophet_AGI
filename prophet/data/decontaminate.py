@@ -47,6 +47,12 @@ class _Fingerprint:
     grams: frozenset[str]
 
 
+@dataclass(frozen=True)
+class ContaminationHit:
+    benchmark: str
+    containment: float
+
+
 class Decontaminator:
     """Reject documents containing too much of a registered benchmark item.
 
@@ -55,11 +61,12 @@ class Decontaminator:
     matching so that short answers are not silently ignored.
     """
 
-    def __init__(self, n: int = 13, threshold: float = 0.5) -> None:
+    def __init__(self, n: int = 13, threshold: float = 0.5, min_short_words: int = 5) -> None:
         if not isinstance(n, int) or n <= 0:
             raise ValueError("n must be a positive integer")
         if not math.isfinite(threshold) or not 0.0 < threshold <= 1.0:
             raise ValueError("threshold must lie above 0 and at most 1")
+        self.min_short_words = min_short_words
         self.n = n
         self.threshold = float(threshold)
         self._benchmarks: dict[str, list[_Fingerprint]] = {}
@@ -67,40 +74,47 @@ class Decontaminator:
         self.documents_seen = 0
         self.documents_rejected = 0
 
-    def add_benchmark(self, name: str, examples: Iterable[str]) -> None:
+    def add_benchmark(self, name: str, examples: Iterable[str]) -> int:
         if not name or not name.strip():
             raise ValueError("benchmark name must not be empty")
         fingerprints = self._benchmarks.setdefault(name, [])
+        count = 0
         for example in examples:
             cleaned = normalise(example)
-            if not cleaned:
+            if len(cleaned.split()) < min(self.n, self.min_short_words):
                 continue
             fingerprints.append(_Fingerprint(cleaned, frozenset(ngrams(cleaned, self.n))))
+            count += 1
+        return count
 
     @staticmethod
     def _contains_phrase(document: str, phrase: str) -> bool:
         return f" {phrase} " in f" {document} "
 
-    def is_contaminated(self, text: str) -> bool:
+    def check(self, text: str) -> list[ContaminationHit]:
+        """Report threshold-crossing matches without changing measurement counters."""
         cleaned = normalise(text)
         document_grams = frozenset(ngrams(cleaned, self.n))
-        matched: list[str] = []
+        matched: list[ContaminationHit] = []
 
         for benchmark, fingerprints in self._benchmarks.items():
             for fingerprint in fingerprints:
                 if not fingerprint.grams:
-                    hit = self._contains_phrase(cleaned, fingerprint.normalised)
+                    containment = float(self._contains_phrase(cleaned, fingerprint.normalised))
                 else:
                     overlap = len(document_grams.intersection(fingerprint.grams))
-                    hit = overlap / len(fingerprint.grams) >= self.threshold
-                if hit:
-                    matched.append(benchmark)
+                    containment = overlap / len(fingerprint.grams)
+                if containment >= self.threshold:
+                    matched.append(ContaminationHit(benchmark, containment))
                     break
+        return matched
 
+    def is_contaminated(self, text: str) -> bool:
+        matched = self.check(text)
         self.documents_seen += 1
         if matched:
             self.documents_rejected += 1
-            self._rejected_by_benchmark.update(matched)
+            self._rejected_by_benchmark.update(hit.benchmark for hit in matched)
             return True
         return False
 

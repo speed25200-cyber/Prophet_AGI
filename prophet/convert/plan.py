@@ -174,7 +174,14 @@ def prophet_config_for_donor(
             linear_heads=max(donor.d_model // donor.head_dim, 1),
             linear_head_dim=donor.head_dim,
             linear_expand=2.0,
+            rope_theta=donor.rope_theta,
+            nope_layers=(1,),
         ),
+        # The donor computed x + f(x) in every block. A forward-time residual multiplier
+        # would turn a "direct copy" into x + 0.1*f(x): the same tensors, a different
+        # function. Off for conversion, and the init-time scaling it replaced does not
+        # apply to copied weights either.
+        residual_scaling=False,
         recurrent=RecurrentCoreConfig(
             enabled=True,
             prelude_layers=prelude_layers,

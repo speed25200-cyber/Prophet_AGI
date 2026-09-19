@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import bisect
 import hashlib
+import json
 import math
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -92,6 +93,9 @@ class SequencePacker:
         self._tokens: deque[int] = deque()
 
     def add(self, document: Iterable[int]) -> None:
+        document = tuple(document)
+        if not document:
+            return
         self._tokens.extend(int(token) for token in document)
         if self.separator is not None:
             self._tokens.append(self.separator)
@@ -158,6 +162,9 @@ def _manifest_fingerprint(
     for source in sources:
         add(source.name)
         add(float(source.weight).hex())
+        if hasattr(source, "fingerprint"):
+            add(json.dumps(source.fingerprint(), sort_keys=True))
+            continue
         add(len(source.documents))
         for document in source.documents:
             add(len(document))
@@ -257,6 +264,8 @@ class StreamingLoader:
         if len(set(names)) != len(names):
             raise ValueError("source names must be unique")
         for source in self.sources:
+            if hasattr(source, "next_document"):
+                continue
             if not source.documents:
                 raise ValueError(f"source {source.name!r} has no documents")
             if separator is None and not any(source.documents):
@@ -268,7 +277,7 @@ class StreamingLoader:
         self.separator = None if separator is None else int(separator)
         self.sampler = MixtureSampler([source.weight for source in self.sources], seed=seed)
         self._source_by_name = {source.name: source for source in self.sources}
-        self._cursors = {source.name: 0 for source in self.sources}
+        self._cursors = {source.name: getattr(source, "cursor", 0) for source in self.sources}
         self._packers = {
             source.name: SequencePacker(seq_len, separator=self.separator)
             for source in self.sources
@@ -283,6 +292,10 @@ class StreamingLoader:
         self._step = 0
 
     def _next_document(self, source: IterableSource) -> tuple[int, ...]:
+        if hasattr(source, "next_document"):
+            document = source.next_document()
+            self._cursors[source.name] = source.cursor
+            return document
         cursor = self._cursors[source.name]
         document = source.documents[cursor]
         self._cursors[source.name] = (cursor + 1) % len(source.documents)
@@ -297,7 +310,8 @@ class StreamingLoader:
             packer.add(self._next_document(source))
             if len(packer) == before:
                 empty_documents += 1
-                if empty_documents >= len(source.documents):
+                limit = source.empty_limit if hasattr(source, "empty_limit") else len(source.documents)
+                if empty_documents >= limit:
                     raise RuntimeError(f"source {source.name!r} cannot fill a sequence")
             else:
                 empty_documents = 0
@@ -361,7 +375,9 @@ class StreamingLoader:
                 raise ValueError(f"cursor for source {name!r} must be an integer")
             if cursor < 0:
                 raise ValueError(f"negative cursor for source {name!r}")
-            if cursor >= len(source.documents):
+            if hasattr(source, "validate_cursor"):
+                source.validate_cursor(cursor)
+            elif cursor >= len(source.documents):
                 raise ValueError(
                     f"cursor {cursor} for source {name!r} exceeds its "
                     f"{len(source.documents)} documents"
@@ -383,5 +399,10 @@ class StreamingLoader:
         state = self.validate_state(state)
         self._step = state.step
         self._cursors = state.cursors
+        for source in self.sources:
+            if hasattr(source, "restore_cursor"):
+                source.restore_cursor(state.cursors[source.name])
         for name, packer in self._packers.items():
             packer.load_carry(state.carry.get(name, []))
+
+    restore = load_state

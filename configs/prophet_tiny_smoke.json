@@ -14,14 +14,10 @@
     "vocab_size": 2048,
     "tie_word_embeddings": true,
     "byte_vocab_size": 260,
-    "patch_target_bytes": 4.5,
-    "patch_max_bytes": 16,
-    "patch_entropy_threshold": null,
     "local_encoder_layers": 2,
     "local_decoder_layers": 3,
     "local_dim": 512,
     "local_heads": 8,
-    "local_window": 128,
     "hash_ngram_sizes": [
       3,
       4,
@@ -48,6 +44,7 @@
     "linear_expand": 2.0,
     "conv_kernel": 4,
     "linear_beta_max": 2.0,
+    "linear_chunk_size": 64,
     "rope_theta": 500000.0,
     "rope_scaling": "none",
     "rope_scaling_factor": 1.0,
@@ -76,7 +73,10 @@
     "truncated_backprop_steps": 2,
     "halting": "none",
     "halting_loss_weight": 0.01,
-    "halting_target_steps": 4.0
+    "halting_target_steps": 4.0,
+    "token_depth": false,
+    "ingest_depth": 1,
+    "token_depth_random_spans": 0.25
   },
   "ffn": {
     "kind": "dense",
@@ -97,6 +97,7 @@
   "memory": {
     "enabled": false,
     "kind": "none",
+    "mount": "output",
     "layers": [],
     "memory_dim": 512,
     "n_slots": 4096,
@@ -104,21 +105,25 @@
     "write_lr": 0.01,
     "decay": 0.999,
     "surprise_threshold": 1.0,
-    "persist_across_sessions": true,
-    "max_persisted_writes": 1000000
+    "max_writes": 1000000
   },
   "heads": {
     "n_multi_token_predict": 1,
     "mtp_loss_weight": 0.3,
     "confidence_head": false,
-    "confidence_loss_weight": 0.1
+    "confidence_loss_weight": 0.1,
+    "action_head": false,
+    "action_dk": 128,
+    "action_kv_head": 0,
+    "sel_loss_weight": 0.5,
+    "ptr_loss_weight": 0.5,
+    "gate_loss_weight": 0.1,
+    "jumped_token_lm_weight": 0.1
   },
   "modality": {
     "n_modalities": 1,
     "modality_embeddings": true,
-    "position_dims": 1,
-    "bidirectional_spans": true,
-    "adapter_mount_points": true
+    "position_dims": 1
   },
   "init_std": 0.02,
   "mup_base_width": null

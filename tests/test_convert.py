@@ -303,10 +303,14 @@ def test_gated_delta_output_projection_starts_inert_in_its_widened_half(converte
     can be."""
     d, _, _, model, _, state, _ = converted
     model.load_state_dict(state)
-    weight = model.sections["core"][0].mixer.o_proj.weight
-    half = weight.shape[1] // 2
-    assert weight[:, half:].abs().sum() == 0
-    assert weight[:, :half].abs().sum() > 0
+    mixer = model.sections["core"][0].mixer
+    weight = mixer.o_proj.weight
+    # Widened *per head*: donor head h lands in the first slot of GDN head h's block, so
+    # the inert half is the trailing half of every head block, not of the whole matrix.
+    per_head = weight.view(weight.shape[0], mixer.n_heads, mixer.head_v)
+    half = mixer.head_v // 2
+    assert per_head[:, :, half:].abs().sum() == 0
+    assert bool((per_head[:, :, :half].abs().sum(dim=(0, 2)) > 0).all())
 
 
 def test_nothing_important_is_left_at_fresh_initialisation(converted):

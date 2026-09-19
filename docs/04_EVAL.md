@@ -69,7 +69,7 @@ quelqu'un d'autre, avec un format de prompt différent, ne prouve rien.
 | BFCL-v3 (outils) | Llama-3.2-3B 67.0 | ≥ 62 |
 
 **Nuance honnête, à ne pas enterrer.** Ces cibles sont celles d'un modèle de 1.3B actifs.
-Notre point de fonctionnement réel est de **369M actifs pour ~25B tokens**, soit 73× à
+Notre point de fonctionnement réel est de **408M actifs pour ~22B tokens**, soit 73× à
 7 300× moins de compute que les modèles ci-dessus. Sur les benchmarks de connaissance
 (MMLU, GPQA), les atteindre par pré-entraînement de zéro est **arithmétiquement exclu** —
 c'est le constat de [`00_PROBLEM_LANDSCAPE.md`](00_PROBLEM_LANDSCAPE.md) §9 sur la capacité
@@ -96,6 +96,28 @@ token, mémoire de pointe, et énergie. Mesurés dans les mêmes conditions pour
 les concurrents, sinon le chiffre ne veut rien dire.
 
 ---
+
+## 4 bis. Le niveau agentique : des vérificateurs, et une courbe
+
+Un agent s'évalue comme le reste : sous 500M, un score unique est au hasard, donc le
+harnais doit produire un signal qui *bouge*. `prophet/eval/agent_bench.py` :
+
+- **Chaque tâche a un vérificateur exécutable.** L'action `done` n'est acceptée que s'il
+  passe (tier vérité terrain de la boucle) ; « fini mais faux » est un échec, pas un
+  crédit partiel. La famille de tâches est petite et déterministe — trouver lequel de
+  quelques fichiers contient un mot, noter son nom, finir — assez simple pour qu'un
+  modèle scripté la réussisse (ce qui teste le harnais), assez stricte pour qu'un modèle
+  aléatoire échoue (ce qui teste le vérificateur), et calée sur les échecs mesurés par A2 :
+  omission, mauvais outil, valeur d'argument présente dans le contexte.
+- **La courbe, pas le point.** `learning_curve(block)` rapporte le succès par bloc
+  d'épisodes consécutifs, *modèle gelé*. Ce qui monte ne peut monter que par ce qui est
+  porté d'un épisode à l'autre — l'état de session récurrent (`carry_session`), les
+  épisodes promus de la quarantaine, un registre — c'est-à-dire exactement ce que les
+  paris mémoire doivent faire bouger. Une courbe plate sur un modèle gelé est la ligne
+  de base honnête, et c'est ce que le harnais rapporte aujourd'hui.
+
+Rapporté par épisode : fini, vérifié, pas, appels d'outils, appels malformés, valeurs
+copiées, question posée. Aucun de ces nombres n'existe encore pour un modèle entraîné.
 
 ## 5. Décontamination
 

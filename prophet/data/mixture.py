@@ -218,6 +218,15 @@ class Mixture:
     phases: list[Phase]
     description: str = ""
 
+    def rescale(self, total_tokens: float) -> Mixture:
+        """Return an independent recipe with the requested token budget."""
+        import copy
+        if not math.isfinite(total_tokens) or total_tokens <= 0:
+            raise ValueError("total_tokens must be finite and positive")
+        result = copy.deepcopy(self)
+        result.total_tokens = total_tokens
+        return result
+
     def validate(
         self,
         *,

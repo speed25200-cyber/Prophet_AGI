@@ -44,6 +44,43 @@ d'être ignorés. Le rapport par benchmark est destiné à la carte du modèle.
 La contamination ne se signale pas : la perte d'entraînement baisse normalement et le
 score **monte**. C'est précisément le signal qu'on aurait envie de célébrer.
 
+## Le chemin réel : des fichiers au chargeur reprenable
+
+`prophet/data/corpus.py` relie le mélange ci-dessous au chargeur de
+`prophet/data/streaming.py`, qui ne sait rien de l'origine des documents — et c'est ce qui
+le rend testable hors ligne et reprenable à l'identique. Quatre propriétés, chacune une
+décision :
+
+| Propriété | Mécanisme | Ce qui aurait cassé sans |
+|---|---|---|
+| **Reprise en O(1)** | Un index d'offsets par ligne, construit une fois et mis en cache à côté du fichier ; `open(start)` est un `seek`. Un flux Hub ne sait pas chercher : `open(start)` y est un `skip`, en O(start), et le dit. | Rejouer 40 000 pas de flux à chaque reprise. |
+| **Le rejet ne décale pas le flux** | Un document contaminé produit une liste de tokens **vide** au lieu d'être sauté : le curseur compte les documents bruts, le packer ignore les vides. | Un curseur dépendant du filtre : reprendre avec un jeu de benchmarks ré-indexé aurait lu un autre corpus, sans erreur. |
+| **Plafond d'époques au tirage** | `Mixture.validate()` vérifie le plan ; `TokenisedSource` vérifie le run. Son curseur ne revient jamais à zéro, donc `curseur / n_documents` est le nombre d'époques et une source tirée au-delà de 4 **lève** au lieu de se répéter. Une source de taille inconnue (Hub) ne peut pas être plafonnée et est déclarée telle. | Une répétition silencieuse là où elle cesse de payer. |
+| **Les phases sont un planning de chargeurs** | Une phase = ses sources et ses poids = son `StreamingLoader` ; `PhasedLoader` bascule au pas que le budget de tokens implique et sauvegarde chaque sous-chargeur. | Une interruption en phase C reprenant en phase A. |
+
+Le script d'entraînement l'assemble :
+
+```bash
+python scripts/train_tokenizer.py --data-root corpus/ --out tokenizer.json
+python scripts/train.py --config configs/prophet_mini.json --tokenizer tokenizer.json \
+    --data-root corpus/ --benchmarks benchmarks/ --tokens 16.1e9 ...
+```
+
+où `corpus/` contient `<source>.jsonl` ou `<source>/*.jsonl` nommés comme les sources du
+mélange, et `benchmarks/` un `<nom>.jsonl` par jeu de test. `--hub` autorise le streaming
+des sources absentes en local — après `scripts/verify_datasets.py`, jamais avant. Sans
+`--benchmarks`, le script refuse de partir ; `--benchmarks ''` est le seul moyen de
+courir non décontaminé, et il faut l'écrire. Vérifié de bout en bout sur CPU avec un
+corpus minuscule : trois phases, checkpoint, reprise dans la phase en cours.
+
+`--quarantine q.json --tools tools.json` ajoute les épisodes agentiques **promus** à la
+phase de recuit comme source supplémentaire (poids 0.05 par défaut, normalisé par
+l'échantillonneur) : le chemin de [`08_AGENT.md`](08_AGENT.md) §4 bis, sans autre format.
+
+Une seule longueur de séquence sert toutes les phases : la croissance de contexte par
+phase du plan R06 est l'extension longue R02, non financée, et changer la forme du batch
+en cours de run changerait la mémoire contre laquelle le budget a été vérifié.
+
 ---
 
 # Data mixture — prophet-v1
@@ -51,6 +88,50 @@ score **monte**. C'est précisément le signal qu'on aurait envie de célébrer.
 Three-phase WSD mixture from track R06, proportions preserved and token counts scaled to the measured single-A100 budget.
 
 Total budget: **40.0B tokens**
+
+## Préparer les jeux : trois scripts, un générateur
+
+| Étape | Script | Ce qu'il produit | Sans réseau |
+|---|---|---|---|
+| Corpus | `scripts/prepare_corpus.py` | chaque source du mélange en `<source>/part-NNNNN.jsonl`, filtres déclaratifs appliqués, plafonds par source (`--max-docs`, `--max-bytes`), `manifest.json` de provenance (id, config, filtres, licence déclarée, documents, octets, commit), reprise par shard (un shard interrompu ne compte jamais) | `--dry-run` imprime le plan |
+| Benchmarks | `scripts/fetch_benchmarks.py` | `benchmarks/<nom>.jsonl` pour les suites de niveau 1 et 2 et les cibles du tableau de bord — question **et** options jointes, puisque l'un ou l'autre est la fuite ; un jeu vide est refusé | `--dry-run` liste les ids, chacun marqué **à vérifier** |
+| Agentique | `scripts/build_agent_dataset.py` | `<famille>.jsonl` de trajectoires parfaites rendues dans le flux à ids de contrôle, plus un manifeste | oui : tout est généré |
+
+Les identifiants de datasets sont des affirmations tant que `scripts/verify_datasets.py`
+ne les a pas confrontés au Hub ; les scripts le disent en clair. Le corpus local suit le
+schéma que le chargeur attend (`--data-root`), la décontamination se fait dans le flux
+contre `benchmarks/`, et rien de tout cela n'entre dans git.
+
+### Les familles de tâches agentiques
+
+`prophet/agent/tasks.py` : cinq familles générées depuis une graine, chacune avec ses
+outils, un **vérificateur exécutable** et une trajectoire parfaite. La graine est la
+partition : entraînement et évaluation ne partagent aucune tâche par construction, et
+aucun benchmark n'entre dans la génération, donc rien ne peut fuir.
+
+| Famille | L'agent doit | Ce qu'elle exerce |
+|---|---|---|
+| `files` | trouver le fichier qui contient un mot, noter son nom | choix d'outil, copie depuis l'observation |
+| `calc` | évaluer une expression avec la calculatrice, noter le résultat | copie depuis le but, pas de calcul en tokens |
+| `lookup` | lire un JSON, noter la valeur d'un champ | copie depuis une sortie structurée |
+| `count` | compter un mot dans les fichiers, noter le nombre | l'outil plutôt que le raisonnement |
+| `replace` | réécrire un fichier avec un mot remplacé | une **valeur longue générée**, non copiable |
+
+`replace` est la famille difficile à dessein : son argument n'est nulle part en contexte,
+le pointeur de copie ne peut pas le remplir. Le benchmark (`prophet/eval/agent_bench.py`)
+accepte n'importe quelle famille ; les quatre familles à copie ont 100 % de valeurs
+copiables dans leurs trajectoires rendues, `replace` en a moins (test).
+
+**Séquences d'épisodes.** `make_related_tasks` produit des *suites* de tâches `lookup` :
+la première ouvre un fichier, chaque suivante demande un autre champ du **même** fichier
+(une fois sur deux) ou en ouvre un nouveau. La trajectoire parfaite d'un fichier déjà lu
+par l'épisode précédent note la réponse **sans le relire** — ce qu'un agent dont l'état de
+session porte le fichier doit faire — et celle d'un fichier nouveau le lit d'abord.
+Entraînées à plusieurs épisodes par ligne (`scripts/first_agent_run_cpu.py
+--episodes-per-row 3`, chaque épisode à son `<|bos|>`) et jouées avec l'état porté, ces
+suites mesurent si l'état récurrent borné retient ce que l'épisode précédent a lu : moins
+de tokens à succès égal, ou une réponse fausse. Les nombres sont dans
+[`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §2.
 
 ## Phase A-stable — 28.0B tokens (70%), context 4096, LR warmup_then_constant
 

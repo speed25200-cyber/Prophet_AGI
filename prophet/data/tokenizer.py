@@ -41,6 +41,16 @@ SPECIAL_TOKENS: tuple[str, ...] = (
     "<|audio|>",
     "<|video|>",
     "<|think|>",
+    "<|/think|>",
+    "<|system|>",
+    "<|user|>",
+    "<|assistant|>",
+    "<|tool|>",
+    "<|tool_def|>",
+    "<|/tool_def|>",
+    "<|call|>",
+    "<|/call|>",
+    "<|nocall|>",
 )
 
 if len(SPECIAL_TOKENS) >= N_RESERVED:  # pragma: no cover - import-time guard
@@ -253,8 +263,16 @@ class ProphetTokenizer:
         self._special_to_id = {token: N_BYTES + index for index, token in enumerate(SPECIAL_TOKENS)}
         self._encode_cache: dict[bytes, tuple[int, ...]] = {}
 
+    @property
+    def n_tokens(self) -> int:
+        return N_BYTES + N_RESERVED + len(self.merges)
+
     def __len__(self) -> int:
         return self.vocab_size
+
+    def fertility(self, text: str) -> float:
+        """UTF-8 bytes per token, excluding optional control tokens."""
+        return len(text.encode("utf-8")) / max(len(self.encode(text)), 1)
 
     @property
     def pad_id(self) -> int:
@@ -319,14 +337,20 @@ class ProphetTokenizer:
         *,
         add_bos: bool = False,
         add_eos: bool = False,
+        parse_special: bool = False,
     ) -> list[int]:
         """Encode Unicode text; byte fallback makes ``<|unk|>`` unnecessary."""
 
         token_ids: list[int] = []
         if add_bos:
             token_ids.append(self.bos_id)
-        for unit in pre_tokenize(text):
-            token_ids.extend(self._encode_unit(unit))
+        parts = re.split("(" + "|".join(map(re.escape, SPECIAL_TOKENS)) + ")", text) if parse_special else [text]
+        for part in parts:
+            if parse_special and part in self._special_to_id:
+                token_ids.append(self._special_to_id[part])
+            else:
+                for unit in pre_tokenize(part):
+                    token_ids.extend(self._encode_unit(unit))
         if add_eos:
             token_ids.append(self.eos_id)
         return token_ids
@@ -435,7 +459,9 @@ class ProphetTokenizer:
             raise ValueError("tokenizer was built with a different normalization")
         if payload.get("n_bytes") != N_BYTES or payload.get("n_reserved") != N_RESERVED:
             raise ValueError("tokenizer uses a different byte/reserved id layout")
-        if payload.get("special_tokens") != list(SPECIAL_TOKENS):
+        saved_special = payload.get("special_tokens")
+        if (not isinstance(saved_special, list) or not saved_special
+                or saved_special != list(SPECIAL_TOKENS[:len(saved_special)])):
             raise ValueError("tokenizer uses a different special-token id layout")
 
         raw_merges = payload.get("merges")

@@ -126,11 +126,19 @@ l'absence de mauvaise allocation :
 
 | Configuration | Total | Actifs | Prof. eff. | Tokens | Tok/actif | Entraînement | Appareil |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **prophet-main** `d1536 p4c4×4o4 e128` | **3.79B** | **369M** | 24 | 24.6B | 31 | 38.1 GB | 2.59 GB (5090) |
-| **prophet-mini** `d1280 p3c4×2o3` | **229M** | 211M | 14 | 58.3B | 173 | 3.4 GB | 0.67 GB (iPhone) |
+| **prophet-main** `d1536 p4c4×4o4 e128` | **3.83B** | **408M** | 24 | 16.1B | 40 | 47.1 GB | 2.54 GB (5090) |
+| **prophet-mini** `d1280 p3c4×2o3` | **253M** | 236M | 14 | 52.1B | 138 | 3.6 GB | 0.66 GB (iPhone) |
 
-Le rapport de sparsité de 10.3× est ce qui rend la chose intéressante : la capacité de
-connaissance d'un modèle de 3.8B pour le coût par token d'un modèle de 369M.
+Le rapport de sparsité de 9.4× est ce qui rend la chose intéressante : la capacité de
+connaissance d'un modèle de 3.8B pour le coût par token d'un modèle de 408M.
+
+> **Révision (revue A1).** Ces chiffres ont été recalculés après correction de
+> l'estimateur : il parcourait les blocs avec le motif global et comptait les quatre
+> blocs récurrents du cœur comme de l'attention — 31M paramètres de moins que la
+> réalité sur la config sonde, et dans le sens qui flattait la mémoire. L'estimateur
+> colle désormais au modèle réel à 10⁻⁴ près sur toutes les configurations livrées, et
+> un test le garde. Les conclusions (tient sur un A100, tient sur chaque appareil)
+> survivent ; les valeurs ont bougé.
 
 ---
 
@@ -162,6 +170,56 @@ correctif en cas d'échec est **plus de couches globales, pas une fenêtre plus 
 
 ---
 
+## 4bis. Décision 3b — L'attention globale écrit ce qu'elle évince dans un registre borné
+
+D3 garde des couches d'attention globale (NoPE) pour le rappel exact que les mélangeurs à
+état borné n'offrent pas (R02 : 37.8 % en multi-aiguilles). Elles sont le seul endroit où
+la mémoire de la pile croît avec le contexte, et « contexte infini » se lit sur cette
+courbe :
+
+| Contexte | Cache, Prophet-main (Go) | Avec registre (Go) |
+|---:|---:|---:|
+| 32 768 | 0.146 | 0.062 |
+| 131 072 | 0.548 | 0.062 |
+| 1 048 576 | 4.307 | 0.062 |
+| 8 388 608 | 34.371 | **0.062** |
+
+(`prophet.budget`, bf16, fenêtre 4 096, 16 384 emplacements par couche globale, 48 paramètres
+ajoutés en tout — une porte par tête de requête.)
+
+**Le mécanisme** (`prophet.modeling.layers.LedgerAttention`, `mixer.global_memory="ledger"`) :
+la couche globale attend exactement dans une fenêtre et, au lieu de jeter ce qui en sort,
+écrit chaque paire (clé, valeur) évincée dans un registre à clés-produit adressé par la clé
+— l'écriture en forme close de `prophet.memory.ledger` (adressage gelé, région de confiance,
+EWC-lite), montée sur l'attention. Chaque requête lit le registre à sa propre adresse et
+ajoute la valeur rappelée par une porte par tête :
+
+```
+sortie_h = attention_dans_la_fenêtre_h + σ(g_h) · registre(q_h)
+```
+
+Un registre vide lit zéro : tant que rien n'est évincé, la couche *est* une couche à
+fenêtre glissante (testé à 1e-6). À l'entraînement, sans cache, la couche tient une
+mémoire transitoire par séquence et parcourt la séquence par blocs, lisant avant d'écrire,
+de sorte qu'à l'inférence elle rencontre *au moins* autant de mémoire qu'à
+l'entraînement, jamais moins. NoPE est requis : une clé tournée à sa position ne serait
+retrouvée que par une requête tournée à la même, et un registre n'a pas de positions. Les
+registres d'attention sont persistés avec la session : le contexte survit au cache KV.
+
+**Ce que cela coûte, dit avant la mesure.** Au-delà de la fenêtre, le rappel devient
+associatif — un nombre borné d'emplacements, adressés doucement — et non exact. C'est le
+prix de la borne. Ce qu'il vaut est une expérience, pas un argument :
+`scripts/needle_cpu.py` entraîne deux modèles identiques, avec et sans registre, sur un
+rappel clé→valeur et mesure l'exactitude *par distance*, dans et au-delà de la fenêtre ;
+l'ablation sur texte réel est dans `prophet.plan` avec son critère d'échec. Sur le rappel
+synthétique **[CPU]**, la réponse est venue, et contre le mécanisme : la couche hôte
+apprend dans sa fenêtre (12.6 %) et ouvrir la porte au registre la fait tomber à 4.9 %
+sans rien ajouter au-delà. D3b est un interrupteur à `"none"` dans toutes les
+configurations livrées, et le restera tant que l'ablation à 100M n'a pas renversé ce
+résultat — si elle le renverse.
+
+---
+
 ## 5. Décision 4 — La profondeur comme cadran d'exécution
 
 Le pari central (R04). Un cœur à poids partagés appliqué *k* fois.
@@ -170,6 +228,13 @@ Le pari central (R04). Un cœur à poids partagés appliqué *k* fois.
 |---|---:|---:|---:|
 | `k` par défaut | 2 | 4 | 4–8 |
 | Profondeur effective (main) | 16 | 24 | 24–40 |
+| Noyau de la règle delta | balayage par blocs | balayage par blocs | `fla` fusionné |
+
+Le balayage par blocs (`mixer.linear_chunk_size`, 64 par défaut) est la même récurrence
+que le noyau fusionné, à la précision flottante près, exécutée en une résolution
+triangulaire et quelques produits matriciels par bloc ; c'est le chemin des appareils
+sans `fla`, vérifié contre le balayage de référence sur sorties, état et gradients
+([`03_TRAINING.md`](03_TRAINING.md) §5).
 
 **Mécanismes retenus :**
 
@@ -225,7 +290,7 @@ l'exécution.
 
 | Modèle | Origine | Rôle |
 |---|---|---|
-| **Prophet-mini** (229M) | **Poids aléatoires** | Preuve scientifique honnête de l'architecture. Cible iPhone. Ne doit rien au pré-entraînement de personne. |
+| **Prophet-mini** (253M) | **Poids aléatoires** | Preuve scientifique honnête de l'architecture. Cible iPhone. Ne doit rien au pré-entraînement de personne. |
 | **Prophet-main** (~970M) | **Conversion d'un donneur Apache-2.0** | Modèle compétitif. Hérite de la connaissance ; nous n'achetons que l'architecture. |
 
 Les deux partagent l'architecture, le tokenizer d'entrée près, les données et l'évaluation.
@@ -237,9 +302,9 @@ Implémentée dans `prophet/convert/`. Résultat mesuré pour Qwen3-1.7B :
 
 | | Donneur | Prophet converti |
 |---|---:|---:|
-| Paramètres | 1.72B | **0.97B** |
+| Paramètres | 1.72B | **1.02B** |
 | Couches | 28 | 12 paramétrées, **28 effectives** (k=5) |
-| Couverture paramétrique | — | **89 %** |
+| Couverture paramétrique | — | **85%** |
 
 - **Prélude et coda** prennent les premières et dernières couches du donneur par **copie directe**. La configuration Prophet est générée *depuis* le donneur (`head_dim`, `n_kv_heads`, largeur, largeur FFN) précisément pour que la copie soit directe et non une interpolation.
 - **Le cœur partagé** est initialisé par la **moyenne** des couches médianes du donneur. Des couches consécutives d'un transformeur entraîné calculent des mises à jour similaires ; leur moyenne est un point de départ défendable pour un bloc appliqué en boucle. C'est une initialisation, pas une équivalence.
@@ -266,6 +331,7 @@ main assurent la spéculation sans modèle externe.
 | D1 | Cœur bouclé récurrent uniquement, attention hors boucle | R02, R04 | **Acquis** (test) |
 | D2 | ≤ 4B total / ~370M actifs | R07, planificateur | **Acquis** (mémoire) |
 | D3 | Hybride GDN 3:1 avec SWA + globale NoPE | R02 | **Acquis** |
+| D3b | Attention globale à fenêtre + registre borné des KV évincés (mémoire constante en contexte) | interne, R02/R03 | **Non acquis** — mémoire constante prouvée ; sur rappel synthétique à 165k paramètres, protocole corrigé (le premier avait un contrôle qui n'apprenait pas : logit borné par QK-norm), le registre ne coûte rien dans la fenêtre, reste à parité au-delà tant que l'état borné tient la tâche, et quand l'état est saturé rend **+5.2 ± 1.2 points** au-delà de la fenêtre sur hôte NoPE (trois graines, différence appariée ; hasard 6 %, attention complète 38 %) — l'hôte RoPE (`global_ledger_rope`) ne reproduit pas son gain de première graine (+9.6 / +0.8 / −4.6) ; branché sur l'agent, il ne rend pas retrouvable ce qu'un épisode a lu à 7M ([`10_NEXT_ARCHITECTURE.md`](10_NEXT_ARCHITECTURE.md) §1–2). Reste à `"none"` ; l'ablation à 100M décide. |
 | D4 | Profondeur réglable à l'exécution | R04 | **[ABLATION A1] à ≥ 350M** |
 | D4b | Halte entraînée, pour une profondeur dépendant de l'entrée | W1 | **Requis** — sans elle, la boucle n'achète qu'un facteur constant (§2ter) |
 | D1b | Bloc-notes latent persistant, pour réparer ce que D1 a coûté | W1 | **Candidat** — non implémenté (§2bis) |

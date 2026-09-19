@@ -91,8 +91,8 @@ def test_moe_layer_placement_skips_leading_dense_blocks():
             "exceeds",
         ),
         (
-            {"memory": MemoryConfig(enabled=True, kind="fast_weight", layers=(999,))},
-            "outside the trunk depth",
+            {"memory": MemoryConfig(enabled=True, kind="product_key", mount="coda", layers=(999,))},
+            "outside the coda",
         ),
         ({"memory": MemoryConfig(enabled=True, kind="none")}, "memory.kind"),
         (
@@ -413,3 +413,25 @@ def test_shipped_configs_keep_attention_cache_independent_of_depth():
                 if kind in ("full_attn", "swa")
             )
         assert counts[1] == counts[8], f"{path.name}: attention slots scale with k"
+
+
+def test_qk_norm_at_a_small_head_dim_is_flagged():
+    """With normalised queries and keys the logit is bounded by sqrt(head_dim): at 16 that
+    is 4, and one key among 160 takes at most 26% of the mass -- the plateau three
+    recall protocols hit before the cause was found."""
+    small = ProphetConfig(
+        d_model=64,
+        mixer=MixerConfig(pattern=["swa", "full_attn"], n_heads=4, n_kv_heads=2, nope_layers=(1,)),
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=1, core_layers=1, coda_layers=2, core_pattern=["gdn"],
+        ),
+    )
+    assert any("caps the attention logit at sqrt(head_dim) = 4.0" in w for w in small.design_warnings())
+    wide = ProphetConfig(
+        d_model=1024,
+        mixer=MixerConfig(pattern=["swa", "full_attn"], n_heads=8, n_kv_heads=2, nope_layers=(1,)),
+        recurrent=RecurrentCoreConfig(
+            enabled=True, prelude_layers=2, core_layers=4, coda_layers=2, core_pattern=["gdn"],
+        ),
+    )
+    assert not any("caps the attention logit" in w for w in wide.design_warnings())

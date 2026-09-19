@@ -47,15 +47,19 @@ class SessionMemory:
 
     states: dict[str, Tensor] = field(default_factory=dict)
     conv_states: dict[str, Tensor] = field(default_factory=dict)
+    ledgers: dict[str, dict[str, Tensor]] = field(default_factory=dict)
+    """Attention ledgers (``LedgerAttention``) by module name: ``values``,
+    ``write_counts``, ``tokens_written``. Bounded, so they persist -- this is what makes
+    context survive a session instead of ending with its KV cache."""
     tokens_seen: int = 0
     model_fingerprint: str = ""
     version: int = FORMAT_VERSION
 
     def n_bytes(self) -> int:
-        return sum(
-            t.numel() * t.element_size()
-            for t in (*self.states.values(), *self.conv_states.values())
-        )
+        tensors = [*self.states.values(), *self.conv_states.values()]
+        for ledger in self.ledgers.values():
+            tensors += list(ledger.values())
+        return sum(t.numel() * t.element_size() for t in tensors)
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -71,6 +75,7 @@ class SessionMemory:
                 "version": self.version,
                 "states": self.states,
                 "conv_states": self.conv_states,
+                "ledgers": self.ledgers,
                 "tokens_seen": self.tokens_seen,
                 "model_fingerprint": self.model_fingerprint,
             },
@@ -90,8 +95,9 @@ class SessionMemory:
                 f"session memory format v{version}, expected v{FORMAT_VERSION}; "
                 "the state layout changed and loading it would be meaningless"
             )
-        def tensor_map(name: str) -> dict[str, Tensor]:
-            value = data.get(name, {})
+        def tensor_map(name: str, value=None) -> dict[str, Tensor]:
+            if value is None:
+                value = data.get(name, {})
             if not isinstance(value, Mapping):
                 raise TypeError(f"session memory {name} must be a mapping")
             result: dict[str, Tensor] = {}
@@ -100,6 +106,11 @@ class SessionMemory:
                     raise TypeError(f"session memory {name} must map strings to tensors")
                 result[key] = tensor
             return result
+
+        ledgers = data.get("ledgers", {})
+        if not isinstance(ledgers, Mapping) or any(not isinstance(k, str) for k in ledgers):
+            raise TypeError("session memory ledgers must be a string-keyed mapping")
+        ledgers = {k: tensor_map(k, v) for k, v in ledgers.items()}
 
         tokens_seen = data.get("tokens_seen", 0)
         if not isinstance(tokens_seen, int) or isinstance(tokens_seen, bool) or tokens_seen < 0:
@@ -111,6 +122,7 @@ class SessionMemory:
         return cls(
             states=tensor_map("states"),
             conv_states=tensor_map("conv_states"),
+            ledgers=ledgers,
             tokens_seen=tokens_seen,
             model_fingerprint=fingerprint,
             version=version,
@@ -130,9 +142,9 @@ def model_fingerprint(model: torch.nn.Module, *, n_sampled: int = 8) -> str:
 
     hasher = hashlib.blake2b(digest_size=16)
     hasher.update(f"session-format:{FORMAT_VERSION}".encode())
-    mutable_ledger_suffixes = (".values", ".write_counts")
+    mutable_ledger_suffixes = (".values", ".write_counts", ".tokens_written")
     for name, param in sorted(model.state_dict().items()):
-        if name.startswith("ledgers.") and name.endswith(mutable_ledger_suffixes):
+        if name.endswith(mutable_ledger_suffixes) and (name.startswith("ledgers.") or ".ledger." in name):
             continue
         hasher.update(name.encode())
         hasher.update(str(tuple(param.shape)).encode())
@@ -151,12 +163,21 @@ def _key(section: str, block: int, iteration: int) -> str:
     return f"{section}.{block}.{iteration}"
 
 
-def extract_session(cache: ProphetCache, *, fingerprint: str = "") -> SessionMemory:
+def extract_session(
+    cache: ProphetCache, *, fingerprint: str = "", model: torch.nn.Module | None = None
+) -> SessionMemory:
     """Pull the persistable part out of a live cache.
 
     Only bounded-state slots are kept. Attention KV caches are deliberately dropped: they
     grow with context, so persisting them would reintroduce exactly the linear-memory
     problem the recurrent core exists to avoid.
+
+    **What that means, stated plainly.** After :func:`restore_session` the recurrent
+    core resumes with its accumulated state, but the prelude and coda attention layers --
+    including the sliding-window sinks -- start from an empty cache at position
+    ``tokens_seen``. "Resume where it stopped" holds for the bounded state and not for
+    the attention context. Persisting the (bounded) windowed caches and sinks is the
+    obvious next step and is not done here.
     """
     memory = SessionMemory(model_fingerprint=fingerprint, tokens_seen=cache.position)
     for (section, block, iteration), slot in cache.slots.items():
@@ -167,6 +188,16 @@ def extract_session(cache: ProphetCache, *, fingerprint: str = "") -> SessionMem
             memory.states[key] = slot.state.detach().clone()
         if slot.conv_state is not None:
             memory.conv_states[key] = slot.conv_state.detach().clone()
+    if model is not None:
+        from prophet.modeling.layers import LedgerAttention
+
+        for name, module in model.named_modules():
+            if isinstance(module, LedgerAttention):
+                memory.ledgers[name] = {
+                    "values": module.ledger.values.detach().clone(),
+                    "write_counts": module.ledger.write_counts.detach().clone(),
+                    "tokens_written": module.ledger.tokens_written.detach().clone(),
+                }
     return memory
 
 
@@ -176,6 +207,7 @@ def restore_session(
     *,
     fingerprint: str = "",
     strict: bool = True,
+    model: torch.nn.Module | None = None,
 ) -> int:
     """Write a saved session back into a cache. Returns the number of slots restored."""
     if (
@@ -201,6 +233,20 @@ def restore_session(
         slot.conv_state = conv.clone() if conv is not None else None
         slot.seen = memory.tokens_seen
         restored += 1
+
+    if model is not None and memory.ledgers:
+        from prophet.modeling.layers import LedgerAttention
+
+        modules = {n: m for n, m in model.named_modules() if isinstance(m, LedgerAttention)}
+        for name, saved in memory.ledgers.items():
+            module = modules.get(name)
+            if module is None:
+                raise KeyError(f"session carries a ledger for {name!r}, which this model lacks")
+            with torch.no_grad():
+                module.ledger.values.copy_(saved["values"])
+                module.ledger.write_counts.copy_(saved["write_counts"])
+                module.ledger.tokens_written.copy_(saved["tokens_written"])
+            restored += 1
 
     cache.position = memory.tokens_seen
     return restored

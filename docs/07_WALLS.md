@@ -141,6 +141,20 @@ coût moyen mais ne suffit pas : pour acheter réellement de la profondeur au se
 complexité, il faut que *k_max* puisse croître avec la taille de l'entrée et entraîner le
 modèle dans ce régime.
 
+**Réserve sur la réserve — trouvée en branchant l'agent.** « *k* dépend de l'entrée » est
+facile à écrire et a un coût caché sur un cache : l'état récurrent de l'itération *i* n'est
+défini que pour les tokens qui l'ont exécutée. Une halte *par token* — ou une boucle
+agentique qui lit une observation à *k*=1 et pense à *k*=8 — fait lire à un token profond
+un état qui n'a jamais vu ses prédécesseurs peu profonds. Notre modèle refusait cet appel,
+et il avait raison : rien dans l'entraînement à une profondeur par séquence ne définit ce
+cas. La halte apprise n'est donc *cohérente* qu'à deux conditions : soit la profondeur ne
+fait que **baisser** au fil du cache (régime `fixed`, exact), soit le modèle est entraîné
+avec des **plafonds par token** — à l'itération *i* le cœur tourne sur la sous-séquence
+compactée des tokens encore actifs, et l'inférence fait la même chose
+(`recurrent.token_depth`, [`08_AGENT.md`](08_AGENT.md) §2.1). Ce que W1 posait comme une
+exigence de complexité est aussi une exigence de *cohérence de cache*, et les deux se
+règlent par la même mécanique.
+
 **Ce que nous avions surestimé — et un bug d'un caractère.** Notre pile est
 majoritairement à état borné. W2 a trouvé que notre implémentation était *strictement plus
 faible que la famille qu'elle prétend implémenter*, pour une raison d'une ligne.
@@ -241,6 +255,17 @@ consolidée, contexte effacé. σ ≈ 0 : une table de correspondance. σ ≈ 1 
 apprise aussi bien que les instances.
 
 ---
+
+**Addendum — le troisième étage a un chemin pour l'agent.** Le pilier agentique
+([`08_AGENT.md`](08_AGENT.md) §4 bis) relie la quarantaine au chargeur : un épisode
+*promu* — vérité terrain, ou consensus — est rendu dans le flux à ids de contrôle et
+devient une source ordinaire du corpus, dont les têtes d'action lisent leurs cibles.
+C'est la distillation de l'expérience vers les poids, mécaniquement ; ce n'est pas la
+preuve qu'elle apprend une compétence plutôt qu'une mémoire. Ce qu'elle efface, en
+revanche, est mesuré : à 7M paramètres, 500 pas de fine-tune agentique sans rejeu ont
+porté le succès de 0 % à 55 % et les bits/octet tenus à l'écart de 2.18 à **7.36**, pire
+qu'un modèle vierge ([`09_FIRST_RUN.md`](09_FIRST_RUN.md)). Le gradient seul, sur le flux
+d'expérience seul, efface tout le reste. Le mur tient ; il a maintenant une hauteur.
 
 ## Mur D — Le calcul d'inférence ne se cumule pas
 

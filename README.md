@@ -62,19 +62,40 @@ le budget de tokens, la mémoire de l'appareil cible et l'absence de mauvaise al
 
 | | Total | Actifs/token | Prof. effective | Tokens | Cible |
 |---|---:|---:|---:|---:|---|
-| **Prophet-main** | 3.79B | 369M | 24 (k=4) | 24.6B | 5090 / Mac Studio |
-| **Prophet-mini** | 229M | 211M | 14 (k=2) | 58.3B | iPhone 17 Pro |
+| **Prophet-main** | 3.83B | 408M | 24 (k=4) | 16.1B | 5090 / Mac Studio |
+| **Prophet-mini** | 253M | 236M | 14 (k=2) | 52.1B | iPhone 17 Pro |
 
-Rapport de sparsité 10.3× : la capacité d'un modèle de 3.8B pour le coût par token d'un
-modèle de 369M.
+Rapport de sparsité 9.4× : la capacité d'un modèle de 3.8B pour le coût par token d'un
+modèle de 408M.
 
 ## État du projet
 
-> **Phase 0 — recherche et falsification en cours. Aucun poids entraîné.**
-> Le dépôt contient des spécifications, prototypes et tests ; leur présence ne valide pas
-> encore les paris de profondeur récurrente, contexte borné ou apprentissage continu.
-> [`docs/08_ARCHITECTURE_V03.md`](docs/08_ARCHITECTURE_V03.md) donne les gates qui doivent
-> décider — y compris les conditions sous lesquelles l'architecture sera rejetée.
+**Reprise du 19 septembre 2026 :** les branches v0.3 et expériences CPU sont réunies,
+le chemin de corpus manquant est restauré et la comparaison R04 est corrigée (375M
+bouclés contre 921M non partagés, 20 blocs exécutés par token). Vérifications et travaux
+restants : [`docs/11_RECOVERY_2026_09.md`](docs/11_RECOVERY_2026_09.md).
+Les résultats historiques ci-dessous restent à reproduire avec cette version.
+
+> **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
+> nombres, à 7M paramètres sur CPU.** Un poids entraîné sur du texte réel (bits/octet
+> tenus à l'écart 4.35 → 2.18), rendu agentique sur ses propres épisodes vérifiés
+> (0 % → **95 % / 97.5 %** sur tâches inédites une fois deux décalages train/boucle
+> corrigés, 55 % avant ; état de session porté sur 40 épisodes : 87.5 % / 90 %) ; le mur
+> de l'oubli mesuré (2.18 → 7.36 sans rejeu, 2.61 avec) ; la boucle contre *k* = 1 à
+> égalité (2.184 contre 2.179) ; le contexte borné-infini prouvé en mémoire (34 Go →
+> 62 Mo à 8M tokens), et en rappel synthétique le registre à parité avec l'attention
+> complète tant que la tâche tient dans l'état borné, +5 points reproductibles (trois graines) au-delà de la fenêtre
+> quand il est saturé ; la profondeur latente ne compose pas ce que deux tokens de chaîne
+> composent à 100 % ([`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md),
+> [`docs/10_NEXT_ARCHITECTURE.md`](docs/10_NEXT_ARCHITECTURE.md)). Aucun modèle compétitif.**
+> Le dépôt contient la recherche, l'architecture arbitrée, le tokenizer, le chemin de
+> données réel (fichiers ou Hub, décontamination dans le flux, phases reprenables),
+> l'infrastructure d'entraînement (les paires de configurations des trois premiers runs
+> A100 du plan sont générées et budgétées : R04, D3b, R03), le harnais d'évaluation, le pilier agentique
+> (actions typées, vérification à tiers, quarantaine, et le chemin des épisodes promus
+> vers le corpus) et le plan d'exécution. **~500 tests passent** ; la boucle
+> d'entraînement tourne de bout en bout sur corpus synthétique et sur un corpus local
+> minuscule, avec reprise dans la phase en cours.
 >
 > Réserve honnête : les identifiants de datasets et le tableau de bord concurrent
 > proviennent de rapports rédigés alors que l'accès au Hub et à arXiv était bloqué par le
@@ -94,6 +115,9 @@ modèle de 369M.
 | [`docs/06_MEMORY.md`](docs/06_MEMORY.md) | Mémoire persistante : conception, mesures, limites |
 | [`docs/07_WALLS.md`](docs/07_WALLS.md) | **Les murs** : mécanisme des verrous profonds, y compris ceux qu'on ne franchit pas |
 | [`docs/08_ARCHITECTURE_V03.md`](docs/08_ARCHITECTURE_V03.md) | **Continuum v0.3** : architecture multi-échelle, preuves, budget et critères de mort |
+| [`docs/08_AGENT.md`](docs/08_AGENT.md) | **Le pilier agentique** : la boucle, les têtes d'action, la vérification, ce qui est construit et ce qui ne l'est pas |
+| [`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md) | **Les premiers runs** : 7M paramètres sur CPU, chaque étage exercé, un nombre de langage, un nombre agentique, et les deux défauts qu'ils ont trouvés |
+| [`docs/10_NEXT_ARCHITECTURE.md`](docs/10_NEXT_ARCHITECTURE.md) | **L'architecture suivante** : contexte borné-infini, apprentissage continu, économie de tokens — chaque propriété comme une quantité, son mécanisme, et sa mesure |
 
 ## Outils
 
@@ -109,7 +133,14 @@ python scripts/verify_datasets.py          # confronte les identifiants au Hub (
 python scripts/verify_donors.py            # confronte les donneurs au Hub (semaine 1)
 python scripts/convert_donor.py --donor qwen3-1.7b --plan-only
 python scripts/train.py --config configs/prophet_tiny_smoke.json --smoke
-python -m pytest tests/ -q                 # suite complète ; le CI vérifie un clone propre
+python scripts/train_tokenizer.py --data-root corpus/ --out tokenizer.json   # puis :
+python scripts/train.py --config configs/prophet_mini.json --tokenizer tokenizer.json \
+    --data-root corpus/ --benchmarks benchmarks/ --tokens 16.1e9        # run réel
+python scripts/gpu_check.py --config configs/prophet_mini.json   # sur A100 : noyau, tok/s, mémoire
+python scripts/colab_session.py --config configs/prophet_mini.json --work /content/drive/MyDrive/prophet \
+    --session-minutes 600 -- --tokenizer tokenizer.json --data-root corpus/ --benchmarks benchmarks/
+python scripts/first_run_cpu.py --work /tmp/prophet-first-run --stage all   # 7M params sur CPU, ~50 min
+python -m pytest tests/ -q                 # ~460 tests (les tests GPU sont sautés sans CUDA)
 ```
 
 Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant
@@ -124,13 +155,13 @@ La réponse retenue n'est pas de choisir un camp, mais de faire les deux sur deu
 
 | Modèle | Origine | Budget | Rôle |
 |---|---|---:|---|
-| **Prophet-mini** (229M) | Poids aléatoires | 85 h-A100 | Preuve honnête de l'architecture. Cible iPhone. |
+| **Prophet-mini** (253M) | Poids aléatoires | 85 h-A100 | Preuve honnête de l'architecture. Cible iPhone. |
 | **Prophet-main** (~970M) | Conversion d'un donneur Apache-2.0 | 30 h-A100 | Modèle compétitif. 89 % des paramètres hérités. |
 
 Le rapport de coût — 85 heures contre 30 — est le résultat central : la conversion coûte
 un tiers de l'entraînement de zéro pour un modèle quatre fois plus gros, parce qu'elle
 n'achète que l'architecture. Mesuré sur Qwen3-1.7B : 1.72B paramètres et 28 couches
-deviennent 0.97B paramètres et 12 blocs pour **la même profondeur effective de 28**.
+deviennent 1.02B paramètres et 12 blocs pour **la même profondeur effective de 28**.
 
 ```bash
 python scripts/convert_donor.py --donor qwen3-1.7b --plan-only

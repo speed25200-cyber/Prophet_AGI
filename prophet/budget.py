@@ -14,13 +14,14 @@ Usage::
 
 from __future__ import annotations
 
-import json
+import math
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from prophet.config import ProphetConfig
 
 __all__ = [
+    "expected_train_loop_k",
+    "block_passes_per_token",
     "Device",
     "DEVICES",
     "ParamBreakdown",
@@ -239,15 +240,19 @@ def count_parameters(cfg: ProphetConfig, loop_k: int | None = None) -> ParamBrea
     out.add("frontend/embeddings", fe_resident)
     out.embedding = fe_resident
 
-    depth = cfg.parameterised_depth()
     attn_p = _attention_params(cfg)
     lin_p = _linear_mixer_params(cfg)
 
+    # Walk the section-aware layout, never ``layer_mixer(i)`` over a flat depth: the
+    # looped core overrides the global pattern, and reading the global pattern here once
+    # counted four recurrent core blocks as four attention blocks -- 31M parameters short
+    # on the shipped probe config, and wrong in the direction that flatters memory.
     trunk_resident = 0
     trunk_active = 0
-    for i in range(depth):
-        kind = cfg.layer_mixer(i)
+    for i, (_section, _idx, kind) in enumerate(cfg.section_layout()):
         mixer = 0 if kind == "identity" else (lin_p if kind in ("gdn", "mamba2") else attn_p)
+        if kind == "full_attn" and cfg.mixer.global_memory == "ledger":
+            mixer += cfg.mixer.n_heads  # the per-head recall gate; the ledger itself is buffers
         out.add(f"mixer/{kind}", mixer)
         ff_res, ff_act = _ffn_params(cfg, cfg.layer_is_moe(i))
         out.add("ffn/moe" if cfg.layer_is_moe(i) else "ffn/dense", ff_res)
@@ -266,7 +271,14 @@ def count_parameters(cfg: ProphetConfig, loop_k: int | None = None) -> ParamBrea
         per_head = _attention_params(cfg) + 3 * d * _swiglu_hidden(d, cfg.ffn.hidden_mult)
         heads += cfg.heads.n_multi_token_predict * per_head
     if cfg.heads.confidence_head:
-        heads += d * d + d
+        heads += 2 * d + 1  # RMSNorm gain + Linear(d, 1)
+    if cfg.recurrent.enabled and cfg.recurrent.halting == "ponder":
+        heads += 2 * d + 1  # the halting head has the same shape
+    if cfg.heads.action_head:
+        # Track A3: a shared norm, two selection projections plus the null key, two copy
+        # queries against an existing attention layer's keys, and the gate.
+        dk, hd = cfg.heads.action_dk, cfg.head_dim
+        heads += d + 2 * d * dk + dk + 2 * d * hd + (d + 1)
     if heads:
         out.add("aux_heads", heads)
 
@@ -298,30 +310,48 @@ class TrainingMemory:
     detail: dict[str, float] = field(default_factory=dict)
 
 
+def _optimizer_bytes_per_param(cfg: ProphetConfig) -> float:
+    """Optimiser state per parameter for the trainer as it actually exists.
+
+    Muon keeps one fp32 momentum buffer (4 bytes) on the 2-D hidden matrices; AdamW keeps
+    two fp32 moments (8 bytes) on embeddings, norms, biases and heads. Weighted by the
+    parameter split, not assumed: the gate in scripts/train.py once said "fits" at 2
+    bytes/param for an 8-bit optimiser that nothing implements.
+    """
+    p = count_parameters(cfg)
+    adamw_params = p.embedding + p.by_component.get("norms", 0) + p.by_component.get("aux_heads", 0)
+    muon_params = max(p.total - adamw_params, 0)
+    return (muon_params * 4.0 + adamw_params * 8.0) / max(p.total, 1)
+
+
 def training_memory(
     cfg: ProphetConfig,
     *,
     device: str = "a100_80gb",
     batch_tokens: int = 16384,
-    param_dtype: str = "bf16",
-    grad_dtype: str = "bf16",
-    optimizer_bytes_per_param: float = 8.0,
-    master_weights: bool = True,
+    param_dtype: str = "fp32",
+    grad_dtype: str = "fp32",
+    optimizer_bytes_per_param: float | None = None,
+    master_weights: bool = False,
     activation_checkpointing: bool = True,
     loop_k: int | None = None,
 ) -> TrainingMemory:
     """Estimate peak training memory for one micro-batch.
 
-    ``optimizer_bytes_per_param`` defaults to 8 (two FP32 moments, i.e. AdamW). Use 2 for
-    8-bit optimiser states, or 4 for a single-moment method.
+    Defaults describe the trainer **as implemented**: fp32 parameters and gradients
+    (bf16 autocast keeps the params fp32 -- they *are* the master copy, so no separate
+    master is added), optimiser bytes from the real Muon/AdamW split, activation
+    checkpointing on. Pass other values to explore, never to make a run "fit".
 
-    Activation cost is estimated per *effective* layer, since a recurrent core stores
-    activations for every unrolled step that participates in backprop — this is exactly
+    Activation cost is estimated per *effective* block pass that participates in
+    backprop, including the extra coda passes learned halting runs -- this is exactly
     what ``recurrent.truncated_backprop_steps`` exists to bound.
     """
     dev = DEVICES[device]
     p = count_parameters(cfg, loop_k=loop_k)
     n = p.total
+    if optimizer_bytes_per_param is None:
+        optimizer_bytes_per_param = _optimizer_bytes_per_param(cfg)
 
     weights = n * BYTES_PER_PARAM[param_dtype]
     if master_weights and param_dtype != "fp32":
@@ -335,8 +365,12 @@ def training_memory(
         r = cfg.recurrent
         backprop_steps = min(r.truncated_backprop_steps, loop_k or r.default_loop_k)
         act_layers = r.prelude_layers + r.core_layers * backprop_steps + r.coda_layers
+        if r.halting == "ponder":
+            # Every probe coda pass inside the backprop window keeps its activations.
+            act_layers += r.coda_layers * backprop_steps
     else:
         act_layers = cfg.n_layers
+    act_layers += cfg.heads.n_multi_token_predict
 
     per_layer_elems = 2.0 if activation_checkpointing else 14.0
     act = batch_tokens * cfg.d_model * per_layer_elems * act_layers * 2.0  # bf16
@@ -399,9 +433,18 @@ def _kv_bytes_per_token(cfg: ProphetConfig, kv_dtype: str, context_len: int) -> 
     m = cfg.mixer
     hd = cfg.head_dim
     total = 0.0
-    for i in range(cfg.parameterised_depth()):
-        kind = cfg.layer_mixer(i)
-        if kind == "full_attn":
+    # Section-aware for the same reason as count_parameters: a recurrent core block
+    # holds a fixed-size state, and counting it as attention would make the cache
+    # appear to grow with context where it does not.
+    for _section, _idx, kind in cfg.section_layout():
+        if kind == "full_attn" and m.global_memory == "ledger":
+            # Exact inside the window, then a fixed ledger: constant beyond the window,
+            # amortised over the context like a windowed layer plus the ledger's rows.
+            per_tok = 2 * m.n_kv_heads * hd * b
+            ledger_bytes = m.global_ledger_slots * (m.n_kv_heads * hd * b + 4)
+            total += per_tok * min(1.0, m.global_window / max(context_len, 1))
+            total += ledger_bytes / max(context_len, 1)
+        elif kind == "full_attn":
             if m.kv_compression == "mla":
                 total += m.kv_lora_rank * b
             else:
@@ -479,16 +522,63 @@ def inference_profile(
 
 
 def _n_full_attn_layers(cfg: ProphetConfig) -> int:
-    return sum(
-        1
-        for i in range(cfg.parameterised_depth())
-        if cfg.layer_mixer(i) in ("full_attn", "swa")
-    )
+    return sum(1 for _s, _i, kind in cfg.section_layout() if kind in ("full_attn", "swa"))
 
 
 # --------------------------------------------------------------------------------------
 # Training budget
 # --------------------------------------------------------------------------------------
+
+
+def expected_train_loop_k(cfg: ProphetConfig) -> float:
+    """Mean recurrence depth under the *configured* sampling distribution.
+
+    The plan once used ``(min + max) / 2`` = 4.5 for a log-uniform sampler whose true
+    mean over integers 1..8 is 3.38 -- every token count downstream was off in the
+    flattering direction. Computed by quadrature over the sampler's actual rule.
+    """
+    r = cfg.recurrent
+    if not r.enabled:
+        return 1.0
+    lo, hi = r.train_loop_min, r.train_loop_max
+    if lo == hi:
+        return float(lo)
+    if r.train_loop_dist == "uniform":
+        return (lo + hi) / 2.0
+    if r.train_loop_dist == "poisson":
+        lam = r.train_loop_poisson_lambda
+        # E[clamp(Poisson(lam), lo, hi)] by direct summation.
+        total, mass = 0.0, 0.0
+        for n in range(0, 200):
+            pmf = math.exp(-lam) * lam**n / math.factorial(n)
+            total += pmf * min(max(n, lo), hi)
+            mass += pmf
+        return total / max(mass, 1e-12)
+    # log-uniform, rounded to an integer, exactly as ProphetModel.sample_loop_k does.
+    n = 20000
+    acc = 0.0
+    for i in range(n):
+        u = (i + 0.5) / n
+        acc += round(math.exp(math.log(lo) + u * (math.log(hi) - math.log(lo))))
+    return acc / n
+
+
+def block_passes_per_token(cfg: ProphetConfig, loop_k: float) -> float:
+    """Parameterised-block applications per token at depth ``loop_k``.
+
+    Counts what actually runs, including the passes the plan used to ignore: with
+    learned halting the coda runs once per core iteration to score each candidate
+    stopping point, and each multi-token-prediction head is one more block.
+    """
+    if not cfg.recurrent.enabled:
+        passes = float(cfg.n_layers)
+    else:
+        r = cfg.recurrent
+        passes = r.prelude_layers + r.core_layers * loop_k + r.coda_layers
+        if r.halting == "ponder":
+            passes += r.coda_layers * loop_k
+    passes += cfg.heads.n_multi_token_predict
+    return passes
 
 
 def tokens_affordable(
@@ -501,20 +591,17 @@ def tokens_affordable(
     """How many training tokens a given A100-hour budget buys.
 
     Uses the standard ``6N`` estimate: forward and backward together cost roughly six
-    FLOPs per active parameter per token.
+    FLOPs per active parameter per token, with N scaled by the block passes that
+    actually run per token.
     """
     dev = DEVICES["a100_80gb"]
     p = count_parameters(cfg)
-    k = loop_k_train
-    if k is None:
-        r = cfg.recurrent
-        k = (r.train_loop_min + r.train_loop_max) / 2 if r.enabled else 1.0
+    k = loop_k_train if loop_k_train is not None else expected_train_loop_k(cfg)
 
-    core_share = 0.0
-    if cfg.recurrent.enabled:
-        r = cfg.recurrent
-        core_share = r.core_layers / max(r.prelude_layers + r.core_layers + r.coda_layers, 1)
-    effective_active = p.active_per_token * ((1 - core_share) + core_share * k)
+    base_passes = block_passes_per_token(cfg, 1.0) if not cfg.recurrent.enabled else (
+        cfg.recurrent.prelude_layers + cfg.recurrent.core_layers + cfg.recurrent.coda_layers
+    )
+    effective_active = p.active_per_token * block_passes_per_token(cfg, k) / max(base_passes, 1)
 
     flops_per_token = 6.0 * effective_active
     total_flops = dev.bf16_tflops * 1e12 * mfu * a100_hours * 3600.0
@@ -523,6 +610,7 @@ def tokens_affordable(
         "a100_hours": a100_hours,
         "mfu": mfu,
         "avg_loop_k": k,
+        "block_passes_per_token": block_passes_per_token(cfg, k),
         "effective_active_params": effective_active,
         "flops_per_token": flops_per_token,
         "total_flops": total_flops,
@@ -571,8 +659,10 @@ def report(cfg: ProphetConfig, *, a100_hours: float = 300.0) -> str:
     add("")
     add("| Batch tokens | Optimiser | Weights | Grads | Optim | Acts | Total | Fits |")
     add("|---:|---|---:|---:|---:|---:|---:|---|")
+    real_opt = _optimizer_bytes_per_param(cfg)
     for bt in (8192, 16384, 32768):
-        for opt_name, opt_bytes in (("AdamW fp32", 8.0), ("8-bit", 2.0)):
+        for opt_name, opt_bytes in ((f"Muon+AdamW ({real_opt:.1f} B/param)", real_opt),
+                                    ("8-bit (not implemented)", 2.0)):
             tm = training_memory(cfg, batch_tokens=bt, optimizer_bytes_per_param=opt_bytes)
             add(
                 f"| {bt} | {opt_name} | {tm.weights_gb:.1f} | {tm.gradients_gb:.1f} | "

@@ -26,6 +26,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+from prophet.modeling.action import ActionTargets
 from prophet.modeling.model import ProphetOutput
 
 __all__ = ["LossTerms", "compute_loss"]
@@ -40,20 +41,28 @@ class LossTerms:
     router: Tensor | None = None
     confidence: Tensor | None = None
     ponder: Tensor | None = None
+    action: Tensor | None = None
     metrics: dict[str, float] = field(default_factory=dict)
 
 
-def _shifted_cross_entropy(logits: Tensor, targets: Tensor, offset: int) -> Tensor:
+def _shifted_cross_entropy(
+    logits: Tensor, targets: Tensor, offset: int, *, per_token: bool = False
+) -> Tensor:
     """Cross entropy predicting the token ``offset`` positions ahead.
 
     ``offset=1`` is ordinary next-token prediction; ``offset=2`` is what the first
-    multi-token-prediction head learns.
+    multi-token-prediction head learns. ``per_token`` returns the ``(batch, seq-offset)``
+    matrix instead of the mean, which the ponder loss needs.
     """
     if offset >= logits.shape[1]:
-        return logits.new_zeros(())
+        return logits.new_zeros(()) if not per_token else logits.new_zeros(logits.shape[:2])
     pred = logits[:, :-offset].reshape(-1, logits.shape[-1])
     gold = targets[:, offset:].reshape(-1)
-    return F.cross_entropy(pred.float(), gold, ignore_index=-100)
+    ce = F.cross_entropy(pred.float(), gold, ignore_index=-100, reduction="none")
+    if per_token:
+        return ce.view(logits.shape[0], logits.shape[1] - offset)
+    mask = gold != -100
+    return ce[mask].mean() if mask.any() else ce.sum() * 0.0
 
 
 def _shifted_cross_entropy_per_position(
@@ -109,14 +118,32 @@ def compute_loss(
     ponder_weight: float = 0.0,
     ponder_target_steps: float = 4.0,
     project: Callable[[Tensor], Tensor] | None = None,
+    action_targets: ActionTargets | None = None,
+    sel_weight: float = 0.0,
+    ptr_weight: float = 0.0,
+    gate_weight: float = 0.0,
+    jumped_lm_weight: float = 1.0,
 ) -> LossTerms:
     """Combine every training objective into one scalar.
 
     ``targets`` is the token sequence; shifting is handled here so callers cannot get the
     off-by-one wrong — a mistake that produces a plausible-looking loss curve for a model
     that has learned to copy its input.
+
+    ``action_targets`` (track A3) adds the selection, pointer and gate terms and
+    down-weights the LM loss on *jumped* tokens -- call syntax and names a typed runtime
+    emits for the model -- to ``jumped_lm_weight``.
     """
-    lm = _shifted_cross_entropy(output.logits, targets, 1)
+    if action_targets is not None and jumped_lm_weight != 1.0:
+        ce = _shifted_cross_entropy(output.logits, targets, 1, per_token=True)
+        # The loss at position t predicts t+1, so a jumped *target* token is what gets
+        # the small weight.
+        jumped = action_targets.jumped[:, 1:].to(ce.dtype)
+        weight = torch.where(jumped > 0, torch.full_like(ce, jumped_lm_weight), torch.ones_like(ce))
+        weight = weight * (targets[:, 1:] != -100).to(ce.dtype)
+        lm = (ce * weight).sum() / weight.sum().clamp_min(1.0)
+    else:
+        lm = _shifted_cross_entropy(output.logits, targets, 1)
     total = lm
     metrics: dict[str, float] = {"loss/lm": lm.item()}
 
@@ -159,10 +186,14 @@ def compute_loss(
     if ponder_weight and output.halt_probs is not None:
         p = output.halt_probs.float()
 
-        # Expected language-modelling loss over stopping times. Each candidate stopping
-        # point is scored on its own read-out, so the halting head learns which
-        # iterations were actually good enough to stop at -- not merely how many there
-        # were. Requires ``project`` to turn per-step hidden states into logits.
+        # Expected language-modelling loss over stopping times, **per token**. Each
+        # candidate stopping point is scored on its own read-out, and the halting
+        # probability at position t weights the loss at position t. The first version
+        # multiplied two batch means -- mean(p_i) * mean(loss_i) -- whose gradient with
+        # respect to p is the same number at every position, so the head could only
+        # ever learn one constant distribution for the whole batch. Measured: one unique
+        # gradient value across ten positions. Input-dependent depth was unlearnable by
+        # construction, while ponder/expected_depth moved and looked learned.
         expected = lm.new_zeros(())
         if project is not None and output.hidden_per_step:
             for i, hidden in enumerate(output.hidden_per_step):
@@ -188,9 +219,51 @@ def compute_loss(
         if depth is not None:
             metrics["ponder/expected_depth"] = depth
 
+    action: Tensor | None = None
+    if action_targets is not None and output.sel_logits is not None:
+        action = lm.new_zeros(())
+        # Selection: one cross-entropy over [none, anchor_1..anchor_n] per decision.
+        n_opt = output.sel_logits.shape[-1]
+        sel_target = action_targets.selection
+        sel_ok = (sel_target >= 0) & (sel_target < n_opt)
+        sel_target = torch.where(sel_ok, sel_target, torch.full_like(sel_target, -100))
+        if sel_ok.any():
+            sel = F.cross_entropy(
+                output.sel_logits.float().reshape(-1, n_opt), sel_target.reshape(-1),
+                ignore_index=-100,
+            )
+            action = action + sel_weight * sel
+            metrics["loss/sel"] = sel.item()
+            correct = output.sel_logits.argmax(-1) == action_targets.selection
+            metrics["action/sel_accuracy"] = float(correct[sel_ok].float().mean().item())
+        # Pointers: start and end over the copy layer's keys. In a cache-free pass the
+        # key index is the absolute position, which is what the targets hold.
+        if output.copy_start is not None and (action_targets.copy_start >= 0).any():
+            n_keys = output.copy_start.shape[-1]
+            start_t = action_targets.copy_start.reshape(-1)
+            end_t = action_targets.copy_end.reshape(-1)
+            ptr = (
+                F.cross_entropy(output.copy_start.float().reshape(-1, n_keys), start_t, ignore_index=-100)
+                + F.cross_entropy(output.copy_end.float().reshape(-1, n_keys), end_t, ignore_index=-100)
+            )
+            action = action + ptr_weight * ptr
+            metrics["loss/ptr"] = ptr.item()
+        # Gate: is the value starting here verbatim in context?
+        if output.copy_gate is not None and (action_targets.gate_target >= 0).any():
+            pos = action_targets.gate_positions.clamp_min(0)
+            logit = output.copy_gate.float().gather(1, pos)
+            mask = action_targets.gate_target >= 0
+            gate = F.binary_cross_entropy_with_logits(
+                logit[mask], action_targets.gate_target[mask].float()
+            )
+            action = action + gate_weight * gate
+            metrics["loss/gate"] = gate.item()
+        total = total + action
+        metrics["loss/action"] = float(action.item())
+
     metrics["loss/total"] = total.item()
     metrics["ppl"] = float(torch.exp(lm.detach().clamp(max=20)).item())
     return LossTerms(
         total=total, lm=lm, mtp=mtp_loss, z=z, router=router, confidence=conf,
-        ponder=ponder, metrics=metrics,
+        ponder=ponder, action=action, metrics=metrics,
     )

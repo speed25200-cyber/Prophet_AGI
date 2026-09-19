@@ -183,6 +183,11 @@ def build_param_groups(model: nn.Module) -> dict[str, list[nn.Parameter]]:
 
         lowered = name.lower()
         forced_adamw = any(pat in lowered for pat in ADAMW_ONLY_PATTERNS)
+        # A (1, d) or (d, 1) matrix -- the halting and confidence heads -- is a vector in
+        # disguise. Newton-Schulz on it is just normalisation with a 0.2*sqrt(d) scale,
+        # so it goes to AdamW with the other heads, as the docstring promises.
+        if p.ndim == 2 and min(p.shape) == 1:
+            forced_adamw = True
 
         if p.ndim == 2 and not forced_adamw:
             muon.append(p)

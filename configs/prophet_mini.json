@@ -14,14 +14,10 @@
     "vocab_size": 32768,
     "tie_word_embeddings": true,
     "byte_vocab_size": 260,
-    "patch_target_bytes": 4.5,
-    "patch_max_bytes": 16,
-    "patch_entropy_threshold": null,
     "local_encoder_layers": 2,
     "local_decoder_layers": 3,
     "local_dim": 512,
     "local_heads": 8,
-    "local_window": 128,
     "hash_ngram_sizes": [
       3,
       4,
@@ -41,6 +37,12 @@
     "qk_norm": true,
     "sliding_window": 2048,
     "attention_sink_tokens": 1,
+    "global_memory": "none",
+    "global_ledger_rope": false,
+    "global_window": 4096,
+    "global_ledger_slots": 16384,
+    "global_ledger_top_k": 32,
+    "global_ledger_heads": 1,
     "kv_compression": "none",
     "kv_lora_rank": 512,
     "linear_heads": 10,
@@ -48,6 +50,7 @@
     "linear_expand": 2.0,
     "conv_kernel": 4,
     "linear_beta_max": 2.0,
+    "linear_chunk_size": 64,
     "rope_theta": 500000.0,
     "rope_scaling": "none",
     "rope_scaling_factor": 1.0,
@@ -76,7 +79,13 @@
     "truncated_backprop_steps": 3,
     "halting": "ponder",
     "halting_loss_weight": 0.05,
-    "halting_target_steps": 2.0
+    "halting_target_steps": 2.0,
+    "token_depth": false,
+    "ingest_depth": 1,
+    "token_depth_random_spans": 0.25,
+    "iteration_embedding": false,
+    "iteration_readout": false,
+    "iteration_requantize": "none"
   },
   "ffn": {
     "kind": "dense",
@@ -97,28 +106,33 @@
   "memory": {
     "enabled": false,
     "kind": "none",
+    "mount": "output",
     "layers": [],
     "memory_dim": 512,
     "n_slots": 4096,
     "update_rule": "delta",
-    "write_lr": 0.01,
-    "decay": 0.999,
+    "write_lr": 1.0,
+    "decay": 1.0,
     "surprise_threshold": 1.0,
-    "persist_across_sessions": true,
-    "max_persisted_writes": 1000000
+    "max_writes": 1000000
   },
   "heads": {
     "n_multi_token_predict": 1,
     "mtp_loss_weight": 0.3,
     "confidence_head": true,
-    "confidence_loss_weight": 0.1
+    "confidence_loss_weight": 0.1,
+    "action_head": false,
+    "action_dk": 128,
+    "action_kv_head": 0,
+    "sel_loss_weight": 0.5,
+    "ptr_loss_weight": 0.5,
+    "gate_loss_weight": 0.1,
+    "jumped_token_lm_weight": 0.1
   },
   "modality": {
     "n_modalities": 1,
     "modality_embeddings": true,
-    "position_dims": 1,
-    "bidirectional_spans": true,
-    "adapter_mount_points": true
+    "position_dims": 1
   },
   "init_std": 0.02,
   "mup_base_width": null

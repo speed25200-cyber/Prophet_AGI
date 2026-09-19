@@ -33,20 +33,64 @@ Lire `docs/00_PROBLEM_LANDSCAPE.md` avant toute contribution.
 ## Structure
 
 ```
-docs/           Spécifications et rapports de recherche (R01–R12)
+docs/           Spécifications, registre de décisions, rapports de recherche
+                (R01–R12 verrous, W1–W4 murs, A1–A4 revue et agentique),
+                premiers runs (09) et architecture suivante (10)
 prophet/
-  config.py     Schéma de configuration — tout pari est un interrupteur explicite
+  config.py     Schéma de configuration — tout pari est un interrupteur explicite,
+                validate() refuse l'impossible, design_warnings() refuse l'incohérent
   budget.py     Paramètres, mémoire, débit par appareil, alertes d'allocation
   scaling.py    Points de fonctionnement sous budget d'heures-A100
-  plan.py       Allocation du compute entre les tracks
-  modeling/     Couches, MoE, modèle à profondeur récurrente
-  data/         Tokenizer, mélanges, décontamination, streaming reprenable
-  train/        Muon, planning WSD, checkpointing atomique, boucle
-  eval/         Métriques (BPB) et harnais à trois niveaux
-configs/        Configurations d'expériences (JSON/YAML)
-scripts/        Scripts exécutables (Colab compris)
-tests/          173 tests
+  plan.py       Allocation du compute entre les tracks (ordre strict, sans remplissage)
+  modeling/     Couches (attention GQA/SWA/NoPE, delta gated), MoE, modèle à
+                profondeur récurrente avec halte apprise, têtes d'action typées
+  data/         Tokenizer Prophet-Tok v1, mélanges, décontamination, streaming reprenable,
+                corpus réels (fichiers/Hub, phases, plafond d'époques au tirage)
+  train/        Muon + AdamW, planning WSD, checkpointing atomique, boucle, pertes
+  eval/         Métriques (BPB), harnais à trois niveaux, benchmark agentique à vérificateurs
+  memory/       Registre à clés-produit (écriture en forme close), état de session,
+                consolidation de contexte et de profondeur
+  agent/        Boucle agentique : actions typées et grammaire, vérification à tiers,
+                quarantaine à provenance, état et retour arrière, rendu des épisodes
+  convert/      Conversion d'un donneur ouvert vers l'architecture Prophet
+  analysis/     Mesure de la bande passante des canaux de raisonnement
+  kernels/      Réservé aux noyaux Triton/CUDA — vide tant qu'aucun GPU n'a servi ;
+                le balayage delta par blocs (CPU/Mac) vit dans modeling/layers.py
+configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
+scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
+tests/          ~512 tests ; les plus importants sont des tests d'équivalence
 ```
+
+## Ce que ce dépôt a appris à ses dépens
+
+Dix-huit défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
+et faux :
+
+| Défaut | Comment il a été trouvé |
+|---|---|
+| Init aléatoire de l'état récurrent fuyant à l'inférence | test d'équivalence préremplissage/décodage |
+| Embeddings liés écrasés au chargement après copie du state dict | test sur dictionnaire copié en profondeur |
+| `β = sigmoid` bornant l'écriture delta à (0,1) : parité hors d'atteinte | track W2, vérifié par sonde : hasard → 0.996 |
+| Config livrée avec l'attention **dans** la boucle | track W2 ; désormais `design_warnings()` |
+| Sondes de halte écrivant *k* fois dans le même cache | test d'équivalence avec halte |
+| `nope_layers` réglé, vérifié, documenté — et ignoré par le modèle | revue A1 : grep des champs jamais lus |
+| Biais de routage MoE mis à jour *dans* le forward : sous checkpointing d'activations, le recalcul route autrement et le backward **plante** sur toute config MoE | expérience de comptage d'appels au routeur ; le pas est enregistré et appliqué après le backward |
+| Boucle agentique lisant à *k*=1 puis pensant à *k*=8 sur un cache dont l'état profond n'avait pas vu l'observation | modèle réel branché sur la boucle ; désormais plafonds par token, équivalence testée à 1e-4 |
+| Schémas d'outils encodés comme *texte* dans le prompt épinglé : leurs ids de contrôle étaient des octets, donc aucune ancre pour la tête de sélection | test de la boucle avec un modèle exposant des têtes d'action ; ids de contrôle épissés explicitement |
+| Balayage delta par blocs : gradient en 1/α et exp masquée *après* coup — NaN dès qu'une porte d'oubli se ferme, alors que tous les tests d'équivalence passaient | le premier entraînement réel (divergence au pas 280) ; log-sigmoïde et masque en espace log, garde anti-NaN dans le trainer |
+| Cibles de copie jamais alignées : un mot en prose est un token *avec son espace*, nu en JSON — zéro cible sur 40 valeurs, têtes apprises à 100 % et 5 % de transfert | le premier run agentique ; occurrence acceptée au token porteur d'espace, espace retiré à l'épissage : 0 → 40 cibles, 5 % → 55 % de succès |
+| Porte de rappel du registre d'attention ouverte à ½ dès le pas zéro : les lectures d'une mémoire vide noyaient l'attention, la couche n'apprenait rien, même dans la fenêtre | l'expérience de rappel avec bras de contrôle ; porte initialisée quasi fermée, ordre des blocs corrigé |
+| État de session porté entre épisodes : mécanique exacte, 57.5 % → 0 % — le modèle n'a jamais vu un état porté à l'entraînement | le benchmark agentique, poids gelés, seule variable l'état ; recette « séquences d'épisodes » à construire avant tout usage |
+| Position de requête du pointeur de copie : entraînée au token du guillemet ouvrant, interrogée un token plus tôt (après `"clé":`) au décodage — un checkpoint survivait par marge (55 %), le suivant tombait à 0 % avec des pointeurs exacts en forçage | sonde forçage contre décodage incrémental sur le même checkpoint ; cible déplacée là où la grammaire tire, test d'accord train/décodage |
+| Span de réflexion jamais rendu dans les trajectoires parfaites, ouvert par la boucle à chaque pas : un token de contrôle inconnu au décodage, rempli de fragments d'appel — **100 % → 0 %** sur les mêmes poids selon que la boucle l'ouvre ou non | banc avec et sans span sur le même checkpoint ; le rendu émet le span (vide) à chaque pas |
+| Masque d'attention par segment posé sur les couches pendant le forward et effacé à la sortie : sous checkpointing d'activations, le recalcul du backward ne le voit plus et PyTorch refuse — plantage au premier pas | le premier run à masque ; le masque reste posé jusqu'au forward suivant (qui le réécrit toujours), test sous checkpointing |
+| Registres d'attention jamais emportés par la session de l'agent (`extract_session` / `restore_session` appelés sans le modèle) : un état porté sans son registre, silencieusement | premier branchement du registre sur la boucle ; le modèle est passé, test de session avec registre |
+| Registres de la couche portés par les *tampons du module* : un épisode sans session héritait de ceux du précédent — fuite d'un épisode à l'autre par les poids, invisible au banc | même branchement ; remise à zéro à chaque épisode sans session, testée |
+
+**Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
+réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par
+un test comportemental, dans le même commit.
 
 ## Avant de proposer un changement d'architecture
 
@@ -58,8 +102,11 @@ python scripts/design_search.py          # qu'est-ce qui satisfait toutes les co
 python -m prophet.plan                   # d'où vient le compute ?
 ```
 
-Ces outils ont déjà corrigé deux erreurs de conception avant qu'elles ne coûtent quoi que
-ce soit. Une proposition sans passage par eux n'est pas recevable.
+Ces outils ont déjà corrigé des erreurs de conception avant qu'elles ne coûtent quoi que
+ce soit. Une proposition sans passage par eux n'est pas recevable. Un changement de
+modèle passe aussi par la suite de tests d'équivalence (`tests/test_modeling.py`) : le
+décodage incrémental doit rester identique à une passe complète, avec cache, halte et
+mémoire activés.
 
 ## Conventions
 

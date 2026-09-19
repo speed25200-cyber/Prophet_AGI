@@ -23,6 +23,8 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 __all__ = [
+    "make_norm",
+    "LedgerAttention",
     "RMSNorm",
     "RotaryEmbedding",
     "apply_rotary",
@@ -47,6 +49,15 @@ except Exception:  # pragma: no cover
 # --------------------------------------------------------------------------------------
 # Normalisation
 # --------------------------------------------------------------------------------------
+
+
+def make_norm(kind: str, dim: int, eps: float) -> nn.Module:
+    """The block/head normalisation named by ``ProphetConfig.norm_kind``."""
+    if kind == "rmsnorm":
+        return RMSNorm(dim, eps)
+    if kind == "layernorm":
+        return nn.LayerNorm(dim, eps=eps)
+    raise ValueError(f"unknown norm_kind {kind!r}")
 
 
 class RMSNorm(nn.Module):
@@ -104,8 +115,11 @@ class RotaryEmbedding(nn.Module):
         self.position_dims = position_dims
         self.section = head_dim // position_dims
 
+        self.position_divisor = 1.0
         if scaling == "linear" and scaling_factor > 1.0:
-            theta = theta * scaling_factor
+            # Position interpolation: compress positions into the trained range. Scaling
+            # theta instead would be NTK/base scaling, a different recipe.
+            self.position_divisor = float(scaling_factor)
         elif scaling == "yarn" and scaling_factor > 1.0:
             # NTK-by-parts: stretch the base so low frequencies span the longer context
             # while high frequencies, which carry local ordering, stay intact.
@@ -129,7 +143,7 @@ class RotaryEmbedding(nn.Module):
             raise ValueError(
                 f"expected {self.position_dims} position dims, got {positions.shape[-1]}"
             )
-        freqs = positions.float().unsqueeze(-1) * self.inv_freq  # (b, s, pdims, section/2)
+        freqs = (positions.float() / self.position_divisor).unsqueeze(-1) * self.inv_freq
         freqs = freqs.flatten(-2)  # (b, s, head_dim/2)
         return torch.cat([freqs, freqs], -1).cos(), torch.cat([freqs, freqs], -1).sin()
 
@@ -182,41 +196,94 @@ class AttentionCache:
     ``sink_tokens`` keeps a short always-attended prefix, without which windowed
     attention collapses at long context because the softmax has nowhere to dump
     probability mass.
+
+    The cache keeps the **absolute position** of every retained key. Masks are built on
+    those positions, never on buffer indices: once eviction has started the two differ,
+    and a mask on buffer indices silently attends to the wrong keys. That was the bug
+    that made every prompt longer than the window wrong in every windowed layer.
     """
 
     keys: Tensor | None = None
     values: Tensor | None = None
+    positions: Tensor | None = None
+    """Absolute position of each retained key, shape ``(kv_len,)``."""
+    flags: Tensor | None = None
+    """Per retained key, whether a ledger may write it on eviction (``(kv_len,)`` bool);
+    ``None`` when no write policy was ever given, which means every key."""
     window: int | None = None
     sink_tokens: int = 0
     seen: int = 0
-    """Total tokens ever written, which is what positions must be derived from — the
-    buffer length is not the position once eviction has started."""
+    """Total tokens ever written -- what positions derive from, not the buffer length."""
 
-    def append(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
+    def append(self, k: Tensor, v: Tensor, flags: Tensor | None = None) -> tuple[Tensor, Tensor, Tensor]:
+        """Append a chunk and return the *un-evicted* keys, values and positions.
+
+        Eviction happens in :meth:`evict`, after attention has been computed: the chunk
+        being processed must see every key inside its own window, including keys that
+        will be evicted once the chunk is done.
+        """
+        s = k.shape[2]
+        new_pos = torch.arange(self.seen, self.seen + s, device=k.device)
+        had = 0 if self.keys is None else self.keys.shape[2]
         if self.keys is None:
-            self.keys, self.values = k, v
+            self.keys, self.values, self.positions = k, v, new_pos
         else:
             self.keys = torch.cat([self.keys, k], dim=2)
             self.values = torch.cat([self.values, v], dim=2)
-        self.seen += k.shape[2]
+            self.positions = torch.cat([self.positions, new_pos])
+        if flags is not None or self.flags is not None:
+            # Once a policy exists, a chunk without one is not written (keys that came
+            # before the policy stay writable, as they were).
+            if self.flags is None:
+                self.flags = torch.ones(had, dtype=torch.bool, device=k.device)
+            new_flags = torch.zeros(s, dtype=torch.bool, device=k.device) if flags is None else flags.to(torch.bool)
+            self.flags = torch.cat([self.flags, new_flags])
+        self.seen += s
+        return self.keys, self.values, self.positions
 
-        if self.window is not None:
-            limit = self.window + self.sink_tokens
-            length = self.keys.shape[2]
-            if length > limit:
-                if self.sink_tokens:
-                    self.keys = torch.cat(
-                        [self.keys[:, :, : self.sink_tokens], self.keys[:, :, -self.window :]],
-                        dim=2,
-                    )
-                    self.values = torch.cat(
-                        [self.values[:, :, : self.sink_tokens], self.values[:, :, -self.window :]],
-                        dim=2,
-                    )
-                else:
-                    self.keys = self.keys[:, :, -self.window :]
-                    self.values = self.values[:, :, -self.window :]
-        return self.keys, self.values
+    def evictable(self) -> tuple[Tensor, Tensor] | None:
+        """The keys and values :meth:`evict` is about to drop (oldest first, sinks kept),
+        each ``(batch, kv_heads, m, head_dim)``; ``None`` when nothing would be dropped."""
+        if self.window is None or self.keys is None:
+            return None
+        limit = self.window + self.sink_tokens
+        length = self.keys.shape[2]
+        if length <= limit:
+            return None
+        drop = torch.arange(self.sink_tokens, length - self.window, device=self.keys.device)
+        return self.keys.index_select(2, drop), self.values.index_select(2, drop)
+
+    def evictable_flags(self) -> Tensor | None:
+        """The write flags of the keys :meth:`evict` is about to drop, aligned with
+        :meth:`evictable`; ``None`` when no policy was given (every key is writable)."""
+        if self.flags is None or self.window is None or self.keys is None:
+            return None
+        limit = self.window + self.sink_tokens
+        length = self.keys.shape[2]
+        if length <= limit:
+            return None
+        return self.flags[self.sink_tokens : length - self.window]
+
+    def evict(self) -> None:
+        """Trim to the window plus the sinks. A no-op for full attention."""
+        if self.window is None or self.keys is None:
+            return
+        limit = self.window + self.sink_tokens
+        length = self.keys.shape[2]
+        if length <= limit:
+            return
+        if self.sink_tokens:
+            keep = torch.cat([
+                torch.arange(self.sink_tokens, device=self.keys.device),
+                torch.arange(length - self.window, length, device=self.keys.device),
+            ])
+        else:
+            keep = torch.arange(length - self.window, length, device=self.keys.device)
+        self.keys = self.keys.index_select(2, keep)
+        self.values = self.values.index_select(2, keep)
+        self.positions = self.positions.index_select(0, keep)
+        if self.flags is not None:
+            self.flags = self.flags.index_select(0, keep)
 
     def n_bytes(self) -> int:
         if self.keys is None:
@@ -269,8 +336,10 @@ class CausalSelfAttention(nn.Module):
         sink_tokens: int = 0,
         norm_eps: float = 1e-5,
         bias: bool = False,
+        use_rope: bool = True,
     ) -> None:
         super().__init__()
+        self.use_rope = use_rope
         if n_heads % n_kv_heads != 0:
             raise ValueError(f"n_heads={n_heads} must be divisible by n_kv_heads={n_kv_heads}")
         self.n_heads = n_heads
@@ -291,6 +360,20 @@ class CausalSelfAttention(nn.Module):
         self.q_norm = RMSNorm(self.head_dim, norm_eps) if qk_norm else None
         self.k_norm = RMSNorm(self.head_dim, norm_eps) if qk_norm else None
 
+        self.record_keys = False
+        """When set, the layer keeps the keys attention saw on its last call (all KV
+        heads, every retained position) and their absolute positions, for the copy
+        pointer of the action heads to score. No extra cache: these are the tensors the
+        layer already holds."""
+        self.last_keys: Tensor | None = None
+        self.last_key_positions: Tensor | None = None
+        self.segment_ids: Tensor | None = None
+        """``(batch, seq)`` segment labels set by the model for one cache-free forward:
+        a query attends only to keys of its own segment. This is how a training row made
+        of several episodes is seen exactly as the loop sees them -- attention empty at
+        each episode start, the recurrent state carried through. Ignored with a cache,
+        where the cache reset is the boundary."""
+
     def forward(
         self,
         x: Tensor,
@@ -307,43 +390,278 @@ class CausalSelfAttention(nn.Module):
         if self.q_norm is not None:
             q = self.q_norm(q)
             k = self.k_norm(k)
-        if cos is not None:
+        if cos is not None and self.use_rope:
+            # A NoPE layer receives cos/sin like every other block and ignores them: the
+            # decision lives in the config, not in what the caller happens to pass.
             q = apply_rotary(q, cos, sin)
             k = apply_rotary(k, cos, sin)
 
         if cache is not None:
             cache.window = self.window
             cache.sink_tokens = self.sink_tokens
-            k, v = cache.append(k, v)
+            q_pos = torch.arange(cache.seen, cache.seen + s, device=x.device)
+            k, v, k_pos = cache.append(k, v)
+        else:
+            q_pos = torch.arange(s, device=x.device)
+            k_pos = q_pos
+
+        if self.record_keys:
+            self.last_keys, self.last_key_positions = k, k_pos
 
         if self.n_rep > 1:
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
 
-        kv_len = k.shape[2]
-        # A single decode step attends to everything retained in the cache, so no mask is
-        # needed; eviction has already enforced the window.
-        if s == 1 and cache is not None:
-            attn_mask, is_causal = None, False
-        elif self.window is None:
+        # With a cache, always mask on absolute positions -- including the single-token
+        # decode step. Attention now runs *before* eviction (a continuation chunk must
+        # see every key inside its window), so at decode time the retained tail holds
+        # window + 1 keys and the oldest is out of range for the new query. The old
+        # "one token needs no mask" shortcut was only true when eviction came first.
+        # A fresh cache-free full-attention pass keeps the fused causal kernel.
+        if cache is None and self.window is None and self.segment_ids is None:
             attn_mask, is_causal = None, True
         else:
-            attn_mask, is_causal = self._windowed_mask(s, kv_len, x.device), False
+            attn_mask, is_causal = self._attn_mask(q_pos, k_pos, cache), False
 
         out = F.scaled_dot_product_attention(
             q, k, v, attn_mask=attn_mask, is_causal=is_causal, scale=self.scale
         )
+        if cache is not None:
+            cache.evict()
         return self.o_proj(out.transpose(1, 2).reshape(b, s, -1))
 
-    def _windowed_mask(self, q_len: int, kv_len: int, device: torch.device) -> Tensor:
-        """Boolean mask (True = attend) for sliding-window attention with sinks."""
-        offset = kv_len - q_len
-        q_pos = torch.arange(q_len, device=device).unsqueeze(1) + offset
-        k_pos = torch.arange(kv_len, device=device).unsqueeze(0)
-        mask = (k_pos <= q_pos) & (q_pos - k_pos < self.window)
-        if self.sink_tokens:
-            mask = mask | ((k_pos < self.sink_tokens) & (k_pos <= q_pos))
+    def _position_mask(self, q_pos: Tensor, k_pos: Tensor) -> Tensor:
+        """Boolean mask (True = attend) on absolute positions.
+
+        Causality, the sliding window and the sinks are all expressed in positions, so
+        the same function is right for a fresh prefill, a continuation chunk appended to a
+        cache, and a prompt long enough that the cache has already evicted.
+        """
+        q = q_pos.unsqueeze(1)
+        k = k_pos.unsqueeze(0)
+        mask = k <= q
+        if self.window is not None:
+            in_window = (q - k) < self.window
+            if self.sink_tokens:
+                in_window = in_window | (k < self.sink_tokens)
+            mask = mask & in_window
         return mask.unsqueeze(0).unsqueeze(0)
+
+    def _attn_mask(self, q_pos: Tensor, k_pos: Tensor, cache: AttentionCache | None) -> Tensor:
+        """The position mask, restricted to the query's own segment on a cache-free pass
+        when ``segment_ids`` is set (``(b, 1, s, s)`` then)."""
+        mask = self._position_mask(q_pos, k_pos)
+        if cache is None and self.segment_ids is not None:
+            seg = self.segment_ids
+            if tuple(seg.shape) != (seg.shape[0], q_pos.numel()):
+                raise ValueError(f"segment_ids must be (batch, {q_pos.numel()}), got {tuple(seg.shape)}")
+            same = seg.unsqueeze(1).unsqueeze(-1) == seg.unsqueeze(1).unsqueeze(2)  # (b,1,s,s)
+            mask = mask & same
+        return mask
+
+GATE_INIT = -4.0
+"""Initial logit of the ledger recall gate: sigmoid(-4) = 0.018, almost closed."""
+
+
+class LedgerAttention(CausalSelfAttention):
+    """Windowed attention whose evicted keys and values live on in a bounded ledger.
+
+    The full-attention layers are the one place the hybrid stack's memory grows with
+    context. This layer keeps their exact recall inside ``window`` and, instead of
+    dropping what falls out of it, writes each evicted ``(key, value)`` pair into a
+    product-key ledger addressed by the key (``prophet.memory.ledger``: frozen
+    addressing, closed-form write, trust region). Every query then reads the ledger by
+    its own key-space address and adds the recalled value through a per-head gate:
+
+        out_h = attention_in_window_h + sigmoid(g_h) * ledger(q_h)
+
+    An empty ledger reads as zero, so before anything is evicted the layer *is* a
+    sliding-window layer. Memory is the window plus ``n_slots`` rows, whatever the
+    context length; recall beyond the window is associative (a bounded number of slots,
+    softly addressed), which is the price of the bound and what the ablation measures.
+
+    Training has no cache, so the layer keeps one transient memory per sequence: the
+    sequence is walked in blocks of ``window``; block ``j-1`` is written before block
+    ``j`` is read, so block ``j`` reads what blocks ``<= j-1`` wrote. Early tokens of a
+    block also see the tail of the previous block through the window, so a little of
+    the memory overlaps the exact path in training; at decode the two are the exact
+    complement of each other. The written tensors carry no gradient; the read does,
+    through the addressing softmax, which is how the query projection learns to ask.
+
+    Requires NoPE: a key rotated to its position could only be found by a query rotated
+    to the same position, and a ledger has no positions.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        *,
+        n_heads: int,
+        n_kv_heads: int,
+        head_dim: int | None = None,
+        qk_norm: bool = True,
+        window: int = 4096,
+        sink_tokens: int = 0,
+        norm_eps: float = 1e-5,
+        bias: bool = False,
+        ledger_slots: int = 16384,
+        ledger_top_k: int = 32,
+        ledger_heads: int = 1,
+        ledger_memory_dim: int = 256,
+        use_rope: bool = False,
+        rope_theta: float = 500_000.0,
+    ) -> None:
+        # The base class never rotates here: with ``use_rope`` this layer rotates queries
+        # and keys itself, by their absolute positions, at attention time only -- the
+        # cache and the ledger hold the *unrotated* keys, so a key written to the ledger
+        # is addressed by an unrotated query wherever it sits. That is what lets a RoPE
+        # windowed layer, which learns local structure better than a NoPE one, host a
+        # ledger at all.
+        super().__init__(
+            dim, n_heads=n_heads, n_kv_heads=n_kv_heads, head_dim=head_dim, qk_norm=qk_norm,
+            window=window, sink_tokens=sink_tokens, norm_eps=norm_eps, bias=bias, use_rope=False,
+        )
+        self.rope = use_rope
+        self.rotary = RotaryEmbedding(self.head_dim, theta=rope_theta) if use_rope else None
+        self.write_mask: Tensor | None = None
+        """``(batch, seq)`` bool set by the model for one forward: which of these tokens
+        the ledger may keep once they leave the window. ``None`` keeps every token --
+        which, over a long session, fills the slots with prompt boilerplate and drifts;
+        a policy that keeps only what tools returned is what an agent needs."""
+        from prophet.memory.ledger import LedgerConfig, ProductKeyMemory  # local: no import cycle
+
+        kv_dim = n_kv_heads * self.head_dim
+        memory_dim = min(ledger_memory_dim, kv_dim)
+        memory_dim -= memory_dim % 2
+        self.ledger = ProductKeyMemory(LedgerConfig(
+            dim=kv_dim, memory_dim=memory_dim, n_slots=ledger_slots, top_k=ledger_top_k,
+            n_heads=ledger_heads,
+        ))
+        self.gate = nn.Parameter(torch.full((n_heads,), GATE_INIT))
+        """Per query head: how much of the recalled value enters. Starts almost closed
+        (sigmoid(-4) = 0.018): with a half-open gate the reads of an untrained memory
+        swamped the attention signal and the layer learned nothing, not even inside the
+        window, where it should have been a plain windowed layer. The model opens the
+        gate once the memory is worth reading; the empty ledger still reads as zero."""
+
+    # -- helpers -----------------------------------------------------------------------
+
+    def _kv_query(self, q: Tensor) -> Tensor:
+        """Queries in key space: ``(b, heads, s, hd)`` -> ``(b, s, kv_heads*hd)``, each KV
+        head's query being the mean of the query heads that share it."""
+        b, _, s, hd = q.shape
+        grouped = q.view(b, self.n_kv_heads, self.n_rep, s, hd).mean(2)  # (b, kv, s, hd)
+        return grouped.permute(0, 2, 1, 3).reshape(b, s, self.n_kv_heads * hd)
+
+    def _flat_kv(self, t: Tensor) -> Tensor:
+        """``(b, kv_heads, m, hd)`` -> ``(b, m, kv_heads*hd)``."""
+        b, kv, m, hd = t.shape
+        return t.permute(0, 2, 1, 3).reshape(b, m, kv * hd)
+
+    def _mix(self, out: Tensor, read: Tensor) -> Tensor:
+        """Add the gated recall to the attention output (both ``(b, heads, s, hd)`` after
+        the read is spread over the query heads sharing each KV head)."""
+        b, s, _ = read.shape
+        read_h = read.view(b, s, self.n_kv_heads, self.head_dim).permute(0, 2, 1, 3)
+        read_h = read_h.repeat_interleave(self.n_rep, dim=1)
+        return out + torch.sigmoid(self.gate).view(1, -1, 1, 1) * read_h
+
+    # -- forward -----------------------------------------------------------------------
+
+    def forward(
+        self,
+        x: Tensor,
+        *,
+        cos: Tensor | None = None,
+        sin: Tensor | None = None,
+        cache: AttentionCache | None = None,
+    ) -> Tensor:
+        b, s, _ = x.shape
+        q = self.q_proj(x).view(b, s, self.n_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x).view(b, s, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).view(b, s, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        if self.q_norm is not None:
+            q = self.q_norm(q)
+            k = self.k_norm(k)
+        # The caller's cos/sin are ignored: NoPE by construction, or rotated here by
+        # position (see __init__). Everything below the attention call is unrotated.
+
+        if cache is not None:
+            if b != 1:
+                raise ValueError(
+                    "LedgerAttention with a cache serves one sequence at a time: the "
+                    "ledger buffers are the memory of one conversation, not of a batch"
+                )
+            cache.window = self.window
+            cache.sink_tokens = self.sink_tokens
+            q_pos = torch.arange(cache.seen, cache.seen + s, device=x.device)
+            flags = None if self.write_mask is None else self.write_mask[0]
+            keys, values, k_pos = cache.append(k, v, flags)
+        else:
+            keys, values = k, v
+            q_pos = torch.arange(s, device=x.device)
+            k_pos = q_pos
+
+        if self.record_keys:
+            self.last_keys, self.last_key_positions = keys, k_pos
+
+        q_att, k_att = q, keys
+        if self.rotary is not None:
+            cos_q, sin_q = self.rotary(q_pos.unsqueeze(0))
+            cos_k, sin_k = self.rotary(k_pos.unsqueeze(0))
+            q_att, k_att = apply_rotary(q, cos_q, sin_q), apply_rotary(keys, cos_k, sin_k)
+        if self.n_rep > 1:
+            k_att = k_att.repeat_interleave(self.n_rep, dim=1)
+            values = values.repeat_interleave(self.n_rep, dim=1)
+        out = F.scaled_dot_product_attention(
+            q_att, k_att, values, attn_mask=self._attn_mask(q_pos, k_pos, cache), is_causal=False,
+            scale=self.scale,
+        )
+
+        q_kv = self._kv_query(q)                                   # (b, s, kv_dim)
+        if cache is not None:
+            # Reads see everything evicted before this chunk; then this chunk's
+            # evictions are written, so the next chunk sees them.
+            read = self.ledger.read(q_kv)
+            pending = cache.evictable()
+            if pending is not None:
+                ek, ev = pending
+                flags = cache.evictable_flags()
+                if flags is not None:
+                    ek, ev = ek[:, :, flags], ev[:, :, flags]
+                if ek.shape[2]:
+                    self.ledger.write(self._flat_kv(ek.detach()), self._flat_kv(ev.detach()))
+            cache.evict()
+        else:
+            read = self._blockwise_read(q_kv, k, v)
+        return self.o_proj(self._mix(out, read).transpose(1, 2).reshape(b, s, -1))
+
+    def _blockwise_read(self, q_kv: Tensor, k: Tensor, v: Tensor) -> Tensor:
+        """Cache-free path: a transient memory per row, read block by block, written
+        one block behind the read."""
+        b, s, _ = q_kv.shape
+        w = self.window or s
+        if s <= w:
+            return torch.zeros_like(q_kv)  # nothing evicted yet: exactly a windowed layer
+        values, counts = self.ledger.new_state(b, device=q_kv.device, dtype=q_kv.dtype)
+        k_flat, v_flat = self._flat_kv(k.detach()), self._flat_kv(v.detach())
+        reads = []
+        previous: tuple[int, int] | None = None
+        mask = self.write_mask
+        for start in range(0, s, w):
+            end = min(start + w, s)
+            if previous is not None:
+                a, e = previous
+                if mask is None:
+                    self.ledger.write_state(values, counts, k_flat[:, a:e], v_flat[:, a:e])
+                else:
+                    sel = mask[:, a:e].to(torch.bool)
+                    rows = torch.arange(b, device=q_kv.device).unsqueeze(1).expand_as(sel)[sel]
+                    self.ledger.write_state(values, counts, k_flat[:, a:e][sel], v_flat[:, a:e][sel], rows=rows)
+            reads.append(self.ledger.read(q_kv[:, start:end], values=values))
+            previous = (start, end)
+        return torch.cat(reads, dim=1)
+
 
 
 # --------------------------------------------------------------------------------------
@@ -398,9 +716,15 @@ class GatedDeltaNet(nn.Module):
         bias: bool = False,
         allow_fused: bool = True,
         beta_max: float = 2.0,
+        chunk_size: int | None = 64,
     ) -> None:
         super().__init__()
         self.beta_max = beta_max
+        self.chunk_size = chunk_size
+        """Chunk length of the blockwise scan used off-GPU (and on GPU without ``fla``).
+        ``None`` selects the token-by-token reference scan. The two are the same
+        computation to float precision (tested); the chunked form replaces a Python loop
+        over every token with one triangular solve per chunk."""
         self.n_heads = n_heads
         self.head_k = head_dim
         self.head_v = int(head_dim * expand)
@@ -433,6 +757,12 @@ class GatedDeltaNet(nn.Module):
         # layer untrainable, since gradients never reach far back.
         nn.init.constant_(self.a_proj.bias, 3.0)
         nn.init.constant_(self.b_proj.bias, 0.0)
+        # ProphetModel._init_weights zeroes every Linear bias it does not know about.
+        # These two are set deliberately: a forget gate that starts at sigmoid(0)=0.5
+        # gives the state a half-life of one token and the layer never recovers. The
+        # attribute is the contract that makes the model leave them alone.
+        self.a_proj._prophet_keep_bias = True
+        self.b_proj._prophet_keep_bias = True
 
     # -- helpers ----------------------------------------------------------------------
 
@@ -472,20 +802,31 @@ class GatedDeltaNet(nn.Module):
         # L2-normalised keys keep the delta-rule update a well-conditioned projection;
         # without this the removal term can amplify rather than erase.
         k = F.normalize(k, dim=-1, eps=1e-6)
-        alpha = torch.sigmoid(self.a_proj(x).float())  # (b, s, h)
+        a_logits = self.a_proj(x).float()
+        alpha = torch.sigmoid(a_logits)  # (b, s, h)
+        # The chunked and fused paths work in log space. log(sigmoid(a)) is taken as
+        # logsigmoid(a), whose gradient is 1 - alpha: taking alpha.log() instead has
+        # gradient 1/alpha, which is 1e30 once a forget gate closes, and the run's first
+        # NaN came from exactly that after 260 steps of falling loss.
+        log_alpha = F.logsigmoid(a_logits)
         beta = self.beta_max * torch.sigmoid(self.b_proj(x).float())
 
         if self.allow_fused and HAS_FLA and x.is_cuda:  # pragma: no cover
-            out, new_state = _fla_gated_delta(
-                q=q, k=k, v=v, g=alpha.log(), beta=beta,
-                initial_state=(
-                    None
-                    if state is None or state.state is None
-                    else state.state.to(device=q.device)
-                ),
-                output_final_state=state is not None,
-                head_first=False,
+            # flash-linear-attention's chunked kernel. Layout contract, made explicit
+            # because getting it wrong transposes the state silently: inputs are
+            # (batch, seq, heads, dim); its state is (batch, heads, K, V) while the
+            # reference scan keeps (batch, heads, V, K). ``scale=1.0`` because the scan
+            # applies no query scaling. This path has not been executed in this
+            # repository -- no GPU, no ``fla`` -- and a GPU equivalence test against
+            # ``_scan`` (output *and* final state) is required before it carries a run.
+            init = None if state is None or state.state is None else state.state.to(device=q.device).transpose(-1, -2).contiguous()
+            out, fla_state = _fla_gated_delta(
+                q=q, k=k, v=v, g=log_alpha.to(q.dtype), beta=beta.to(q.dtype), scale=1.0,
+                initial_state=init, output_final_state=state is not None,
             )
+            new_state = None if fla_state is None else fla_state.transpose(-1, -2).contiguous()
+        elif self.chunk_size is not None and s > 1:
+            out, new_state = self._chunk_scan(q, k, v, log_alpha, beta, state, self.chunk_size)
         else:
             out, new_state = self._scan(q, k, v, alpha, beta, state)
 
@@ -532,17 +873,104 @@ class GatedDeltaNet(nn.Module):
         out = torch.stack(outputs, dim=1)  # (b, s, h, dv)
         return out.to(q.dtype), S.detach() if state is not None else S
 
+    def _chunk_scan(
+        self,
+        q: Tensor,
+        k: Tensor,
+        v: Tensor,
+        log_alpha: Tensor,
+        beta: Tensor,
+        state: RecurrentState | None,
+        chunk: int,
+    ) -> tuple[Tensor, Tensor]:
+        """Blockwise form of the same recurrence; exact, and a matmul per chunk.
+
+        Takes ``log_alpha`` rather than ``alpha`` so that no gradient ever passes
+        through ``1/alpha`` (see ``forward``).
+
+        Within a chunk starting from state ``S0``, with cumulative decays
+        ``G_t = prod_{i<=t} alpha_i``, the state unrolls to
+        ``S_t = G_t S0 + sum_{i<=t} (G_t/G_i) w_i k_i^T`` where the written rows
+        ``w_t = beta_t (v_t - alpha_t S_{t-1} k_t)`` satisfy a unit lower-triangular system
+        ``(I + T) W = B`` with ``T_ti = beta_t (G_t/G_i) k_i.k_t`` for ``i < t`` and
+        ``B_t = beta_t v_t - beta_t G_t S0 k_t``. One triangular solve gives every ``w``;
+        outputs are ``o_t = G_t S0 q_t + sum_{i<=t} (G_t/G_i)(k_i.q_t) w_i``. Ratios are
+        formed in log space and never exceed one, so nothing overflows.
+        """
+        b, s, h, dk = k.shape
+        dv = v.shape[-1]
+        dtype = torch.float32
+        S = (
+            state.state.to(dtype)
+            if state is not None and state.state is not None
+            else q.new_zeros(b, h, dv, dk, dtype=dtype)
+        )
+        q32 = q.float().transpose(1, 2)      # (b, h, s, dk)
+        k32 = k.float().transpose(1, 2)
+        v32 = v.float().transpose(1, 2)      # (b, h, s, dv)
+        log_a = log_alpha.float().transpose(1, 2)                      # (b, h, s)
+        beta32 = beta.float().transpose(1, 2)
+        outputs = []
+        for start in range(0, s, chunk):
+            end = min(start + chunk, s)
+            c = end - start
+            qc, kc, vc = q32[:, :, start:end], k32[:, :, start:end], v32[:, :, start:end]
+            bc = beta32[:, :, start:end].unsqueeze(-1)              # (b, h, c, 1)
+            L = log_a[:, :, start:end].cumsum(-1)                    # (b, h, c)
+            G = L.exp().unsqueeze(-1)                                # (b, h, c, 1)
+            idx = torch.arange(c, device=k.device)
+            strict = idx.unsqueeze(1) > idx.unsqueeze(0)             # i < t
+            incl = idx.unsqueeze(1) >= idx.unsqueeze(0)              # i <= t
+            # Mask in log space, before the exponential: above the diagonal the
+            # differences are large and positive, their exp is inf, and a zero
+            # gradient times inf is NaN in the backward even though the forward masks
+            # the value away. With -inf here the masked entries and their gradients
+            # are exactly zero.
+            diff = L.unsqueeze(-1) - L.unsqueeze(-2)                 # (b, h, c, c): log G_t/G_i
+            ratio = torch.where(incl, diff, diff.new_full((), float("-inf"))).exp()
+            KK = kc @ kc.transpose(-1, -2)                            # (b, h, c, c): k_t . k_i
+            T = (bc * ratio * KK).masked_fill(~strict, 0.0)
+            S0k = (S @ kc.transpose(-1, -2)).transpose(-1, -2)       # (b, h, c, dv): S0 k_t
+            B = bc * vc - bc * G * S0k
+            eye = torch.eye(c, device=k.device, dtype=dtype)
+            W = torch.linalg.solve_triangular(eye + T, B, upper=False, unitriangular=True)
+            A = ratio * (qc @ kc.transpose(-1, -2))                  # already zero above the diagonal
+            out_c = G * (qc @ S.transpose(-1, -2)) + A @ W           # (b, h, c, dv)
+            outputs.append(out_c)
+            decay_all = (L[:, :, -1:] - L).exp().unsqueeze(-1)       # (b, h, c, 1): G_c / G_i
+            S = G[:, :, -1:].transpose(-1, -2) * S + (W * decay_all).transpose(-1, -2) @ kc
+        out = torch.cat(outputs, dim=2).transpose(1, 2)              # (b, s, h, dv)
+        return out.to(q.dtype), S.detach() if state is not None else S
+
 
 # --------------------------------------------------------------------------------------
 # Factory
 # --------------------------------------------------------------------------------------
 
 
-def build_mixer(kind: str, cfg, *, layer_index: int) -> nn.Module | None:
-    """Instantiate the sequence mixer for one block, per ``cfg.mixer.pattern``."""
+def build_mixer(
+    kind: str, cfg, *, layer_index: int, section: str = "trunk"
+) -> nn.Module | None:
+    """Instantiate the sequence mixer for one block, per the section's pattern."""
     m = cfg.mixer
     if kind == "identity":
         return None
+    if kind == "full_attn" and m.global_memory == "ledger":
+        return LedgerAttention(
+            cfg.d_model,
+            n_heads=m.n_heads,
+            n_kv_heads=m.n_kv_heads,
+            head_dim=cfg.head_dim,
+            qk_norm=m.qk_norm,
+            window=m.global_window,
+            sink_tokens=m.attention_sink_tokens,
+            norm_eps=cfg.norm_eps,
+            ledger_slots=m.global_ledger_slots,
+            ledger_top_k=m.global_ledger_top_k,
+            ledger_heads=m.global_ledger_heads,
+            use_rope=m.global_ledger_rope and cfg.layer_uses_rope(layer_index, section),
+            rope_theta=m.rope_theta,
+        )
     if kind in ("full_attn", "swa"):
         return CausalSelfAttention(
             cfg.d_model,
@@ -553,6 +981,7 @@ def build_mixer(kind: str, cfg, *, layer_index: int) -> nn.Module | None:
             window=None if kind == "full_attn" else m.sliding_window,
             sink_tokens=m.attention_sink_tokens if kind == "swa" else 0,
             norm_eps=cfg.norm_eps,
+            use_rope=cfg.layer_uses_rope(layer_index, section),
         )
     if kind in ("gdn", "mamba2"):
         return GatedDeltaNet(
@@ -563,5 +992,6 @@ def build_mixer(kind: str, cfg, *, layer_index: int) -> nn.Module | None:
             conv_kernel=m.conv_kernel,
             norm_eps=cfg.norm_eps,
             beta_max=m.linear_beta_max,
+            chunk_size=m.linear_chunk_size,
         )
     raise ValueError(f"unknown mixer kind: {kind!r}")

@@ -66,6 +66,10 @@ class LedgerConfig:
     decay: float = 1.0
     """Multiplicative decay applied to values on each write. Below 1.0 the ledger
     forgets slowly, which bounds drift over a long deployment."""
+    max_writes: int | None = None
+    """Lifetime cap on written tokens. Past it :meth:`ProductKeyMemory.write` refuses
+    (``WriteStats.accepted`` is False) instead of applying: a bound on how much a
+    runaway writer can churn."""
 
 
 @dataclass
@@ -75,6 +79,8 @@ class WriteStats:
     clipped_fraction: float
     residual_before: float
     residual_after: float
+    accepted: bool = True
+    """False when the write was refused by ``max_writes``; nothing was applied."""
 
     @property
     def improvement(self) -> float:
@@ -110,8 +116,14 @@ class ProductKeyMemory(nn.Module):
         if cfg.top_k > cfg.n_slots:
             raise ValueError(f"top_k={cfg.top_k} exceeds n_slots={cfg.n_slots}")
 
-        self.query = nn.Linear(cfg.dim, cfg.n_heads * cfg.memory_dim, bias=False)
-        self.query_norm = nn.LayerNorm(cfg.memory_dim)
+        # Addressing is **frozen**: a random projection and a non-affine normalisation,
+        # registered as buffers so no optimiser can move them. The class promises that
+        # keys never drift; a trainable query projection broke that promise from the
+        # other side -- training moved every stored association's address.
+        query = torch.empty(cfg.n_heads * cfg.memory_dim, cfg.dim)
+        nn.init.normal_(query, std=cfg.dim**-0.5)
+        self.register_buffer("query_weight", query, persistent=True)
+        self.query_norm = nn.LayerNorm(cfg.memory_dim, elementwise_affine=False)
 
         # Frozen sub-key codebooks.
         keys = torch.randn(2, cfg.n_heads, side, self.sub_dim) / math.sqrt(self.sub_dim)
@@ -121,6 +133,7 @@ class ProductKeyMemory(nn.Module):
         # never by an optimiser.
         self.register_buffer("values", torch.zeros(cfg.n_slots, cfg.dim), persistent=True)
         self.register_buffer("write_counts", torch.zeros(cfg.n_slots), persistent=True)
+        self.register_buffer("tokens_written", torch.zeros((), dtype=torch.long), persistent=True)
 
     # -- reading -----------------------------------------------------------------------
 
@@ -135,7 +148,7 @@ class ProductKeyMemory(nn.Module):
         flat = x.reshape(-1, cfg.dim)
         n = flat.shape[0]
 
-        q = self.query(flat).view(n, cfg.n_heads, cfg.memory_dim)
+        q = F.linear(flat, self.query_weight).view(n, cfg.n_heads, cfg.memory_dim)
         q = self.query_norm(q)
         q1, q2 = q.split(self.sub_dim, dim=-1)
 
@@ -163,8 +176,43 @@ class ProductKeyMemory(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         """Read the ledger. Shape-preserving: ``(batch, seq, dim)`` in and out."""
+        return self.read(x)
+
+    # -- functional state: one ledger, many memories ------------------------------------
+    #
+    # The buffers are *the* memory of a deployed model. Training a layer that writes
+    # (``LedgerAttention``) needs something else: a transient memory per sequence that
+    # starts empty and dies with the batch, or one document's evicted keys would be read
+    # by the next document and by its batch neighbours. ``read``/``write_state`` take
+    # that memory explicitly as ``(rows, n_slots, dim)`` tensors; the buffer path is the
+    # single-row case on a view of the buffers, so both paths run the same arithmetic.
+
+    def new_state(self, rows: int, *, device=None, dtype=None) -> tuple[Tensor, Tensor]:
+        """Empty per-row memories: ``(values (rows, n_slots, dim), counts (rows, n_slots))``."""
+        device = device or self.values.device
+        dtype = dtype or self.values.dtype
+        return (
+            torch.zeros(rows, self.cfg.n_slots, self.cfg.dim, device=device, dtype=dtype),
+            torch.zeros(rows, self.cfg.n_slots, device=device, dtype=self.write_counts.dtype),
+        )
+
+    def _rows_for(self, x: Tensor, values: Tensor) -> Tensor:
+        """Row index of every token of ``x`` into a ``(rows, n_slots, dim)`` memory."""
+        n = x.reshape(-1, self.cfg.dim).shape[0]
+        if values.shape[0] == 1:
+            return torch.zeros(n, dtype=torch.long, device=x.device)
+        per_row = n // values.shape[0]
+        return torch.arange(values.shape[0], device=x.device).repeat_interleave(per_row)
+
+    def read(self, x: Tensor, *, values: Tensor | None = None) -> Tensor:
+        """Read from the buffers, or from an explicit ``(rows, n_slots, dim)`` memory
+        whose row ``r`` serves the ``r``-th slice of ``x``'s leading dimension."""
+        cfg = self.cfg
+        mem = self.values.unsqueeze(0) if values is None else values
         indices, weights = self.address(x)
-        gathered = self.values[indices]  # (tokens, heads*top_k, dim)
+        rows = self._rows_for(x, mem)
+        flat_slot = indices + rows.unsqueeze(1) * cfg.n_slots
+        gathered = mem.reshape(-1, cfg.dim)[flat_slot]  # (tokens, heads*top_k, dim)
         out = (gathered * weights.unsqueeze(-1)).sum(1)
         # Heads are averaged rather than summed so the read magnitude is independent of
         # head count, which keeps the write step size comparable across configurations.
@@ -182,13 +230,41 @@ class ProductKeyMemory(nn.Module):
         why this can run on a device rather than only in a training job.
         """
         cfg = self.cfg
+        flat_x = x.reshape(-1, cfg.dim)
+        if cfg.max_writes is not None and int(self.tokens_written.item()) >= cfg.max_writes:
+            indices, weights = self.address(flat_x)
+            current = (self.values[indices] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
+            before = (current - target.reshape(-1, cfg.dim)).norm(dim=-1).mean().item()
+            return WriteStats(0, 0.0, 0.0, before, before, accepted=False)
+        self.tokens_written += flat_x.shape[0]
+        return self.write_state(
+            self.values.unsqueeze(0), self.write_counts.unsqueeze(0), x, target, lr=lr
+        )
+
+    @torch.no_grad()
+    def write_state(
+        self, values: Tensor, counts: Tensor, x: Tensor, target: Tensor, *, lr: float | None = None,
+        rows: Tensor | None = None,
+    ) -> WriteStats:
+        """The write rule on an explicit memory (``values`` ``(rows, n_slots, dim)``,
+        ``counts`` ``(rows, n_slots)``), updated in place. Row ``r`` of the memory takes
+        the ``r``-th slice of ``x``'s leading dimension, unless ``rows`` names the row of
+        every token of ``x`` (a selection of tokens, uneven across rows). The buffers are
+        the one-row case."""
+        cfg = self.cfg
         lr = cfg.write_lr if lr is None else lr
 
         flat_x = x.reshape(-1, cfg.dim)
         flat_t = target.reshape(-1, cfg.dim)
+        if flat_x.shape[0] == 0:
+            return WriteStats(0, 0.0, 0.0, 0.0, 0.0)
         indices, weights = self.address(flat_x)
+        rows = self._rows_for(flat_x, values) if rows is None else rows.reshape(-1)
+        flat_slot = indices + rows.unsqueeze(1) * cfg.n_slots      # (t, h*k) into rows*slots
+        vflat = values.view(-1, cfg.dim)
+        cflat = counts.view(-1)
 
-        current = (self.values[indices] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
+        current = (vflat[flat_slot] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
         residual = current - flat_t                      # (tokens, dim)
         residual_before = residual.norm(dim=-1).mean().item()
 
@@ -205,8 +281,8 @@ class ProductKeyMemory(nn.Module):
 
         # EWC-lite: slots written often move less. Without this, the slots that carry the
         # most agreed-upon knowledge are exactly the ones every new session churns.
-        counts = self.write_counts[indices].unsqueeze(-1)
-        update = update / (1.0 + cfg.ewc_lambda * counts.sqrt())
+        seen = cflat[flat_slot].unsqueeze(-1)
+        update = update / (1.0 + cfg.ewc_lambda * seen.sqrt())
 
         # Trust region, per slot. One surprising example must not overwrite a slot that
         # thousands of earlier ones agreed on.
@@ -216,15 +292,13 @@ class ProductKeyMemory(nn.Module):
         update = update * scale
 
         if cfg.decay < 1.0:
-            self.values.mul_(cfg.decay)
+            vflat.mul_(cfg.decay)
 
-        flat_idx = indices.reshape(-1)
-        self.values.index_add_(0, flat_idx, update.reshape(-1, cfg.dim).to(self.values.dtype))
-        self.write_counts.index_add_(
-            0, flat_idx, torch.ones_like(flat_idx, dtype=self.write_counts.dtype)
-        )
+        flat_idx = flat_slot.reshape(-1)
+        vflat.index_add_(0, flat_idx, update.reshape(-1, cfg.dim).to(vflat.dtype))
+        cflat.index_add_(0, flat_idx, torch.ones_like(flat_idx, dtype=cflat.dtype))
 
-        after = (self.values[indices] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
+        after = (vflat[flat_slot] * weights.unsqueeze(-1)).sum(1) / cfg.n_heads
         residual_after = (after - flat_t).norm(dim=-1).mean().item()
 
         return WriteStats(
@@ -241,6 +315,7 @@ class ProductKeyMemory(nn.Module):
     def reset(self) -> None:
         self.values.zero_()
         self.write_counts.zero_()
+        self.tokens_written.zero_()
 
     def occupancy(self) -> dict[str, float]:
         """How much of the ledger is in use, and how evenly.

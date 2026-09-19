@@ -52,19 +52,15 @@ class FrontendConfig:
     vocab_size: int = 49152
     tie_word_embeddings: bool = True
 
-    # --- "byte_patch" / "hybrid" ---
+    # --- "byte_patch" / "hybrid": sizing only. Neither mode is built (validate()
+    # refuses them); these fields let prophet.budget cost the R01 retrofit and nothing
+    # else. Its runtime knobs (patch size, entropy threshold, local window) were removed
+    # until the component exists: a field nothing reads is a bug, not a reservation.
     byte_vocab_size: int = 260  # 256 bytes + BOS/EOS/PAD/MASK
-    patch_target_bytes: float = 4.5
-    """Average bytes per patch the entropy router is calibrated to produce."""
-    patch_max_bytes: int = 16
-    patch_entropy_threshold: float | None = None
-    """Absolute entropy threshold in nats; ``None`` calibrates it to hit ``patch_target_bytes``."""
     local_encoder_layers: int = 2
     local_decoder_layers: int = 3
     local_dim: int = 512
     local_heads: int = 8
-    local_window: int = 128
-    """Byte-level attention window inside the local encoder/decoder."""
     hash_ngram_sizes: tuple[int, ...] = (3, 4, 5, 6)
     hash_ngram_buckets: int = 32768
     """Hash-embedding buckets *per n-gram size*, giving byte n-gram context cheaply.
@@ -109,6 +105,27 @@ class MixerConfig:
     attention_sink_tokens: int = 4
     """Always-attended prefix tokens; prevents the softmax-sink collapse that breaks
     windowed attention at long context."""
+    global_memory: Literal["none", "ledger"] = "none"
+    global_ledger_rope: bool = False
+    """Let a ledger layer keep RoPE for its attention: it then rotates queries and keys
+    by position itself, at attention time, and addresses the ledger with the unrotated
+    ones. Off, ledger layers must be NoPE (``nope_layers``). Needs ``rope_scaling="none"``."""
+    """What a full-attention layer keeps of the context beyond ``global_window``.
+
+    ``"none"``: everything -- exact recall, a KV cache linear in context. ``"ledger"``:
+    the layer attends inside the window and writes every evicted key/value pair into a
+    bounded product-key ledger it reads back through a per-head gate (the design of
+    ``prophet.memory.ledger``, mounted on attention). Memory per token is then constant
+    in context length: the number that makes "infinite context" a statement rather than
+    a wish. Recall beyond the window is associative, not exact, and the ablation that
+    prices that is in ``prophet.plan``."""
+    global_window: int = 4096
+    """Exact-attention window of a ledger-backed global layer."""
+    global_ledger_slots: int = 16384
+    """Slots per ledger-backed layer (a perfect square). At 16k slots and a 512-wide
+    KV row, one layer's memory is 8 MB in bf16 whatever the context."""
+    global_ledger_top_k: int = 32
+    global_ledger_heads: int = 1
     kv_compression: Literal["none", "mla"] = "none"
     kv_lora_rank: int = 512
     """Latent dimension when ``kv_compression == "mla"``."""
@@ -121,6 +138,13 @@ class MixerConfig:
     """Short causal depthwise convolution before the recurrence; standard in this family
     and worth several points of local-pattern quality."""
     linear_beta_max: float = 2.0
+    linear_chunk_size: int | None = 64
+    """Chunk length of the blockwise delta-rule scan used wherever the fused kernel is
+    not (CPU, Apple silicon, a GPU without ``fla``). ``None`` is the token-by-token
+    reference. Exact to float precision either way; the chunked form is what makes a
+    CPU prefill a handful of matmuls instead of a Python loop over every token.
+    Measured on 4 CPU cores, tiny config, batch 4 x 256 at k=4, forward + backward:
+    28.5 s/step for the reference, 0.64 at 32, 0.53 at 64."""
     """Upper bound of the delta-rule write strength.
 
     At 1.0 every eigenvalue of the state transition is strictly positive, and a product of
@@ -204,6 +228,51 @@ class RecurrentCoreConfig:
     halting_loss_weight: float = 0.01
     halting_target_steps: float = 4.0
 
+    token_depth: bool = False
+    """Train with a per-token depth *ceiling* so that inference may vary depth per call
+    and per token on one cache.
+
+    Without this, a cache's depth is fixed for its lifetime (it may only shrink by
+    halting): iteration ``i``'s core state must have seen every earlier token, or it
+    reads a state that skipped part of the context. With it, the invariant becomes
+    "iteration ``i`` saw every earlier token whose ceiling exceeds ``i``": at each
+    iteration the core runs on the compacted subsequence of tokens still active, and the
+    model is trained that way, so a tool observation ingested at depth 1 followed by a
+    think span at depth 8 is in-distribution rather than undefined. This is what the
+    agent loop's "ingest cheap, think deep" schedule needs (docs/08_AGENT.md). Unvalidated:
+    an ablation against constant-depth training is required before it carries a run."""
+    ingest_depth: int = 1
+    """Ceiling applied, when ``token_depth`` is on, to tool-observation spans (from
+    ``<|tool|>`` to the next control token) and to the random shallow spans below."""
+    token_depth_random_spans: float = 0.25
+    iteration_embedding: bool = False
+    """Add a learned per-iteration vector to the core's input at iteration *i* (one row
+    per iteration up to ``train_loop_max``; deeper iterations reuse the last). Without it
+    the shared core receives the same injected input at every pass and has to infer by
+    itself which step of a computation it is at -- which, on sequential tasks, it did
+    not (``scripts/depth_cpu.py``). A chain of thought gets that index for free from its
+    own emitted tokens. Costs ``train_loop_max x d_model`` parameters."""
+    iteration_readout: bool = False
+    """Read the model out (coda, then norm) after *every* core iteration and return the
+    states as ``ProphetOutput.hidden_per_step`` even without halting. What it is for:
+    per-iteration targets -- iteration *i* trained to answer the *i*-th step of a chain
+    of thought while a single token is emitted, the signal density of a chain in the
+    depth dimension. Costs one coda pass per iteration in training; unread at decode."""
+    iteration_requantize: Literal["none", "soft", "hard"] = "none"
+    """Feed each iteration's read-out back into the next as a *symbol*: the per-iteration
+    logits are turned into a distribution over the vocabulary, embedded through the input
+    embedding, and added to the injected input of the next iteration (``soft``: the
+    expected embedding; ``hard``: the argmax embedding with a straight-through gradient).
+    The one thing a chain of thought has that no latent loop had on sequential tasks --
+    per-step targets and a step index did not help -- is that its intermediate result
+    is re-encoded as a discrete token before the next step reads it. Requires
+    ``iteration_readout`` and ``inject_input_each_step``; costs one vocabulary product per
+    iteration."""
+    """Probability that a training sequence gets one random contiguous span at
+    ``ingest_depth``. Pretraining text has no ``<|tool|>`` spans, and the model must
+    still meet the shallow-then-deep transition there or the agent loop's first
+    observation is its first sight of one. A guess, pending the ablation above."""
+
 
 # --------------------------------------------------------------------------------------
 # 4. Feed-forward / sparsity (track R05)
@@ -257,21 +326,41 @@ class MemoryConfig:
 
     enabled: bool = False
     kind: Literal["none", "fast_weight", "product_key"] = "none"
+    mount: Literal["output", "coda"] = "output"
+    """Where the ledger reads and writes.
+
+    ``"output"``: one ledger on the normalised final hidden state, added before the LM
+    head. This is the space every function in ``prophet.memory.consolidate`` addresses
+    and targets, so a ledger consolidated offline can be mounted and read by the model
+    without translation. ``"coda"``: one ledger per index in ``layers``, reading each
+    coda block's residual output -- a different space, unsupported by consolidation, and
+    kept only as an ablation arm."""
     layers: tuple[int, ...] = ()
-    """Trunk indices carrying a memory module. Sparse placement — memory is expensive."""
+    """Coda block indices carrying a ledger when ``mount == "coda"``. Ignored otherwise.
+    Validated against the coda's actual length, not the global depth: a ledger declared
+    at a global index the model never reads was a no-op that budgeted parameters."""
 
     memory_dim: int = 512
     n_slots: int = 4096
-    update_rule: Literal["delta", "hebbian", "surprise_gated"] = "delta"
-    write_lr: float = 0.01
-    decay: float = 0.999
+    update_rule: Literal["delta", "surprise_gated"] = "delta"
+    """``delta`` writes every consolidated token. ``surprise_gated`` writes only tokens
+    whose next-token loss without context exceeds ``surprise_threshold``: what the
+    weights already predict is not worth a slot. Read by ``prophet.memory.consolidate``
+    as the default policy."""
+    write_lr: float = 1.0
+    """Fraction of the exact local write step. Aligned with ``LedgerConfig``: every
+    number in ``docs/06_MEMORY.md`` was measured at 1.0, and the model once built its
+    ledger at 0.01 -- one percent of the step the docs describe."""
+    decay: float = 1.0
     """Forgetting factor per write; without it the memory saturates and stops discriminating."""
     surprise_threshold: float = 1.0
-    """In ``surprise_gated`` mode, only write when the token's loss exceeds this — memory
-    capacity is spent on what the weights did not already know."""
+    """In ``surprise_gated`` mode, only write when the token's loss (nats) exceeds this —
+    memory capacity is spent on what the weights did not already know."""
 
-    persist_across_sessions: bool = True
-    max_persisted_writes: int = 1_000_000
+    max_writes: int | None = 1_000_000
+    """Tokens the ledger accepts over its lifetime; further writes are refused and
+    reported, not applied. A runaway agent writing every step must not be able to churn
+    a ledger that took a session to build. ``None`` disables the cap."""
 
 
 # --------------------------------------------------------------------------------------
@@ -293,6 +382,23 @@ class HeadsConfig:
     retrieval triggering rather than letting the model guess confidently."""
     confidence_loss_weight: float = 0.1
 
+    action_head: bool = False
+    """Typed tool emission (track A3): a selection pointer over the ``<|/tool_def|>``
+    anchors in context, a span-copy pointer for argument values over the coda NoPE
+    layer's existing keys, and a copy gate. Off, the model is byte-identical to one
+    without them. Targets are derived from the token stream by
+    ``prophet.modeling.action.build_action_targets``."""
+    action_dk: int = 128
+    """Width of the selection pointer's query/key projections."""
+    action_kv_head: int = 0
+    """Which KV head of the coda's NoPE global-attention layer the copy pointer reads."""
+    sel_loss_weight: float = 0.5
+    ptr_loss_weight: float = 0.5
+    gate_loss_weight: float = 0.1
+    jumped_token_lm_weight: float = 0.1
+    """LM-loss weight on tokens a typed runtime emits for the model (call syntax, tool
+    name, parameter names). Small, not zero, so the text-JSON fallback stays alive."""
+
 
 # --------------------------------------------------------------------------------------
 # 7. Modality hooks (track R12)
@@ -309,11 +415,6 @@ class ModalityConfig:
     """A learned per-modality bias added to inputs, so modality is a first-class signal."""
     position_dims: int = 1
     """1 for text; 3 reserves (t, y, x) so 2-D position encodings work for images later."""
-    bidirectional_spans: bool = True
-    """Allow marked spans to attend bidirectionally — required for image patches, and
-    useful for text infilling in the meantime."""
-    adapter_mount_points: bool = True
-    """Emit per-layer hooks where modality LoRA adapters can attach."""
 
 
 # --------------------------------------------------------------------------------------
@@ -333,6 +434,7 @@ class ProphetConfig:
     recurrent core (see :meth:`effective_depth`)."""
     norm_eps: float = 1e-5
     norm_kind: Literal["rmsnorm", "layernorm"] = "rmsnorm"
+    """Normalisation in every block and head (``prophet.modeling.layers.make_norm``)."""
     residual_scaling: bool = True
     """Scale residual branches by 1/sqrt(2 * depth) at init — keeps activation variance
     bounded in deep or heavily looped stacks."""
@@ -340,7 +442,10 @@ class ProphetConfig:
     z_loss_weight: float = 1e-4
 
     max_seq_len: int = 4096
+    """Longest sequence a training run may use; the trainer refuses a longer one."""
     dropout: float = 0.0
+    """Residual dropout on both branches of every block. Off by default: a single-epoch
+    run at our budget has nothing to over-fit."""
 
     frontend: FrontendConfig = field(default_factory=FrontendConfig)
     mixer: MixerConfig = field(default_factory=MixerConfig)
@@ -395,6 +500,28 @@ class ProphetConfig:
         if not pattern:
             raise ValueError("mixer pattern must not be empty")
         return pattern[index % len(pattern)]
+
+    def layer_uses_rope(self, index: int, section: str = "trunk") -> bool:
+        """Whether the attention block at this position gets rotary positions.
+
+        ``nope_layers`` holds *pattern positions*, not absolute block indices, so that
+        "every global layer is position-free" is one entry rather than one per block.
+        With ``pattern=["swa", "full_attn"]`` and ``nope_layers=(1,)``, every block
+        produced by pattern slot 1 -- each full-attention layer -- runs without RoPE. That
+        is the R02 design: local layers keep positions, global layers extrapolate freely.
+        """
+        pattern = self.mixer.pattern
+        if self.recurrent.enabled:
+            override = {
+                "prelude": self.recurrent.prelude_pattern,
+                "core": self.recurrent.core_pattern,
+                "coda": self.recurrent.coda_pattern,
+            }.get(section)
+            if override:
+                pattern = override
+        if not pattern:
+            return True
+        return (index % len(pattern)) not in self.mixer.nope_layers
 
     def section_layout(self) -> list[tuple[str, int, MixerKind]]:
         """The parameterised blocks in order, as ``(section, index_in_section, kind)``.
@@ -466,6 +593,12 @@ class ProphetConfig:
             r = self.recurrent
             if r.core_layers < 1:
                 errors.append("recurrent.core_layers must be >= 1 when recurrence is enabled")
+            if r.iteration_requantize != "none" and not (r.iteration_readout and r.inject_input_each_step):
+                raise ValueError(
+                    "recurrent.iteration_requantize needs iteration_readout (the symbol comes "
+                    "from the per-iteration read-out) and inject_input_each_step (it is added "
+                    "to the injected input)"
+                )
             if r.train_loop_min < 1 or r.train_loop_max < r.train_loop_min:
                 errors.append(
                     f"require 1 <= train_loop_min ({r.train_loop_min}) "
@@ -479,6 +612,21 @@ class ProphetConfig:
                 errors.append("recurrent.halting_loss_weight must be finite and >= 0")
             if not math.isfinite(r.halting_target_steps) or r.halting_target_steps <= 1:
                 errors.append("recurrent.halting_target_steps must be finite and > 1")
+            if r.token_depth:
+                if not (1 <= r.ingest_depth <= r.train_loop_max):
+                    errors.append(
+                        f"recurrent.ingest_depth ({r.ingest_depth}) must lie in "
+                        f"[1, train_loop_max={r.train_loop_max}]"
+                    )
+                if not (0.0 <= r.token_depth_random_spans <= 1.0):
+                    errors.append("recurrent.token_depth_random_spans must be a probability")
+                core = r.core_pattern or self.mixer.pattern
+                if any(kind in ("full_attn", "swa") for kind in core):
+                    errors.append(
+                        "recurrent.token_depth compacts the active tokens at each "
+                        "iteration, which a recurrent core supports and an attention "
+                        "core does not (its positions would have to be gathered too)"
+                    )
 
         if self.ffn.kind == "moe":
             f = self.ffn
@@ -491,20 +639,88 @@ class ProphetConfig:
                 errors.append("n_experts_per_token must be >= 1")
 
         if self.memory.enabled:
-            depth = self.parameterised_depth()
-            bad = [i for i in self.memory.layers if not 0 <= i < depth]
-            if bad:
-                errors.append(f"memory.layers {bad} are outside the trunk depth {depth}")
             if self.memory.kind == "none":
                 errors.append("memory.enabled is True but memory.kind is 'none'")
+            if self.memory.kind == "fast_weight":
+                errors.append(
+                    "memory.kind='fast_weight' is declared but not implemented: it "
+                    "validated, was budgeted, and built nothing. Use 'product_key'."
+                )
+            if self.memory.mount == "coda":
+                n_coda = (
+                    self.recurrent.coda_layers if self.recurrent.enabled else self.n_layers
+                )
+                bad = [i for i in self.memory.layers if not 0 <= i < n_coda]
+                if bad:
+                    errors.append(
+                        f"memory.layers {bad} are outside the coda ({n_coda} blocks); "
+                        "indices are coda-local, not global"
+                    )
+                if not self.memory.layers:
+                    errors.append("memory.mount='coda' needs at least one index in layers")
 
-        if self.frontend.mode == "byte_patch" and self.frontend.patch_max_bytes < 1:
-            errors.append("frontend.patch_max_bytes must be >= 1")
+        if self.mixer.global_memory == "ledger":
+            m = self.mixer
+            side = math.isqrt(m.global_ledger_slots)
+            if side * side != m.global_ledger_slots:
+                errors.append(f"mixer.global_ledger_slots ({m.global_ledger_slots}) must be a perfect square")
+            if not 1 <= m.global_ledger_top_k <= m.global_ledger_slots:
+                errors.append("mixer.global_ledger_top_k must lie in [1, global_ledger_slots]")
+            if m.global_window < 1 or m.global_ledger_heads < 1:
+                errors.append("mixer.global_window and global_ledger_heads must be >= 1")
+            if m.global_ledger_rope and m.rope_scaling != "none":
+                errors.append(
+                    "mixer.global_ledger_rope rotates by position inside the ledger layer and "
+                    "knows no scaling: set mixer.rope_scaling='none'"
+                )
+            for section, index, kind in self.section_layout():
+                if kind == "full_attn" and self.layer_uses_rope(index, section) and not m.global_ledger_rope:
+                    errors.append(
+                        f"mixer.global_memory='ledger' needs NoPE global layers: {section}[{index}] "
+                        "applies RoPE, and a rotated key written to the ledger would be "
+                        "addressed by a query rotated to a different position (or set "
+                        "mixer.global_ledger_rope, which rotates at attention time only)"
+                    )
+                    break
+            if not any(kind == "full_attn" for _, _, kind in self.section_layout()):
+                errors.append("mixer.global_memory='ledger' needs at least one full_attn layer")
+
+        if self.heads.action_head:
+            if not 0 <= self.heads.action_kv_head < self.mixer.n_kv_heads:
+                errors.append(
+                    f"heads.action_kv_head ({self.heads.action_kv_head}) must index one of "
+                    f"the {self.mixer.n_kv_heads} KV heads"
+                )
+            if self.copy_pointer_layer() is None:
+                errors.append(
+                    "heads.action_head needs a NoPE full-attention layer after the loop "
+                    "(in the coda, or the trunk when the core is not recurrent) for the "
+                    "copy pointer to score its keys"
+                )
+            for name in ("action_dk",):
+                if getattr(self.heads, name) < 1:
+                    errors.append(f"heads.{name} must be >= 1")
+
+        # frontend.mode other than "bpe" is *costed* here (prophet.budget sizes the R01
+        # retrofit from it) and *refused* at model build (ProphetModel raises
+        # NotImplementedError), so validation stays permissive on purpose.
 
         if errors:
             raise ValueError(
                 "Invalid ProphetConfig:\n" + "\n".join(f"  - {e}" for e in errors)
             )
+
+    def copy_pointer_layer(self) -> tuple[str, int] | None:
+        """``(section, index)`` of the layer whose keys the copy pointer scores: the last
+        NoPE full-attention block after the loop, so it sees the whole context with no
+        positional signal to fight the pointer."""
+        best: tuple[str, int] | None = None
+        for section, index, kind in self.section_layout():
+            if section == "core":
+                continue
+            if kind == "full_attn" and not self.layer_uses_rope(index, section):
+                best = (section, index)
+        return best
 
     def design_warnings(self) -> list[str]:
         """Flag configurations that contradict the architecture's own invariants.
@@ -555,6 +771,15 @@ class ProphetConfig:
                 "full-attention layers are present but nope_layers is empty: without a "
                 "position-free global layer, length extrapolation has to be bought with a "
                 "context-extension run instead of coming for free"
+            )
+
+        if self.mixer.qk_norm and self.head_dim < 32:
+            cap = self.head_dim ** 0.5
+            out.append(
+                f"qk_norm at head_dim {self.head_dim} caps the attention logit at "
+                f"sqrt(head_dim) = {cap:.1f} times the learned gains: one key among more than "
+                f"~e^{cap:.1f} = {2.718281828 ** cap:.0f} can never take most of the mass unless the gains grow, "
+                "which is a plateau on exact retrieval, not a loss-curve event"
             )
 
         if self.mixer.linear_beta_max <= 1.0 and any(

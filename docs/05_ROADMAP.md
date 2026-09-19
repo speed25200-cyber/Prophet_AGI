@@ -11,8 +11,8 @@ deux origines, une seule architecture :
 
 | Modèle | Origine | Budget | Rôle |
 |---|---|---:|---|
-| **Prophet-mini** (229M) | Poids aléatoires | 85 h | Preuve honnête de l'architecture. Cible iPhone. |
-| **Prophet-main** (~970M) | Conversion d'un donneur Apache-2.0 | 30 h | Modèle compétitif. 89 % des paramètres hérités. |
+| **Prophet-mini** (253M) | Poids aléatoires | 85 h | Preuve honnête de l'architecture. Cible iPhone. |
+| **Prophet-main** (~1016M) | Conversion d'un donneur Apache-2.0 | 30 h | Modèle compétitif. 85% des paramètres hérités. |
 
 Le rapport de coût — 85 heures contre 30 — est le résultat central : la conversion coûte
 un tiers de l'entraînement de zéro pour un modèle quatre fois plus gros, parce qu'elle
@@ -41,9 +41,9 @@ ablations.
 
 # Compute plan — 300 A100-hours
 
-Requested across all tracks: **470 h**. Available after a 10% reserve: **270 h**. Oversubscribed **1.7x**.
+Requested across all tracks: **548 h**. Available after a 10% reserve: **270 h**. Oversubscribed **2.0x**.
 
-Funded 13 of 23 requests, 270 h allocated, 0 h unspent (added to the reserve), 30 h held for reruns and preemption losses.
+Funded 13 of 27 requests, 270 h allocated, 0 h unspent (added to the reserve), 30 h held for reruns and preemption losses.
 
 Allocation is in strict priority order with no backfill: an item that does not fit stops the line rather than being skipped so that cheaper work behind it can squeeze in.
 
@@ -69,12 +69,16 @@ Allocation is in strict priority order with no backfill: an item that does not f
 
 | Pri | Track | Work | Hours | Why it was cut |
 |---:|---|---|---:|---|
+| 3 | A2 | agentic training recipe | 67 | below the funding line |
 | 3 | R04 | depth ablations | 24 | below the funding line |
 | 3 | R08 | quantisation ladder | 20 | below the funding line |
 | 3 | R02 | interleave and long-context ablations | 20 | below the funding line |
 | 3 | R05 | MoE routing and upcycling | 16 | below the funding line |
 | 3 | W1 | halting: input-dependent depth | 12 | below the funding line |
 | 3 | R02 | long-context extension | 12 | below the funding line |
+| 3 | D3b | ledger attention versus exact global attention on real text | 6 | below the funding line |
+| 3 | A2 | per-token depth ceilings versus one depth per sequence | 4 | below the funding line |
+| 3 | A4 | depth-disagreement AUROC probe | 1 | below the funding line |
 | 4 | R09 | confidence head training | 20 | optional; below the funding line |
 | 4 | W4 | depth consolidation | 14 | optional; below the funding line |
 | 5 | R01 | byte-frontend retrofit | 36 | optional; below the funding line |
@@ -98,6 +102,42 @@ Allocation is in strict priority order with no backfill: an item that does not f
 
 ---
 
+## Lancer les premières ablations
+
+Les paires de configurations des trois premiers runs du plan sont générées par
+`scripts/build_configs.py` (jamais à la main), validées par `validate()`,
+`design_warnings()` et `python -m prophet.budget` (toutes tiennent sur un A100 80 Go en
+moins de 8 Go à 16k tokens par lot). Chaque paire ne diffère que par l'interrupteur qu'elle
+mesure. Le corpus vient de `scripts/prepare_corpus.py`, les jeux de test de
+`scripts/fetch_benchmarks.py` (`--data-root` et `--benchmarks` ci-dessous) ; relancer la
+même commande après une coupure reprend au dernier checkpoint intact.
+
+| Run | Paire | Heures | Ce qui départage |
+|---|---|---:|---|
+| R04, porte | `prophet_r04_loop.json` (221M, 8 blocs × 4 itérations) contre `prophet_r04_plain.json` (498M, 20 blocs, une passe) | 24 | bits/octet à FLOPs égaux par token ; si la boucle ne bat pas la pile simple, le pari central est mort |
+| D3b, ablation | `prophet_d3b_ledger.json` contre `prophet_d3b_none.json` (86M, fenêtre 4k) | 6 | BPB dégradé de plus de 0.5 % ou rappel au hasard au-delà de la fenêtre → registre à `"none"` |
+| R03, ablation | `prophet_r03_memory.json` contre `prophet_mini.json` (238M) | 20 | écrire, vider le contexte, relire — contre une base à budget de contexte égal |
+
+```bash
+# R04 : les deux bras, mêmes tokens, même graine, même mélange
+for arm in loop plain; do
+  python scripts/train.py --config configs/prophet_r04_$arm.json --tokens 4e9 \
+      --seq-len 4096 --batch-size 4 --grad-accum 4 --tokenizer artifacts/tokenizer.json \
+      --data-root data/corpus --benchmarks data/benchmarks \
+      --checkpoint-dir /content/drive/MyDrive/prophet/r04_$arm --session-minutes 700
+done
+# D3b : identique, deux bras, 1e9 tokens
+for arm in ledger none; do
+  python scripts/train.py --config configs/prophet_d3b_$arm.json --tokens 1e9 \
+      --seq-len 4096 --batch-size 8 --grad-accum 2 --tokenizer artifacts/tokenizer.json \
+      --data-root data/corpus --benchmarks data/benchmarks \
+      --checkpoint-dir /content/drive/MyDrive/prophet/d3b_$arm --session-minutes 700
+done
+```
+
+Les critères d'échec de chaque run sont pré-enregistrés ci-dessous ; le nombre qui
+tranche est lu par `prophet.eval` sur le même jeu tenu à l'écart pour les deux bras.
+
 ## Calendrier
 
 Le budget de 300 heures-A100 s'étale sur plusieurs semaines de sessions Colab
@@ -112,7 +152,7 @@ fois déduites les pertes de préemption.
 | **4–7** | **Voie A** : pré-entraînement Prophet-mini depuis zéro, phases A et B. | Courbe de perte, checkpoint de plateau, évaluations Tier-1 tous les 3 jours. |
 | **6** | **Voie B, en parallèle** : conversion du donneur puis entraînement de récupération. Ne dépend pas de la voie A. | Prophet-main récupéré, comparé au donneur sur le BPB tenu à l'écart. |
 | **8** | Phase C : trois recuits branchés depuis le checkpoint de plateau, puis fusion. Ablation mémoire R03. | Modèle de base fusionné. Verdict sur la mémoire persistante. |
-| **9–10** | Post-entraînement R10 sur les deux modèles : mid-training raisonnement, SFT bimode, distillation on-policy. | Modèles instruct. |
+| **9–10** | Post-entraînement R10 sur les deux modèles : mid-training raisonnement, SFT bimode, distillation on-policy. Si une porte a libéré des heures : la recette agentique A2 s'insère ici, avec son ablation de plafonds de profondeur avant elle. | Modèles instruct. |
 | **11** | Évaluation Tier-2 complète, quantification et export, carte du modèle. | Résultats publiables avec rapport de décontamination. |
 
 Les deux voies sont indépendantes après la semaine 3, ce qui est délibéré : si la
@@ -132,6 +172,9 @@ déçoit, la voie B produit quand même un modèle.
 | R02 rappel multi-clés | Effondrement sur MK-NIAH | Augmenter le nombre de couches globales — **pas** élargir la fenêtre. |
 | W4 exactitude contre profondeur | Courbe plate | La consolidation de profondeur n'a rien à stocker ; le track ferme avant de coûter quoi que ce soit. |
 | W2 rappel multi-clés contre *k* | Le rappel se dégrade quand *k* monte | Le cadran de profondeur et le budget de rappel sont le même cadran en sens inverse ; plafonner *k* ou ajouter des couches globales. |
+| A2 plafonds de profondeur par token | BPB dégradé de plus de 1 % contre une profondeur par séquence | `recurrent.token_depth` reste hors des configs livrées ; la boucle agentique tourne en régime `fixed` (une profondeur par épisode, la halte ne peut que la baisser). |
+| A4 désaccord de profondeur | AUROC < 0.65 sur la suite Tier-1 | Le signal sort du vecteur de caractéristiques du vérificateur ; le second passage profond n'est plus déclenché. |
+| D3b attention à registre | BPB dégradé de plus de 0.5 % à fenêtre 4k, ou rappel au-delà de la fenêtre au hasard | Le registre reste à `"none"` ; le contexte long reste linéaire en mémoire et l'extension R02 reprend la main. |
 | Conversion de donneur | Couverture paramétrique < 50 % | Refus automatique : c'est du pré-entraînement à départ chaud, à budgéter comme tel. |
 | Vérification des donneurs | Un champ ne correspond pas au Hub | Refus automatique de conversion. Un `head_dim` erroné ne casse pas bruyamment — il laisse des tenseurs en init fraîche et le modèle est simplement moins bon. |
 
