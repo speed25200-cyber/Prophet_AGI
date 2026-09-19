@@ -54,12 +54,12 @@ def recovery_fixture(tmp_path, monkeypatch):
     train.write_text(json.dumps({"text": "abc def " * 100}) + "\n", encoding="utf-8")
     validation.write_text(json.dumps({"text": "unique test"}) + "\n", encoding="utf-8")
 
-    def run(out, objective, session_steps=2, precision="bfloat16"):
+    def run(out, objective, session_steps=2, precision="bfloat16", device="cpu"):
         args = ["recover_qwen.py", "--source", str(source), "--initialization", str(initialization),
                 "--audit", str(audit), "--train", str(train), "--validation", str(validation),
                 "--out", str(out), "--objective", objective, "--steps", "4", "--loop-k", "2",
                 "--seq-len", "8", "--batch-size", "1", "--checkpoint-every", "2",
-                "--muon-lr", "0.01", "--adamw-lr", "0.001", "--device", "cpu",
+                "--muon-lr", "0.01", "--adamw-lr", "0.001", "--device", device,
                 "--chunk-tokens", "3", "--max-session-steps", str(session_steps),
                 "--precision", precision]
         monkeypatch.setattr(sys, "argv", args)
@@ -104,15 +104,17 @@ def test_recovery_config_freezes_depth_without_changing_initial_config():
 
 
 @pytest.mark.parametrize("objective", ["ce", "kl"])
-def test_fp32_recovery_resumes_exactly_and_rejects_precision_switch(recovery_fixture, tmp_path, objective):
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA recovery restart"))])
+def test_fp32_recovery_resumes_exactly_and_rejects_precision_switch(recovery_fixture, tmp_path, objective, device):
     old = torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
     try:
         run, reference = tmp_path / "fp32", tmp_path / "reference"
-        recovery_fixture(run, objective, precision="float32")
+        recovery_fixture(run, objective, precision="float32", device=device)
         with pytest.raises(ValueError, match="another recovery experiment"):
-            recovery_fixture(run, objective, precision="bfloat16")
-        recovery_fixture(run, objective, precision="float32")
-        recovery_fixture(reference, objective, 4, precision="float32")
+            recovery_fixture(run, objective, precision="bfloat16", device=device)
+        recovery_fixture(run, objective, precision="float32", device=device)
+        recovery_fixture(reference, objective, 4, precision="float32", device=device)
         result = json.loads((run / "evaluation-step-000004.json").read_bytes())
         expected = json.loads((reference / "evaluation-step-000004.json").read_bytes())
         assert result["evaluation"] == expected["evaluation"]
