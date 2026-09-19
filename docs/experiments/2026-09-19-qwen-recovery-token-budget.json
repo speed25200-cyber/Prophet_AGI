@@ -1,0 +1,38 @@
+{
+  "complete": true,
+  "tokenizer": {
+    "format": "donor-bytelevel-raw-text-v1",
+    "source_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "eos_id": 151645,
+    "pad_id": 151643,
+    "vocab_size": 151936,
+    "normalizer": {
+      "type": "NFC"
+    },
+    "policy": "no added-token recognition; no postprocessor; explicit EOS"
+  },
+  "policy": "ordered raw documents with one explicit EOS each; no additional separator; counts input tokens, not scored targets",
+  "splits": {
+    "train": {
+      "sha256": "542508d6418b13e7c06def4b3de7cbcbd3ff0d21dd1f045487e1d0f4f3a2f3d6",
+      "documents": 19560,
+      "tokens_with_eos": 18486792,
+      "normalized_payload_bytes": 86166752,
+      "min_document_tokens": 73,
+      "max_document_tokens": 11989,
+      "ordered_token_uint32_le_sha256": "1a02195b1f96f48914b3e75654c9d568766412c4c838aaffdb26afb62608be70"
+    },
+    "validation": {
+      "sha256": "06903e9925fb4e2ceed27eedc09f5d4b33b32e3e2ce1bfe6e1deed62a491e8af",
+      "documents": 372,
+      "tokens_with_eos": 367134,
+      "normalized_payload_bytes": 1723940,
+      "min_document_tokens": 102,
+      "max_document_tokens": 5973,
+      "ordered_token_uint32_le_sha256": "7287940468c85773130b39ce3ba9c414a0196947ace1ebbb34d13cd1cf984634"
+    }
+  },
+  "train_four_epoch_input_token_cap": 73947168,
+  "seconds": 44.8559613000034,
+  "tokenizers_version": "0.23.2"
+}

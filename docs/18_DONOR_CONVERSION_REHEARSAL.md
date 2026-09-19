@@ -193,6 +193,16 @@ development validation previously used by R04, not an untouched final benchmark;
 seven requested benchmark sources and semantic contamination remain unaudited.
 [Recovery data manifest](experiments/2026-09-19-qwen-recovery-data.json).
 
+Exact tokenization of that frozen training file contains **18,486,792 input
+tokens per epoch**, including one EOS per document and no extra separator. The
+four-epoch source limit is therefore **73,947,168 input tokens** per recovery arm;
+input-token counts are distinct from the next-token loss targets. The 372-document
+validation file contains 367,134 tokens, matching the evaluation's 366,762 targets
+after excluding each document's first token. Token byte lengths were checked
+against NFC-normalized UTF-8 payloads, and ordered token-stream hashes are retained
+for cross-runtime verification. No training schedule is selected by this count.
+[Exact recovery token budget](experiments/2026-09-19-qwen-recovery-token-budget.json).
+
 The paired attention initialization is now serialized and audited: **360,087,809
 parameters**, 95.6308% copied/averaged, all finite, with exact save/reload. Its recovery
 configuration changes only the four core mixers from GDN to full attention; outer
