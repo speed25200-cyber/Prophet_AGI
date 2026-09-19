@@ -155,14 +155,14 @@ change and require their own parameter/memory accounting and ablation. These are
 requirements for the next experiment, not evidence that this initialization will
 recover within the available budget.
 
-### Recovery training path implemented; real recovery not yet run
+### Recovery training path and input identities
 
 `scripts/recover_qwen.py` supports CE-only or
 `(1-alpha) CE + alpha T² KL(donor/T || student/T)` from an audited initialization.
 The donor is frozen and evaluated without gradients. KL workspaces are token-chunked;
 both full logits tensors still exist. Step timings include the donor forward and
-reports count donor tokens. No real recovery-quality result or A100 recovery memory
-measurement exists yet.
+reports count donor tokens. Real-size A100 measurements and the initial budgeted
+FP32 recovery run are recorded in [the recovery pilot](19_FP32_RECOVERY_PILOT.md).
 
 The training contract binds the initialization, actual teacher tensor hash, source
 revision/configuration, tokenizer bytes/policy, corpus hashes, objective, schedule
@@ -323,8 +323,8 @@ computation despite zero auxiliary-loss weights. Timings include data loading an
 teacher execution, exclude checkpointing and evaluation, and discard updated
 weights. These short probes establish neither sustained training stability nor
 cached-decoding equivalence. A separate CUDA test compares the custom KL backward
-with dense PyTorch KL in FP32 and BF16; its execution is still pending alongside
-the real-size gate. R04 retains the GPU until its current queue has completed.
+with dense PyTorch KL in FP32 and BF16; both cases subsequently passed on A100,
+as recorded with the complete CUDA gates below.
 
 A separate Colab checkout at `4490d66` is staged under
 `/content/prophet-recovery/gpu-repo` for those checks. The gate, recovery and
@@ -557,7 +557,8 @@ candidate on this prefix, rather than an indexing/state mismatch that persists i
 double arithmetic. It does not isolate which FP32 operation dominates, validate
 other prefixes or GDN, or make double precision a practical deployment solution.
 The normal FP32 cache gate remains failed. Full-forward recovery training has its
-own pending kernel/gradient and memory gate; any later recovery checkpoint still
+own kernel/gradient and memory gate, now passed under the explicit FP32 policy;
+any later recovery checkpoint still
 needs fresh cached-decoding checks before adoption.
 
 The analysis script is pinned to `4490d66`; model imports remain at `8ad19d3`.
