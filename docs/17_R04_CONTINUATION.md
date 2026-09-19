@@ -106,6 +106,11 @@ monitoring, a new verified Drive snapshot, remote flush, then a separate VM-rele
 cell. An interrupted restore is left under `.restoring` and cannot become the
 working run before its audit succeeds. The analysis helpers are independently
 pinned to `a08a15fb493beabb9969c405f01380b28ca185ec`; training stays at `e5720d0`.
+Before a local resume, the notebook audits the published checkpoint and selects
+its manifest entry over any older save at the same step, retaining a manifest
+backup and lower-step fallback entries. It refuses to silently discard a newer,
+unevaluated checkpoint. This compensates for the manifest tie ordering in the
+frozen training revision without changing its numerical implementation.
 
 `scripts/snapshot_r04.py` copies only the checkpoint referenced by the completed
 validation into a fresh directory, audits the destination independently, then
