@@ -316,6 +316,16 @@ comparing CUDA recovery scores, evaluate the unchanged donor and both exact
 initializations in that same BF16-autocast evaluation runtime; the CPU FP32 reports
 above do not substitute for those matched pre-recovery references.
 
+The Colab queue now waits on the actual R04 worker thread and requires both
+training processes to exit successfully and both final snapshots to be audited
+before using the GPU. It verifies the staged revision and script hashes, requires
+all ten CUDA tests to execute without skips, then evaluates donor, attention and
+hybrid sequentially over the same 372 documents with BF16 autocast, sequence 512,
+batch 1 and student depth 5. Commands, process IDs, exit codes and report hashes
+are recorded under `/content/prophet-recovery/gpu-baselines`. Any failed check
+stops the queue with its evidence retained. At launch, R04 process 71160 was still
+live and this queue was waiting; no GPU result or recovery update is implied.
+
 ## Real-size cached decoding: strict gate remains open
 
 The hybrid was checked on the first diagnostic prefix, with 128 positions, fixed
