@@ -185,8 +185,17 @@ development validation previously used by R04, not an untouched final benchmark;
 seven requested benchmark sources and semantic contamination remain unaudited.
 [Recovery data manifest](experiments/2026-09-19-qwen-recovery-data.json).
 
+The paired attention initialization is now serialized and audited: **360,087,809
+parameters**, 95.6308% copied/averaged, all finite, with exact save/reload. Its recovery
+configuration changes only the four core mixers from GDN to full attention; outer
+SWA/NoPE, input reinjection and k=5 stay identical. All **111 common backbone tensors**
+are bit-identical to the hybrid. This is distinct from the earlier all-RoPE prefix
+diagnostic. Auxiliary heads are disabled in recovery and excluded from that equality
+claim. [Attention audit](experiments/2026-09-19-qwen-attention-conversion.json),
+[pair audit](experiments/2026-09-19-qwen-recovery-initialization-pair.json).
+
 Before budgeted recovery, measure actual A100 forward/backward memory and kernel
-agreement, prepare the separate shared-attention initialization, and freeze equal-token
+agreement, and freeze equal-token
 CE/KL comparisons. The command requires explicit learning rates and a fixed total
 schedule. Checkpoints must be snapshotted and remotely verified as in R04.
 
@@ -262,6 +271,10 @@ python scripts/prepare_recovery_data.py --corpus data/fineweb-pilot-v1 \
   --smoke docs/experiments/2026-09-19-qwen-conversion-smoke.json \
   --out /tmp/qwen-recovery-data
 python scripts/recover_qwen.py --help
+python scripts/rehearse_qwen_conversion.py --source data/donor-qwen3-0.6b/source \
+  --core-mixer full_attn --out /tmp/qwen-attention.pt --report /tmp/qwen-attention.json
+python scripts/audit_recovery_pair.py --hybrid /tmp/qwen-initialization.pt \
+  --attention /tmp/qwen-attention.pt --out /tmp/qwen-pair.json
 ```
 
 The hybrid cache audit currently writes its failure report and exits nonzero.

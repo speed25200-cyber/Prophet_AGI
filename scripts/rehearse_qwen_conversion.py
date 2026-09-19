@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create and audit a pinned Qwen3-0.6B hybrid initialization on CPU.
+"""Create and audit a pinned Qwen3-0.6B shared initialization on CPU.
 
 This does not train or adopt the candidate. The donor tokenizer must be retained.
 The BF16 initialization limits workstation memory; recovery quality is unmeasured.
@@ -38,6 +38,8 @@ def main():
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--core-mixer", choices=("gdn", "full_attn"), default="gdn",
+                        help="change only the core mixer; preserve outer positions and reinjection")
     args = parser.parse_args()
     if args.out.exists() or args.report.exists():
         raise FileExistsError("preserve previous initialization and reports")
@@ -50,6 +52,7 @@ def main():
         raise ValueError(differences)
     donor = replace(donor, verified=True)
     cfg = prophet_config_for_donor(donor, loop_k=5)
+    cfg.recurrent.core_pattern = [args.core_mixer]
     cfg.validate()
     plan = plan_conversion(donor, cfg)
     if plan.coverage()["coverage"] < 0.5:
@@ -130,7 +133,8 @@ def main():
         "planned_coverage": plan.coverage(),
         "transfer": asdict(transfer),
         "warnings": cfg.design_warnings(),
-        "scope": "hybrid initialization only; no recovery training, whole-model parity, or quality claim",
+        "scope": "shared initialization only; no recovery training, whole-model parity, or quality claim",
+        "core_mixer": args.core_mixer,
         "tokenizer": "retain the pinned donor tokenizer; Prophet pilot vocabulary is incompatible",
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
