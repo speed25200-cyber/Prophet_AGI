@@ -31,7 +31,7 @@ def main():
         raise FileExistsError("preserve the previous audit")
     from datasets import load_dataset
 
-    allowed = {"mit", "apache-2.0", "cc-by-4.0", "cc-by-sa-4.0"}
+    allowed = {"mit", "apache-2.0", "cc-by-2.0", "cc-by-4.0", "cc-by-sa-4.0"}
     sources = json.loads(args.sources.read_text(encoding="utf-8"))
     result = {
         "complete": False,
