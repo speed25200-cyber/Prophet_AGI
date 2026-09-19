@@ -75,6 +75,9 @@ def main():
     tokenizer = ProphetTokenizer.load(tokenizer_path)
     cfg = ProphetConfig.from_json(Path(__file__).resolve().parent.parent / "configs/prophet_tiny_smoke.json")
     cfg.name = "prophet-real-text-pipeline-smoke"
+    cfg.d_model = 64
+    cfg.mixer.n_heads, cfg.mixer.n_kv_heads, cfg.mixer.head_dim = 4, 2, 16
+    cfg.mixer.linear_heads, cfg.mixer.linear_head_dim = 2, 16
     cfg.frontend.vocab_size = tokenizer.vocab_size
     cfg.heads.n_multi_token_predict = 0
     cfg.heads.confidence_head = False
@@ -105,10 +108,12 @@ def main():
     print("INITIAL_HELDOUT", before, flush=True)
     trainer.train(max_steps=args.steps // 2)
     interrupted_step = trainer.step
+    trainer.ckpt.save(trainer.state_dict(), trainer.step)
     del trainer
     trainer = fresh()
     assert trainer.maybe_resume() and trainer.step == interrupted_step
     trainer.train()
+    trainer.ckpt.save(trainer.state_dict(), trainer.step)
     after = score(trainer.model, heldout, args.device)
     assert trainer.skipped_nonfinite == 0
     report = {

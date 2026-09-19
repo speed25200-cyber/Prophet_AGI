@@ -69,3 +69,16 @@ Next quality work needs a declared token budget within the corpus's repetition c
 matched shared/unshared training, multiple seeds, fixed held-out evaluation, and
 persistent checkpoints for interrupted Colab sessions. Architecture adoption remains
 open until those comparisons are measured.
+
+## Failed smoke attempt retained in the record
+
+The first smoke at revision `dbed68d` used width 256. It reached step 32 on real text
+(LM loss 8.4345), then failed its resume assertion: the new smoke script had disabled
+periodic checkpoints and had not explicitly saved at its interruption boundary.
+`Trainer.train()` does not implicitly write a final checkpoint. No trained weights
+from that attempt were retained, and it supplied no final held-out result.
+
+The script now explicitly saves at the interruption and final boundaries. A CLI test
+executes training, reload and report generation, then verifies the final saved step
+and token count. The pipeline smoke uses width 64 to keep CPU validation inexpensive;
+the measured R04 configurations are unchanged.

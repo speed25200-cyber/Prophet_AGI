@@ -65,3 +65,33 @@ def test_artifact_hashes_and_existing_corpus_preserved(tmp_path):
         assert hashlib.sha256((out / relative).read_bytes()).hexdigest() == metadata["sha256"]
     with pytest.raises(FileExistsError):
         write_pilot(groups, out, {})
+
+
+def test_smoke_cli_writes_intermediate_and_final_checkpoints(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from prophet.data.tokenizer import ProphetTokenizer
+    from prophet.train.checkpoint import CheckpointManager
+
+    corpus, out = tmp_path / "corpus", tmp_path / "run"
+    manifest = write_pilot({"train": [{"text": "abc def ghi " * 30}],
+                            "validation": [{"text": "jkl mno pqr " * 30}]},
+                           corpus, {"source_revision": "test-fixture"})
+    tokenizer_path = corpus / "tokenizer.json"
+    ProphetTokenizer(merges=[], vocab_size=512).save(tokenizer_path)
+    metadata = {"tokenizer_sha256": hashlib.sha256(tokenizer_path.read_bytes()).hexdigest(),
+                "sources": [{"fingerprint": {"files": [manifest["artifacts"][
+                    "train/fineweb-edu/part-00000.jsonl"]["sha256"]]}}]}
+    tokenizer_path.with_suffix(".json.metadata.json").write_text(json.dumps(metadata))
+    subprocess.run([sys.executable, "scripts/pilot_smoke.py", "--corpus", str(corpus),
+                    "--out", str(out), "--steps", "2", "--seq-len", "8", "--batch-size", "1"],
+                   cwd=Path(__file__).resolve().parent.parent, check=True, capture_output=True,
+                   env={**os.environ, "OMP_NUM_THREADS": "2", "MKL_NUM_THREADS": "2"}, timeout=60)
+    report = json.loads((out / "report.json").read_text())
+    assert report["resumed_from_step"] == 1 and report["steps"] == 2
+    state, metadata = CheckpointManager(out / "checkpoints").load_latest()
+    assert metadata.step == state["step"] == 2
+    assert state["tokens_seen"] == 16

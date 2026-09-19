@@ -74,6 +74,12 @@ modèle de 408M.
 le chemin de corpus manquant est restauré et la comparaison R04 est corrigée (375M
 bouclés contre 921M non partagés, 20 blocs exécutés par token). Vérifications et travaux
 restants : [`docs/11_RECOVERY_2026_09.md`](docs/11_RECOVERY_2026_09.md).
+Les pertes par blocs réduisent la mémoire mesurée de 31 % (boucle) et 20 % (témoin)
+sur A100 40 Go, avec huit tests CUDA réussis :
+[`docs/12_LOSS_WORKSPACE.md`](docs/12_LOSS_WORKSPACE.md).
+Un [corpus pilote réel et son tokenizer](docs/13_REAL_TEXT_PILOT.md) sont préparés,
+avec 19 569 documents d'entraînement et 376 de validation séparée. Les comparaisons
+de qualité R04 sur plusieurs graines restent à entraîner. **653 tests CPU passent.**
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
