@@ -5,7 +5,7 @@
 **Une architecture de modèle de langage repensée pour le matériel que l'on possède réellement.**
 
 `1× RTX 5090` · `Mac Studio` · `iPhone 17 Pro`
-Entraîné sur **un seul A100 80GB**.
+Cible d'entraînement : **un seul A100**. Pilote mesuré sur **A100 40 Go**.
 
 </div>
 
@@ -54,7 +54,7 @@ donc un seul modèle qui couvre les trois cibles matérielles.
 | Mac Studio Ultra | 96–512 GB unifiée | ~0.8 TB/s | Prophet (complet, contexte long) |
 | iPhone 17 Pro | ~8 GB unifiée | ~0.06–0.12 TB/s | Prophet-mini (dense, profondeur réduite) |
 
-## Configurations retenues
+## Configurations candidates
 
 Produites par `python scripts/design_search.py`, qui énumère l'espace de conception et ne
 retient que ce qui satisfait **simultanément** la mémoire d'entraînement (un A100 80GB),
@@ -65,8 +65,8 @@ le budget de tokens, la mémoire de l'appareil cible et l'absence de mauvaise al
 | **Prophet-main** | 3.83B | 408M | 24 (k=4) | 16.1B | 5090 / Mac Studio |
 | **Prophet-mini** | 253M | 236M | 14 (k=2) | 52.1B | iPhone 17 Pro |
 
-Rapport de sparsité 9.4× : la capacité d'un modèle de 3.8B pour le coût par token d'un
-modèle de 408M.
+Rapport de sparsité 9.4× entre paramètres stockés et actifs. Ces configurations
+restent des candidates à valider ; ce rapport ne démontre pas leur qualité.
 
 ## État du projet
 
@@ -79,7 +79,12 @@ sur A100 40 Go, avec huit tests CUDA réussis :
 [`docs/12_LOSS_WORKSPACE.md`](docs/12_LOSS_WORKSPACE.md).
 Un [corpus pilote réel et son tokenizer](docs/13_REAL_TEXT_PILOT.md) sont préparés,
 avec 19 569 documents d'entraînement et 376 de validation séparée. Les comparaisons
-de qualité R04 sur plusieurs graines restent à entraîner. **653 tests CPU passent.**
+de qualité R04 sur plusieurs graines restent à entraîner. Le [premier point commun
+à 128 étapes](docs/14_R04_PILOT.md) favorise légèrement le témoin sans partage pour
+cette graine. Le [modèle partagé a ensuite atteint 576 étapes](docs/17_R04_CONTINUATION.md),
+avec une validation complète à 5.1993 nats/token et une reprise vérifiée.
+Les [sources R04](docs/15_R04_SOURCE_AUDIT.md) et les [recoupements avec les benchmarks](docs/16_PILOT_BENCHMARK_OVERLAP.md)
+sont audités séparément. **685 tests CPU passent**, ainsi que huit tests sur A100.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
@@ -153,6 +158,8 @@ python -m pytest tests/ -q                 # les tests GPU sont sautés sans CUD
 Le [notebook de validation A100](notebooks/validate_a100.ipynb) fixe une révision,
 vérifie le noyau puis mesure les deux configurations R04 avec l'optimiseur.
 Les mesures utilisent des tokens aléatoires et n'évaluent pas la qualité du modèle.
+Le [notebook du pilote sur texte réel](notebooks/r04_pilot.ipynb) utilise un corpus
+et une révision figés ; ses résultats et limites figurent dans les rapports R04.
 
 Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant
 qu'elles ne coûtent quoi que ce soit — un budget de tokens surestimé d'un facteur 20, et
