@@ -88,3 +88,40 @@ def test_a_training_step_runs_under_autocast_with_checkpointing():
     )
     history = trainer.train(max_steps=2)
     assert len(history) == 2 and all(torch.isfinite(torch.tensor(h.loss)) for h in history)
+
+
+@pytest.mark.skipif(not HAS_FLA, reason="flash-linear-attention is not installed")
+@pytest.mark.parametrize("autocast", [False, True], ids=["fp32", "bf16"])
+def test_fused_backward_matches_sequential_reference(autocast):
+    """A finite training loss alone cannot establish a correct fused backward."""
+    import copy
+
+    torch.manual_seed(23)
+    reference = GatedDeltaNet(64, n_heads=2, head_dim=16, expand=2,
+                              allow_fused=False, chunk_size=None).cuda()
+    fused = copy.deepcopy(reference)
+    fused.allow_fused = True
+    data = torch.randn(2, 67, 64, device="cuda")  # non-aligned length, K != V
+    target = torch.randn_like(data)
+
+    def run(layer):
+        x = data.clone().requires_grad_()
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=autocast):
+            out = layer(x)
+            loss = (out.float() - target).square().mean()
+        loss.backward()
+        return out.detach(), {"input": x.grad, **{n: p.grad for n, p in layer.named_parameters()}}
+
+    expected, reference_gradients = run(reference)
+    actual, fused_gradients = run(fused)
+    # BF16 rounds intermediate matrix operations; compare their full-tensor L2 error,
+    # avoiding relative errors at individual near-zero coordinates.
+    tolerance = 0.03 if autocast else 0.002
+    pairs = {"output": (expected, actual)}
+    pairs.update({name: (gradient, fused_gradients[name])
+                  for name, gradient in reference_gradients.items()})
+    for name, (left, right) in pairs.items():
+        assert left is not None and right is not None, name
+        assert torch.isfinite(right).all(), name
+        error = (left.float() - right.float()).norm() / left.float().norm().clamp_min(1e-8)
+        assert error <= tolerance, f"{name}: relative L2 {error.item():.6g} > {tolerance}"

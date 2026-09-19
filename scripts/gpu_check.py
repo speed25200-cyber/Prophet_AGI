@@ -32,7 +32,9 @@ from prophet.budget import training_memory  # noqa: E402
 from prophet.config import ProphetConfig  # noqa: E402
 from prophet.modeling.layers import HAS_FLA, GatedDeltaNet  # noqa: E402
 from prophet.modeling.model import ProphetCache, ProphetModel  # noqa: E402
+from prophet.modeling.moe import apply_router_updates  # noqa: E402
 from prophet.train.loss import compute_loss  # noqa: E402
+from prophet.train.optim import build_optimizers  # noqa: E402
 
 
 def _set_fused(model: torch.nn.Module, fused: bool) -> int:
@@ -71,10 +73,11 @@ def kernel_agreement(cfg: ProphetConfig, *, seq_len: int = 256) -> float:
 
 
 def step_cost(cfg: ProphetConfig, *, batch_size: int, seq_len: int, steps: int = 5) -> tuple[float, float]:
-    """(seconds per step, peak GB) for forward + backward at the trainer's policy."""
+    """(seconds per step, peak GB), including actual optimiser state and updates."""
     torch.manual_seed(0)
     model = ProphetModel(cfg).cuda().train()
     model.gradient_checkpointing = True
+    optimizers, _ = build_optimizers(model, mup_base_width=cfg.mup_base_width, d_model=cfg.d_model)
     torch.backends.cuda.matmul.allow_tf32 = True
     ids = torch.randint(0, cfg.frontend.vocab_size, (batch_size, seq_len), device="cuda")
     times = []
@@ -86,6 +89,10 @@ def step_cost(cfg: ProphetConfig, *, batch_size: int, seq_len: int, steps: int =
             out = model(ids, loop_k=cfg.recurrent.train_loop_max if cfg.recurrent.enabled else None)
         terms = compute_loss(out, ids, project=model._project)
         terms.total.backward()
+        apply_router_updates(out.router_stats)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
+        for optimizer in optimizers:
+            optimizer.step()
         model.zero_grad(set_to_none=True)
         torch.cuda.synchronize()
         if i >= 2:  # warm-up excluded
@@ -102,6 +109,9 @@ def main() -> int:
     ap.add_argument("--tolerance", type=float, default=2e-3)
     args = ap.parse_args()
 
+    if args.batch_size < 1 or args.seq_len < 1:
+        ap.error("batch-size and seq-len must be positive")
+
     if not torch.cuda.is_available():
         print("no CUDA device: nothing to check here", file=sys.stderr)
         return 2
@@ -110,6 +120,10 @@ def main() -> int:
     print(f"device     {torch.cuda.get_device_name(0)}")
     print(f"config     {cfg.name}")
     print(f"fla        {'installed' if HAS_FLA else 'MISSING -- the reference scan will be used and a real run is refused'}")
+
+    if not HAS_FLA:
+        print("Install the gpu extra before this gate; a fallback is not fused-kernel evidence.", file=sys.stderr)
+        return 3
 
     if HAS_FLA:
         worst = kernel_agreement(cfg)
