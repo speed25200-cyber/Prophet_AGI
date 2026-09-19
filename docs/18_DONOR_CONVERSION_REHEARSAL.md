@@ -326,6 +326,19 @@ are recorded under `/content/prophet-recovery/gpu-baselines`. Any failed check
 stops the queue with its evidence retained. At launch, R04 process 71160 was still
 live and this queue was waiting; no GPU result or recovery update is implied.
 
+A second queue waits for those three successful CUDA evaluations before running
+the real-weight gates. Its diagnostic settings are fixed across the two cores and
+objectives: batch 1, sequence 512, accumulation 1, depth 5, loss chunks 128, peak
+Muon LR 0.001 and AdamW LR 0.00003; KL uses alpha 0.5 and temperature 1. Each
+successful gate performs two warmup and three measured updates and discards the
+weights. These rates are not a selected recovery recipe. The four probes have a
+combined 1,200-second wall-time limit. A failed CE gate suppresses the same
+initialization's KL probe while allowing the independent core to be checked;
+failure reports remain failures. At launch both queues were waiting and the
+unshared R04 process remained live at step 3,856. Colab displayed 16.95 remaining
+compute units, approximately 1.6 hours at its displayed consumption rate, so the
+remaining multi-seed and recovery budget cannot be assumed available.
+
 ## Real-size cached decoding: strict gate remains open
 
 The hybrid was checked on the first diagnostic prefix, with 128 positions, fixed
