@@ -50,9 +50,21 @@ def _set_fused(model: torch.nn.Module, fused: bool) -> int:
     return n
 
 
-def kernel_agreement(cfg: ProphetConfig, *, seq_len: int = 256) -> float:
+def kernel_agreement(cfg: ProphetConfig, *, seq_len: int = 256, seed: int = 0) -> float:
+    """Compare against an FP32 reference regardless of the caller's TF32 policy."""
+    matmul, convolution = torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    try:
+        return _kernel_agreement(cfg, seq_len=seq_len, seed=seed)
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = matmul
+        torch.backends.cudnn.allow_tf32 = convolution
+
+
+def _kernel_agreement(cfg: ProphetConfig, *, seq_len: int, seed: int) -> float:
     """Max abs difference between fused and reference paths on logits and states."""
-    torch.manual_seed(0)
+    torch.manual_seed(seed)
     model = ProphetModel(cfg).cuda().eval()
     ids = torch.randint(0, cfg.frontend.vocab_size, (2, seq_len), device="cuda")
     worst = 0.0
