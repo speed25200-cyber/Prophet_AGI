@@ -1,0 +1,9 @@
+NUMERICAL_GATE fp32 True
+NUMERICAL_GATE bf16 True
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 4358.75it/s]
+step       1  loss  9.3840  lr 1.56e-05  warmup       0.00M tok    1.17s  loss/donor_kl=6.111  loss/mtp=10.14  loss/total=7.747  train/grad_norm=219.5
+step       2  loss  9.1778  lr 3.13e-05  warmup       0.00M tok    0.70s  loss/donor_kl=6.093  loss/mtp=9.951  loss/total=7.636  train/grad_norm=193
+step       3  loss  9.1666  lr 4.69e-05  warmup       0.00M tok    0.41s  loss/donor_kl=5.953  loss/mtp=9.854  loss/total=7.56  train/grad_norm=193.4
+step       4  loss  8.1713  lr 6.25e-05  warmup       0.00M tok    0.42s  loss/donor_kl=5.341  loss/mtp=9.038  loss/total=6.756  train/grad_norm=145.1
+step       5  loss  7.8577  lr 7.81e-05  warmup       0.00M tok    0.41s  loss/donor_kl=5.749  loss/mtp=8.86  loss/total=6.803  train/grad_norm=127.6
+RECOVERY_GPU_GATE True

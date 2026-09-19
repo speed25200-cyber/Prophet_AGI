@@ -4,7 +4,12 @@ import torch
 
 from prophet.modeling.layers import GatedDeltaNet
 from prophet.train.distillation import state_sha256
-from scripts.gate_qwen_recovery import finite_state, measure_updates, training_kernel_agreement
+from scripts.gate_qwen_recovery import (
+    diagnostic_gdn_fp32,
+    finite_state,
+    measure_updates,
+    training_kernel_agreement,
+)
 from tests.test_distillation import fresh
 from tests.test_training import ProphetModel, tiny_model_config
 
@@ -44,6 +49,33 @@ def test_numerical_gate_detects_a_wrong_fused_backward():
     assert report["tensors"]["logits"]["passed"]
     assert not report["passed"]
     assert any(not v["passed"] for k, v in report["tensors"].items() if k != "logits")
+
+
+def test_gdn_precision_probe_matches_explicit_fp32_without_changing_other_instances():
+    import copy
+
+    torch.manual_seed(83)
+    reference = GatedDeltaNet(16, n_heads=2, head_dim=4, expand=2, allow_fused=False)
+    probe = copy.deepcopy(reference)
+    before = state_sha256(probe)
+    assert diagnostic_gdn_fp32(probe) == 1
+    data = torch.randn(1, 9, 16).to(torch.bfloat16)
+    expected_input = data.float().requires_grad_()
+    actual_input = data.clone().requires_grad_()
+    expected = reference(expected_input)
+    expected.square().mean().backward()
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        actual = probe(actual_input)
+        untouched = reference(data)
+    actual.square().mean().backward()
+    assert actual.dtype == torch.float32 and untouched.dtype == torch.bfloat16
+    torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+    torch.testing.assert_close(actual_input.grad, expected_input.grad.to(torch.bfloat16), atol=0, rtol=0)
+    for left, right in zip(reference.parameters(), probe.parameters(), strict=True):
+        torch.testing.assert_close(right.grad, left.grad, atol=0, rtol=0)
+    assert state_sha256(probe) == before
+    with pytest.raises(ValueError, match="requires GDN"):
+        diagnostic_gdn_fp32(torch.nn.Linear(16, 16))
 
 
 @pytest.mark.parametrize("enabled", [False, True], ids=["ce", "kl"])

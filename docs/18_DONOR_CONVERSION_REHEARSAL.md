@@ -303,8 +303,8 @@ agreement, and freeze equal-token
 CE/KL comparisons. The command requires explicit learning rates and a fixed total
 schedule. Checkpoints must be snapshotted and remotely verified as in R04.
 
-`scripts/gate_qwen_recovery.py` prepares that measurement; it has not yet been run
-on the A100. It verifies the source, initialization and prepared training-file
+`scripts/gate_qwen_recovery.py` performs that measurement; its first actual A100
+results are recorded below. It verifies the source, initialization and prepared training-file
 hashes before checking full-model training logits and parameter gradients against
 the sequential GDN reference. Both passes use the same random seed, fixed depth,
 full backpropagation and activation checkpointing on a 67-token training prefix.
@@ -357,6 +357,58 @@ failure reports remain failures. At launch both queues were waiting and the
 unshared R04 process remained live at step 3,856. Colab displayed 16.95 remaining
 compute units, approximately 1.6 hours at its displayed consumption rate, so the
 remaining multi-seed and recovery budget cannot be assumed available.
+
+### Matched CUDA baselines and first real-weight gates
+
+After both R04 processes completed and their snapshots were audited, all **ten
+CUDA tests passed in 8.99 seconds**, with no skips. This includes the two custom
+KL value/backward comparisons. The frozen `4490d66` recovery checkout then scored
+all three models on the same 372 documents, 366,762 targets and 1,722,551 scored
+bytes, with BF16 autocast at sequence 512 / batch 1 and student depth 5:
+
+| Model before recovery | Nats/token | Bits/byte | Evaluation seconds |
+|---|---:|---:|---:|
+| Unchanged Qwen donor | 3.158220782 | 0.970128513 | 44.35 |
+| Shared attention initialization | 9.221580100 | 2.832644837 | 46.13 |
+| Shared GDN initialization | 11.310018566 | 3.474162275 | 138.13 |
+
+Timings include tokenization, CE and possible compilation; they are not controlled
+throughput measurements. All downloaded document identities, denominators and
+loss aggregates match the independently checked CPU protocol. These CUDA reports,
+rather than CPU losses, are the baseline for any BF16 recovery comparison.
+[Full CUDA reports and ten-test JUnit record](experiments/2026-09-19-qwen-colab-gpu/baselines).
+
+The **GDN full-model FP32 gradient check passes**, with maximum logit absolute
+error 0.000238895 and maximum relative L2 across compared tensors 0.000159713.
+The **BF16 check fails**: logit relative L2 is 0.051686 versus the unchanged 0.03
+bound, maximum logit error is 1.78125, and 148 tensor comparisons fail. The largest
+gradient relative L2 is 0.731887 on the first prelude query-normalization weight.
+The close scalar losses (10.879602 reference, 10.878942 fused) do not certify the
+gradients. No hybrid optimizer update ran; its KL probe was suppressed after this
+failure. The much smaller CUDA unit tests do not clear this real-model failure.
+
+The attention core has no GDN comparison; both its CE and KL update probes pass:
+
+| Objective | Mean synchronized step, 3 timed samples | Peak CUDA allocation |
+|---|---:|---:|
+| CE | 0.3660 s | 5.5054 GiB |
+| CE plus donor KL | 0.4210 s | 6.6156 GiB |
+
+Each ran two warmup and three timed updates (2,560 input tokens), with finite
+model/optimizer tensors and zero skipped updates. The KL teacher remained frozen
+and unchanged. All probe weights were discarded. These short checks do not
+establish sustained recovery quality or clear either candidate's cache gate.
+[Gate reports including the retained GDN failure](experiments/2026-09-19-qwen-colab-gpu/gates).
+The complete 17-file evidence ZIP is 102,129 bytes, SHA256
+`dd188f7d16b89fb7b3a73af476eb5c86629212da7b2fd853929bd20f37dc651f`.
+
+The next diagnostic disables autocast for the complete GDN mixer on a disposable
+gate instance, including projections and convolution. The normal recurrence was
+already FP32; this tests its input/output rounding boundaries as well. Other
+modules and all acceptance thresholds stay unchanged. The explicit
+`--gdn-fp32-diagnostic` flag records the override and cannot certify the default
+BF16 policy. A CPU test checks its outputs and gradients against explicit FP32,
+unchanged weights, and preservation of the original instance's autocast behavior.
 
 ## Real-size cached decoding: strict gate remains open
 

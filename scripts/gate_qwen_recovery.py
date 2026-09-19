@@ -51,6 +51,25 @@ def tensor_agreement(reference, actual, *, tolerance, max_absolute=None):
             "relative_l2_tolerance": tolerance, "absolute_tolerance": max_absolute}
 
 
+def diagnostic_gdn_fp32(model):
+    """Override only this disposable instance; do not change production/config defaults.
+
+    The normal kernel already accumulates its recurrence in FP32. This probe also
+    keeps the GDN projections, convolution and output projection out of autocast,
+    isolating whether rounding at the mixer's boundaries explains the full-model
+    mixed-precision disagreement. Other modules retain their original policy.
+    """
+    layers = [m for m in model.modules() if isinstance(m, GatedDeltaNet)]
+    if not layers:
+        raise ValueError("GDN FP32 diagnostic requires GDN mixers")
+    for layer in layers:
+        def forward(x, *, state=None, _original=layer.forward):
+            with torch.autocast(device_type=x.device.type, enabled=False):
+                return _original(x.float(), state=state)
+        layer.forward = forward
+    return len(layers)
+
+
 def training_kernel_agreement(model, ids, *, loop_k, autocast, chunk_tokens=128):
     """Both passes use the same training RNG and full BPTT with checkpointing.
 
@@ -191,6 +210,8 @@ def main():
     parser.add_argument("--adamw-lr", type=float, required=True)
     parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--gdn-fp32-diagnostic", action="store_true",
+                        help="disable autocast inside GDN on this discarded gate instance only")
     args = parser.parse_args()
     if args.out.exists():
         raise FileExistsError("preserve previous gate evidence")
@@ -223,6 +244,7 @@ def main():
     model.load_state_dict(payload["model"], strict=True)
     del payload
     model.cuda()
+    diagnostic_layers = diagnostic_gdn_fp32(model) if args.gdn_fp32_diagnostic else 0
     report = {"complete": False, "passed": False, "protocol": "qwen-recovery-gpu-gate-v1",
               "initialization_sha256": initialization_sha, "config": cfg.to_dict(),
               "donor_config": source_config, "donor_weights_sha256": recovery.WEIGHTS_SHA256,
@@ -233,7 +255,10 @@ def main():
               "triton": version("triton"), "triton_f32_default": os.environ["TRITON_F32_DEFAULT"],
               "device_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
               "objective": args.objective, "numerical": {},
-              "scope": "initialized training path and measured allocation; not cached decoding or quality"}
+              "gdn_fp32_diagnostic": bool(diagnostic_layers),
+              "diagnostic_gdn_layers": diagnostic_layers,
+              "scope": "initialized training path and measured allocation; not cached decoding or quality"
+              + ("; diagnostic FP32 GDN override, not production BF16 acceptance" if diagnostic_layers else "")}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     recovery.write_report(args.out, report)
     for autocast in (False, True):
