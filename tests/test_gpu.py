@@ -83,7 +83,8 @@ def test_fused_prefill_matches_incremental_decode():
     assert torch.allclose(full[:, 25:], torch.cat(steps, 1), atol=2e-3, rtol=1e-3)
 
 
-def test_a_training_step_runs_under_autocast_with_checkpointing():
+@pytest.mark.parametrize("loss_chunk_tokens", [None, 7])
+def test_a_training_step_runs_under_autocast_with_checkpointing(loss_chunk_tokens):
     """bf16 autocast, activation checkpointing, Muon + AdamW, on the real device."""
     from prophet.data.streaming import StreamingLoader, sources_from_iterables
     from prophet.train.loop import TrainConfig, Trainer
@@ -95,11 +96,35 @@ def test_a_training_step_runs_under_autocast_with_checkpointing():
     trainer = Trainer(
         model, loader,
         TrainConfig(total_steps=2, seq_len=64, batch_size=2, device="cuda",
+                    loss_chunk_tokens=loss_chunk_tokens,
                     checkpoint_dir="/tmp/prophet-gpu-check", activation_checkpointing=True),
         model_config=cfg,
     )
     history = trainer.train(max_steps=2)
     assert len(history) == 2 and all(torch.isfinite(torch.tensor(h.loss)) for h in history)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_chunked_loss_cuda_values_and_gradients(dtype):
+    from prophet.train.chunked_loss import token_losses
+
+    torch.manual_seed(27)
+    x = torch.randn(2, 67, 2048, device="cuda", dtype=dtype).requires_grad_()
+    ref = x.detach().clone().requires_grad_()
+    targets = torch.randint(0, 2048, (2, 67), device="cuda")
+    targets[0, ::3] = -100
+    weights = torch.randn(2, 67, device="cuda")
+    ce, z = token_losses(x, targets, 13)
+    expected_ce = torch.nn.functional.cross_entropy(
+        ref.float().reshape(-1, 2048), targets.flatten(), reduction="none",
+    ).view_as(targets)
+    expected_z = ref.float().logsumexp(-1).square()
+    torch.testing.assert_close(ce, expected_ce)
+    torch.testing.assert_close(z, expected_z)
+    ((ce * weights).mean() + 1e-4 * z.mean()).backward()
+    ((expected_ce * weights).mean() + 1e-4 * expected_z.mean()).backward()
+    error = (x.grad.float() - ref.grad.float()).norm() / ref.grad.float().norm()
+    assert error < (0.006 if dtype == torch.bfloat16 else 2e-6), error
 
 
 @pytest.mark.skipif(not HAS_FLA, reason="flash-linear-attention is not installed")

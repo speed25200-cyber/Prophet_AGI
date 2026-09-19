@@ -335,7 +335,8 @@ def test_training_reduces_loss_on_a_learnable_task(tmp_path):
     assert history[-1].loss < history[0].loss * 0.5
 
 
-def test_resumed_run_matches_uninterrupted_run(tmp_path):
+@pytest.mark.parametrize("loss_chunk_tokens", [None, 7])
+def test_resumed_run_matches_uninterrupted_run(tmp_path, loss_chunk_tokens):
     """A resumed run must be indistinguishable from one that was never interrupted.
 
     This covers model weights, optimiser state, the schedule position, the data cursor,
@@ -346,7 +347,8 @@ def test_resumed_run_matches_uninterrupted_run(tmp_path):
         torch.manual_seed(1234)
         model = ProphetModel(tiny_model_config())
         cfg = TrainConfig(total_steps=20, log_every=1000, checkpoint_every=10,
-                          peak_lr_muon=0.01, checkpoint_dir=str(directory))
+                          peak_lr_muon=0.01, checkpoint_dir=str(directory),
+                          loss_chunk_tokens=loss_chunk_tokens)
         return Trainer(model, make_loader(), cfg, model_config=tiny_model_config(),
                        on_log=lambda m: None)
 
@@ -364,6 +366,25 @@ def test_resumed_run_matches_uninterrupted_run(tmp_path):
 
     for key, value in resumed.model.state_dict().items():
         assert torch.allclose(value, expected[key], atol=1e-6), f"diverged at {key}"
+
+
+@pytest.mark.parametrize("saved_chunk,current_chunk", [(None, 7), (7, None), (7, 9)])
+def test_resume_rejects_changed_loss_algorithm_before_mutation(tmp_path, saved_chunk, current_chunk):
+    cfg = tiny_model_config()
+    trainer = Trainer(
+        ProphetModel(cfg), make_loader(),
+        TrainConfig(total_steps=5, checkpoint_dir=str(tmp_path), loss_chunk_tokens=current_chunk),
+        model_config=cfg, on_log=lambda m: None,
+    )
+    state = trainer.state_dict()
+    state["loss_chunk_tokens"] = saved_chunk
+    state["step"] = 3
+    before = {key: value.clone() for key, value in trainer.model.state_dict().items()}
+    with pytest.raises(ValueError, match="loss_chunk_tokens"):
+        trainer.load_state_dict(state)
+    assert trainer.step == 0
+    for key, value in trainer.model.state_dict().items():
+        assert torch.equal(value, before[key])
 
 
 def test_resume_restores_the_token_counter(tmp_path):

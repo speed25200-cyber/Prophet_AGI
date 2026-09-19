@@ -74,6 +74,8 @@ class TrainConfig:
     confidence_weight: float | None = None
     """Same rule, from ``heads.confidence_loss_weight``."""
     z_loss_weight: float = 1e-4
+    loss_chunk_tokens: int | None = None
+    """Optional CE/z-loss workspace bound. None preserves the original autograd path."""
     ponder_weight: float = 0.0
     max_consecutive_nonfinite: int = 20
     """A non-finite loss or gradient norm skips the optimiser step (the batch is still
@@ -158,6 +160,12 @@ class Trainer:
         self.cfg = cfg
         self.model_config = model_config
         self.tokenizer = tokenizer
+        if cfg.loss_chunk_tokens is not None and (
+            not isinstance(cfg.loss_chunk_tokens, int)
+            or isinstance(cfg.loss_chunk_tokens, bool)
+            or cfg.loss_chunk_tokens < 1
+        ):
+            raise ValueError("loss_chunk_tokens must be a positive integer or None")
         self._action = bool(model_config is not None and model_config.heads.action_head)
         if cfg.segment_by_bos and tokenizer is None:
             raise ValueError("segment_by_bos needs the tokenizer: Trainer(..., tokenizer=...)")
@@ -268,9 +276,12 @@ class Trainer:
             # not on the A100, where it matters.
             "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             "config": self.model_config.to_dict() if self.model_config else None,
+            "loss_chunk_tokens": self.cfg.loss_chunk_tokens,
         }
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
+        if state.get("loss_chunk_tokens") != self.cfg.loss_chunk_tokens:
+            raise ValueError("checkpoint loss_chunk_tokens does not match the current trainer")
         version = state.get("trainer_state_version")
         if version is not None and (
             not isinstance(version, int)
@@ -424,6 +435,7 @@ class Trainer:
                     batch,
                     mtp_weight=self.cfg.mtp_weight,
                     z_loss_weight=self.cfg.z_loss_weight,
+                    loss_chunk_tokens=self.cfg.loss_chunk_tokens,
                     ponder_weight=self.cfg.ponder_weight,
                     ponder_target_steps=self.cfg.ponder_target_steps,
                     project=getattr(self.model, "_project", None),

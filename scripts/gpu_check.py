@@ -89,7 +89,8 @@ def _kernel_agreement(cfg: ProphetConfig, *, seq_len: int, seed: int) -> float:
     return worst
 
 
-def step_cost(cfg: ProphetConfig, *, batch_size: int, seq_len: int, steps: int = 5) -> tuple[float, float]:
+def step_cost(cfg: ProphetConfig, *, batch_size: int, seq_len: int, steps: int = 5,
+              loss_chunk_tokens: int | None = None) -> tuple[float, float]:
     """(seconds per step, peak GiB), including actual optimiser state and updates."""
     torch.manual_seed(0)
     model = ProphetModel(cfg).cuda().train()
@@ -104,7 +105,7 @@ def step_cost(cfg: ProphetConfig, *, batch_size: int, seq_len: int, steps: int =
         start = time.perf_counter()
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             out = model(ids, loop_k=cfg.recurrent.train_loop_max if cfg.recurrent.enabled else None)
-        terms = compute_loss(out, ids, project=model._project)
+        terms = compute_loss(out, ids, project=model._project, loss_chunk_tokens=loss_chunk_tokens)
         terms.total.backward()
         apply_router_updates(out.router_stats)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
@@ -125,11 +126,14 @@ def main() -> int:
     ap.add_argument("--tokens", type=float, default=16.1e9, help="run budget, for the hours estimate")
     ap.add_argument("--tolerance", type=float, default=2e-3)
     ap.add_argument("--steps", type=int, default=5, help="measured steps after two warm-up steps")
+    ap.add_argument("--loss-chunk-tokens", type=int, default=None)
     ap.add_argument("--json-output", type=Path, help="save hardware, revision and measurements")
     args = ap.parse_args()
 
     if args.batch_size < 1 or args.seq_len < 1 or args.steps < 1:
         ap.error("batch-size, seq-len and steps must be positive")
+    if args.loss_chunk_tokens is not None and args.loss_chunk_tokens < 1:
+        ap.error("loss-chunk-tokens must be positive")
 
     if not torch.cuda.is_available():
         print("no CUDA device: nothing to check here", file=sys.stderr)
@@ -152,7 +156,8 @@ def main() -> int:
             print("Stop here. Fix the layout contract in GatedDeltaNet.forward before training.", file=sys.stderr)
             return 1
 
-    seconds, peak = step_cost(cfg, batch_size=args.batch_size, seq_len=args.seq_len, steps=args.steps)
+    seconds, peak = step_cost(cfg, batch_size=args.batch_size, seq_len=args.seq_len, steps=args.steps,
+                              loss_chunk_tokens=args.loss_chunk_tokens)
     tokens_per_step = args.batch_size * args.seq_len
     tps = tokens_per_step / seconds
     hours = args.tokens / tps / 3600
@@ -173,6 +178,7 @@ def main() -> int:
             "triton_f32_default": os.environ.get("TRITON_F32_DEFAULT", "tf32"),
             "device_memory_gib": torch.cuda.get_device_properties(0).total_memory / 1024**3,
             "batch_size": args.batch_size, "seq_len": args.seq_len, "measured_steps": args.steps,
+            "loss_chunk_tokens": args.loss_chunk_tokens,
             "kernel_max_abs_error": worst, "seconds_per_step": seconds, "tokens_per_second": tps,
             "kernel_loop_k": cfg.recurrent.default_loop_k if cfg.recurrent.enabled else None,
             "peak_allocated_gib": peak, "predicted_gib": predicted.total_gb,

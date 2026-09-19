@@ -28,6 +28,7 @@ from torch import Tensor
 
 from prophet.modeling.action import ActionTargets
 from prophet.modeling.model import ProphetOutput
+from prophet.train.chunked_loss import shifted_token_losses
 
 __all__ = ["LossTerms", "compute_loss"]
 
@@ -46,7 +47,8 @@ class LossTerms:
 
 
 def _shifted_cross_entropy(
-    logits: Tensor, targets: Tensor, offset: int, *, per_token: bool = False
+    logits: Tensor, targets: Tensor, offset: int, *, per_token: bool = False,
+    chunk_tokens: int | None = None,
 ) -> Tensor:
     """Cross entropy predicting the token ``offset`` positions ahead.
 
@@ -56,6 +58,12 @@ def _shifted_cross_entropy(
     """
     if offset >= logits.shape[1]:
         return logits.new_zeros(()) if not per_token else logits.new_zeros(logits.shape[:2])
+    if chunk_tokens is not None:
+        ce, _ = shifted_token_losses(logits, targets, offset, chunk_tokens)
+        if per_token:
+            return ce
+        mask = targets[:, offset:] != -100
+        return ce[mask].mean() if mask.any() else ce.sum() * 0.0
     pred = logits[:, :-offset].reshape(-1, logits.shape[-1])
     gold = targets[:, offset:].reshape(-1)
     ce = F.cross_entropy(pred.float(), gold, ignore_index=-100, reduction="none")
@@ -66,7 +74,7 @@ def _shifted_cross_entropy(
 
 
 def _shifted_cross_entropy_per_position(
-    logits: Tensor, targets: Tensor, offset: int
+    logits: Tensor, targets: Tensor, offset: int, *, chunk_tokens: int | None = None,
 ) -> tuple[Tensor, Tensor]:
     """Unreduced shifted loss and validity mask, both shaped ``(batch, positions)``."""
     if offset >= logits.shape[1]:
@@ -75,6 +83,9 @@ def _shifted_cross_entropy_per_position(
     pred = logits[:, :-offset]
     gold = targets[:, offset:]
     valid = gold != -100
+    if chunk_tokens is not None:
+        loss, _ = shifted_token_losses(logits, targets, offset, chunk_tokens)
+        return loss, valid
     loss = F.cross_entropy(
         pred.reshape(-1, pred.shape[-1]).float(),
         gold.reshape(-1),
@@ -123,6 +134,7 @@ def compute_loss(
     ptr_weight: float = 0.0,
     gate_weight: float = 0.0,
     jumped_lm_weight: float = 1.0,
+    loss_chunk_tokens: int | None = None,
 ) -> LossTerms:
     """Combine every training objective into one scalar.
 
@@ -134,14 +146,20 @@ def compute_loss(
     down-weights the LM loss on *jumped* tokens -- call syntax and names a typed runtime
     emits for the model -- to ``jumped_lm_weight``.
     """
+    chunked_ce = chunked_z = None
+    if loss_chunk_tokens is not None:
+        chunked_ce, chunked_z = shifted_token_losses(output.logits, targets, 1, loss_chunk_tokens)
     if action_targets is not None and jumped_lm_weight != 1.0:
-        ce = _shifted_cross_entropy(output.logits, targets, 1, per_token=True)
+        ce = chunked_ce if chunked_ce is not None else _shifted_cross_entropy(output.logits, targets, 1, per_token=True)
         # The loss at position t predicts t+1, so a jumped *target* token is what gets
         # the small weight.
         jumped = action_targets.jumped[:, 1:].to(ce.dtype)
         weight = torch.where(jumped > 0, torch.full_like(ce, jumped_lm_weight), torch.ones_like(ce))
         weight = weight * (targets[:, 1:] != -100).to(ce.dtype)
         lm = (ce * weight).sum() / weight.sum().clamp_min(1.0)
+    elif chunked_ce is not None:
+        valid = targets[:, 1:] != -100
+        lm = chunked_ce[valid].mean() if valid.any() else chunked_ce.sum() * 0.0
     else:
         lm = _shifted_cross_entropy(output.logits, targets, 1)
     total = lm
@@ -150,7 +168,7 @@ def compute_loss(
     mtp_loss: Tensor | None = None
     if output.mtp_logits:
         terms = [
-            _shifted_cross_entropy(logits, targets, 2 + j)
+            _shifted_cross_entropy(logits, targets, 2 + j, chunk_tokens=loss_chunk_tokens)
             for j, logits in enumerate(output.mtp_logits)
         ]
         mtp_loss = torch.stack(terms).mean()
@@ -161,7 +179,7 @@ def compute_loss(
     if z_loss_weight:
         # Penalise the log-partition function, which is what actually grows when logits
         # drift; squaring keeps it symmetric.
-        z = torch.logsumexp(output.logits.float(), dim=-1).pow(2).mean()
+        z = chunked_z.mean() if chunked_z is not None else torch.logsumexp(output.logits.float(), dim=-1).pow(2).mean()
         total = total + z_loss_weight * z
         metrics["loss/z"] = z.item()
 
@@ -198,7 +216,7 @@ def compute_loss(
         if project is not None and output.hidden_per_step:
             for i, hidden in enumerate(output.hidden_per_step):
                 step_loss, valid = _shifted_cross_entropy_per_position(
-                    project(hidden), targets, 1
+                    project(hidden), targets, 1, chunk_tokens=loss_chunk_tokens,
                 )
                 # E[p * CE] preserves which examples benefit from which depth.
                 # mean(p) * mean(CE) only learns a global schedule.
