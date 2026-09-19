@@ -1,8 +1,6 @@
 """GPU-only checks: the first tests to run on the A100, skipped everywhere else.
 
-The fused delta-rule kernel (flash-linear-attention) has never executed in this
-repository: no GPU, no ``fla``. Its layout contract is written down in
-``GatedDeltaNet.forward`` and nothing else vouches for it. These tests are the vouching:
+The fused delta-rule kernel's layout contract lives in ``GatedDeltaNet.forward``:
 the kernel must match the reference scan on outputs *and* on the state it hands back,
 and a chunked prefill must match token-by-token decode under the kernel, before any
 budgeted run starts. ``scripts/train.py`` refuses a real run without ``fla`` for exactly
@@ -20,6 +18,20 @@ from prophet.modeling.model import ProphetCache, ProphetModel
 
 CUDA = torch.cuda.is_available()
 pytestmark = pytest.mark.skipif(not CUDA, reason="needs a CUDA device")
+
+
+@pytest.fixture(autouse=True)
+def strict_reference_precision():
+    """Trainer enables TF32; don't let that contaminate later FP32 references."""
+    matmul = torch.backends.cuda.matmul.allow_tf32
+    convolution = torch.backends.cudnn.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    try:
+        yield
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = matmul
+        torch.backends.cudnn.allow_tf32 = convolution
 
 
 def _model(cfg_path: str = "configs/prophet_tiny_smoke.json") -> ProphetModel:
