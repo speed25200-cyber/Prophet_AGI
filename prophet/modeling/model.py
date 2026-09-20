@@ -407,6 +407,16 @@ class ProphetModel(nn.Module):
                     ):
                         module.weight.mul_(scale)
 
+        # Create after ordinary initialization so enabling this experimental module
+        # does not change the base model's initialization. The fixed addition stays
+        # explicit: a zero correction also preserves its arithmetic under autocast.
+        self.core_input_adapter = (
+            nn.Linear(2 * d, d, bias=False)
+            if cfg.recurrent.input_adapter == "residual_linear" else None
+        )
+        if self.core_input_adapter is not None:
+            nn.init.zeros_(self.core_input_adapter.weight)
+
     @property
     def gradient_checkpointing(self) -> bool:
         return any(getattr(b, "gradient_checkpointing", False) for s in self.sections.values() for b in s)
@@ -691,6 +701,8 @@ class ProphetModel(nn.Module):
                 ctx = contextlib.nullcontext() if grad_on else torch.no_grad()
                 with ctx:
                     step_in = h + injected if r.inject_input_each_step else h
+                    if self.core_input_adapter is not None:
+                        step_in = step_in + self.core_input_adapter(torch.cat((h, injected), dim=-1))
                     if self.iteration_embed is not None:
                         row = min(i, self.iteration_embed.num_embeddings - 1)
                         step_in = step_in + self.iteration_embed.weight[row].to(step_in.dtype)

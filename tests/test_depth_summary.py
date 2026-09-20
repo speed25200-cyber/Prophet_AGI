@@ -130,3 +130,37 @@ def test_corrupt_or_unmatched_reports_rejected(case):
         v["identity"]["plan_sha256"] = "different"
     with pytest.raises(ValueError):
         summarize(*args)
+
+
+def reinjection_fixture():
+    args = fixture()
+    args[2]["experiment"] = "r04-input-adapter-v1"
+    for arm, report in zip(("fixed_sum", "learned_mix"), args[:2], strict=True):
+        report["identity"].update(arm=arm, protocol="r04-input-adapter-v1")
+        report["depth_history"] = [2, 3, 5, 6]
+        report["depth_counts"] = {str(k): 1 for k in (2, 3, 5, 6)}
+    return args
+
+
+def test_reinjection_screen_requires_useful_extra_depth():
+    args = reinjection_fixture()
+    report = summarize(*args, experiment="reinjection")
+    assert report["seed0_screen_passed"]
+    assert report["protocol"] == "r04-input-adapter-screen-v1"
+    assert set(report["arms"]) == {"fixed_sum", "learned_mix"}
+    assert report["learned_mix_k6_minus_k4_ce"] == pytest.approx(-0.1)
+    args[1]["results"]["6"] = evaluation(6, (4.01, 4.01))
+    assert not summarize(*args, experiment="reinjection")["seed0_screen_passed"]
+
+
+@pytest.mark.parametrize("case", ["depth_order", "old_protocol", "wrong_arm"])
+def test_reinjection_screen_rejects_unmatched_experiment(case):
+    args = reinjection_fixture()
+    if case == "depth_order":
+        args[0]["depth_history"].reverse()
+    elif case == "old_protocol":
+        args[1]["identity"]["protocol"] = "r04-depth-adaptation-v2"
+    else:
+        args[1]["identity"]["arm"] = "uniform2to6"
+    with pytest.raises(ValueError):
+        summarize(*args, experiment="reinjection")

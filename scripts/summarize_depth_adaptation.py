@@ -65,15 +65,22 @@ def score(result, reference, depth):
     return values
 
 
-def summarize(fixed, variable, plan, plan_sha256, reference):
+def summarize(fixed, variable, plan, plan_sha256, reference, *, experiment="depth"):
+    require(experiment in ("depth", "reinjection"), "unknown screen experiment")
+    reinjection = experiment == "reinjection"
+    arms = ("fixed_sum", "learned_mix") if reinjection else ("fixed4", "uniform2to6")
+    protocol = "r04-input-adapter-v1" if reinjection else "r04-depth-adaptation-v2"
+    label = "learned_mix" if reinjection else "variable"
+    if reinjection:
+        require(plan["experiment"] == protocol, "screen plan protocol differs")
     summaries = {}
     identities = []
-    for arm, report in (("fixed4", fixed), ("uniform2to6", variable)):
+    for arm, report in zip(arms, (fixed, variable), strict=True):
         identity = report["identity"]
         require(
             identity["arm"] == arm
             and identity["mode"] == "train"
-            and identity["protocol"] == "r04-depth-adaptation-v2"
+            and identity["protocol"] == protocol
             and identity["numerical_policy"]["deterministic_algorithms"]
             and identity["plan_sha256"] == plan_sha256
             and identity["parent_checkpoint"] == plan["parent_checkpoint"],
@@ -90,7 +97,7 @@ def summarize(fixed, variable, plan, plan_sha256, reference):
         )
         history = report["depth_history"]
         require(len(history) == plan["steps_each"], "incomplete depth history")
-        allowed = {4} if arm == "fixed4" else {2, 3, 4, 5, 6}
+        allowed = {4} if not reinjection and arm == arms[0] else {2, 3, 4, 5, 6}
         require(set(history) <= allowed, "training depth outside planned support")
         counts = {str(key): value for key, value in Counter(history).items()}
         require(report["depth_counts"] == counts, "depth counts differ")
@@ -104,6 +111,11 @@ def summarize(fixed, variable, plan, plan_sha256, reference):
         }
     require(identities[0] == identities[1], "paired run identities differ")
     require(fixed["loader_step"] == variable["loader_step"], "paired loader cursors differ")
+    if reinjection:
+        require(
+            fixed["depth_history"] == variable["depth_history"],
+            "paired component training depths differ",
+        )
 
     rows4, rows6 = (variable["results"][str(k)]["documents"] for k in (4, 6))
     tokens = np.array([row["scored_tokens"] for row in rows4], dtype=np.int64)
@@ -112,23 +124,25 @@ def summarize(fixed, variable, plan, plan_sha256, reference):
     draws = np.random.Generator(np.random.PCG64(0)).integers(0, len(rows4), (10000, len(rows4)))
     samples = delta[draws].sum(axis=1) / tokens[draws].sum(axis=1)
     interval = np.quantile(samples, [0.025, 0.975], method="linear").tolist()
-    f, v = (summaries[arm]["scores"] for arm in ("fixed4", "uniform2to6"))
+    f, v = (summaries[arm]["scores"] for arm in arms)
     ratio = v["6"]["bits_per_byte"] / v["4"]["bits_per_byte"]
     control_ratio = v["4"]["bits_per_byte"] / f["4"]["bits_per_byte"]
     checks = {
-        "variable_k6_improves_own_k4_by_at_least_half_percent": ratio <= 0.995,
+        f"{label}_k6_improves_own_k4_by_at_least_half_percent": ratio <= 0.995,
         "paired_ce_interval_upper_below_zero": interval[1] < 0,
-        "variable_k4_within_one_percent_of_control_k4": control_ratio <= 1.01,
-        "variable_k6_improves_control_k6": v["6"]["bits_per_byte"] < f["6"]["bits_per_byte"],
+        f"{label}_k4_within_one_percent_of_control_k4": control_ratio <= 1.01,
+        f"{label}_k6_improves_control_k6": v["6"]["bits_per_byte"] < f["6"]["bits_per_byte"],
     }
     return {
-        "protocol": "r04-depth-adaptation-screen-v1",
+        "protocol": "r04-input-adapter-screen-v1"
+        if reinjection
+        else "r04-depth-adaptation-screen-v1",
         "plan_sha256": plan_sha256,
         "identity_without_arm": identities[0],
         "arms": summaries,
-        "variable_k6_over_k4_bpb": ratio,
-        "variable_k4_over_control_k4_bpb": control_ratio,
-        "variable_k6_minus_k4_ce": float(delta.sum() / tokens.sum()),
+        f"{label}_k6_over_k4_bpb": ratio,
+        f"{label}_k4_over_control_k4_bpb": control_ratio,
+        f"{label}_k6_minus_k4_ce": float(delta.sum() / tokens.sum()),
         "paired_document_95pct_ce_interval": interval,
         "bootstrap": {"draws": 10000, "seed": 0, "rng": "PCG64", "quantile": "linear"},
         "checks": checks,

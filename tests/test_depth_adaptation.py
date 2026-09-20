@@ -7,6 +7,7 @@ Data packing, checkpoint hashing, stochastic depth, training and evaluation are 
 import copy
 import json
 import sys
+from dataclasses import replace
 
 import pytest
 import torch
@@ -55,7 +56,7 @@ def assert_equal(left, right):
         assert left == right
 
 
-def fixture(tmp_path, monkeypatch, device):
+def fixture(tmp_path, monkeypatch, device, experiment=None):
     corpus = tmp_path / "corpus"
     for split, text in [("train", "abc def " * 32), ("validation", "a new text")]:
         folder = corpus / split / "fineweb-edu"
@@ -130,9 +131,19 @@ def fixture(tmp_path, monkeypatch, device):
         "parameters_each": sum(p.numel() for p in trainer.model.parameters()),
         "recipe": {"muon_lr": 0.001, "adamw_lr": 0.00003, "weight_decay": 0.1, "grad_clip": 1.0},
     }
+    factory = driver.adaptation_config if experiment is None else experiment.config_factory
+    arms = ("fixed4", "uniform2to6") if experiment is None else experiment.arms
+    if experiment is not None:
+        experiment = replace(experiment, plan_dir=plan_dir)
+        plan["experiment"] = experiment.protocol
+        with torch.device("meta"):
+            plan["parameters_each"] = {
+                arm: sum(p.numel() for p in ProphetModel(factory(cfg.to_dict(), arm)).parameters())
+                for arm in arms
+            }
     driver.write_json(plan_dir / "protocol.json", plan)
-    for arm in ["fixed4", "uniform2to6"]:
-        driver.adaptation_config(cfg.to_dict(), arm).to_json(plan_dir / f"{arm}.json")
+    for arm in arms:
+        factory(cfg.to_dict(), arm).to_json(plan_dir / f"{arm}.json")
     monkeypatch.setattr(driver, "PLAN_DIR", plan_dir)
     monkeypatch.setattr(driver, "code_identity", lambda: {"revision": "fixture"})
     monkeypatch.setattr(driver, "verify_pilot", lambda path: provenance)
@@ -162,7 +173,7 @@ def fixture(tmp_path, monkeypatch, device):
                 str(session),
             ],
         )
-        driver.main()
+        driver.main(experiment=experiment)
 
     return run, parent_state, parent_run, plan
 
@@ -236,6 +247,19 @@ def test_changed_numerical_policy_cannot_resume(tmp_path, monkeypatch):
     driver.write_json(manifest, changed)
     with pytest.raises(ValueError, match="another adaptation experiment"):
         run(output, "fixed4", 1)
+
+
+def test_historical_plan_without_new_default_field_still_runs(tmp_path, monkeypatch):
+    run, parent, _, _ = fixture(tmp_path, monkeypatch, "cpu")
+    path = driver.PLAN_DIR / "fixed4.json"
+    old = json.loads(path.read_bytes())
+    del old["recurrent"]["input_adapter"]
+    driver.write_json(path, old)
+    output = tmp_path / "run"
+    run(output, "fixed4", 1)
+    initial = torch.load(output / "checkpoints/ckpt_slot0.pt", weights_only=True)
+    assert_equal(initial["model"], parent["model"])
+    assert initial["config"]["recurrent"]["input_adapter"] == "none"
 
 
 def test_cuda_policy_requires_workspace_before_start(monkeypatch):

@@ -210,6 +210,13 @@ class RecurrentCoreConfig:
     inject_input_each_step: bool = True
     """Re-add the prelude output at every iteration. Without it, deep recurrence drifts
     away from the input and the loop stops being conditioned on the prompt."""
+    input_adapter: Literal["none", "residual_linear"] = "none"
+    """Optional shared correction W[h, input] to the original h + input reinjection.
+
+    W starts at zero, preserving the original forward function when parent weights
+    are copied. Costs 2*d_model**2 weights, applied once per loop; adds no cache.
+    Experimental and disabled by default. A useful additional-depth gain is unproven.
+    """
     state_init: Literal["zeros", "randn", "prelude"] = "randn"
     """Initial core state **during training**. Random init is a regulariser: it forces the
     loop to converge to the same answer from any starting point, which is what makes the
@@ -575,6 +582,13 @@ class ProphetConfig:
         rather than an A100-hour.
         """
         errors: list[str] = []
+
+        if self.recurrent.input_adapter not in ("none", "residual_linear"):
+            errors.append("recurrent.input_adapter must be none or residual_linear")
+        if self.recurrent.input_adapter != "none" and not (
+            self.recurrent.enabled and self.recurrent.inject_input_each_step
+        ):
+            errors.append("recurrent.input_adapter requires recurrence and input reinjection")
 
         if self.d_model % self.mixer.n_heads != 0 and self.mixer.head_dim is None:
             errors.append(

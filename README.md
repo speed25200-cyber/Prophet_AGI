@@ -158,6 +158,10 @@ Les [observations internes des deux modèles](docs/24_R04_RECURRENCE_OBSERVATION
 sur seize documents, ne montrent pas de convergence de tous les états de tokens vers une même direction.
 L'amplitude des états augmente avec les boucles, sans que cela identifie à lui seul
 la cause de l'échec. Aucune nouvelle architecture n'est adoptée.
+Le prochain [essai de réinjection apprise](docs/25_R04_LEARNED_REINJECTION.md)
+ajoute une correction initialement nulle au mélange entre entrée et état récurrent.
+Le composant et le protocole sont préparés, désactivés par défaut ; aucun résultat
+d'entraînement GPU n'est encore disponible pour cette variante.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

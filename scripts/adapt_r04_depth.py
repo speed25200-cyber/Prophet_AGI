@@ -16,7 +16,8 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from dataclasses import asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from importlib.metadata import version
 from pathlib import Path
 
@@ -38,6 +39,18 @@ from scripts.run_r04_pilot import sha256, verify_pilot, write_json  # noqa: E402
 
 PLAN_DIR = ROOT / "docs/experiments/2026-09-20-r04-depth-adaptation-plan"
 DEPTHS = [4, 1, 2, 6, 8]
+
+
+@dataclass(frozen=True)
+class Experiment:
+    """An explicit component experiment using the same audited training engine."""
+
+    plan_dir: Path
+    arms: tuple[str, str]
+    protocol: str
+    config_factory: Callable
+    load_weights: Callable
+    entrypoint: Path
 
 
 def require(condition, message):
@@ -261,12 +274,15 @@ def profile_max_depth(trainer, *, steps=3):
     }
 
 
-def main():
+def main(*, experiment: Experiment | None = None):
+    plan_dir = PLAN_DIR if experiment is None else experiment.plan_dir
+    arms = ("fixed4", "uniform2to6") if experiment is None else experiment.arms
+    config_factory = adaptation_config if experiment is None else experiment.config_factory
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--parent-run", type=Path, required=True)
     parser.add_argument("--corpus", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--arm", choices=["fixed4", "uniform2to6"], required=True)
+    parser.add_argument("--arm", choices=arms, required=True)
     parser.add_argument("--mode", choices=["preflight", "train"], default="train")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda")
     parser.add_argument("--max-session-steps", type=int, default=64)
@@ -285,17 +301,28 @@ def main():
         "positive session limits required",
     )
     numerical_policy = configure_numerics(args.device)
-    plan = json.loads((PLAN_DIR / "protocol.json").read_bytes())
+    plan = json.loads((plan_dir / "protocol.json").read_bytes())
     source_identity = code_identity()
+    if experiment is not None:
+        require(plan["experiment"] == experiment.protocol, "experiment protocol differs")
+        source_identity["entrypoint_sha256"] = sha256(experiment.entrypoint)
     state, parent, original = load_parent(args.parent_run, plan)
+    if "parent_report_sha256" in plan:
+        require(
+            sha256(args.parent_run / f"evaluation-step-{state['step']:06d}.json")
+            == plan["parent_report_sha256"],
+            "parent report bytes differ",
+        )
     provenance = verify_pilot(args.corpus)
     require(provenance == parent["data"], "pilot data differs from parent")
     runtime = runtime_for(args.device)
     require(runtime == parent["runtime"], "runtime differs from original R04")
-    cfg = adaptation_config(parent["config"], args.arm)
+    cfg = config_factory(parent["config"], args.arm)
     require(
-        json.loads(json.dumps(cfg.to_dict()))
-        == json.loads((PLAN_DIR / f"{args.arm}.json").read_bytes()),
+        cfg.to_dict()
+        == ProphetConfig.from_dict(
+            json.loads((plan_dir / f"{args.arm}.json").read_bytes())
+        ).to_dict(),
         "configuration differs from plan",
     )
     steps, batch, length = plan["steps_each"], plan["batch_size"], plan["seq_len"]
@@ -320,16 +347,22 @@ def main():
     parent_loader_step = state["loader"]["step"]
     torch.manual_seed(parent["seed"])
     model = ProphetModel(cfg)
-    model.load_state_dict(state["model"], strict=True)
+    if experiment is None:
+        model.load_state_dict(state["model"], strict=True)
+    else:
+        experiment.load_weights(model, state["model"])
+    parameters = plan["parameters_each"]
+    if isinstance(parameters, dict):
+        parameters = parameters[args.arm]
     require(
-        sum(p.numel() for p in model.parameters()) == plan["parameters_each"],
+        sum(p.numel() for p in model.parameters()) == parameters,
         "parameter count differs",
     )
     del state
     identity = {
-        "protocol": "r04-depth-adaptation-v2",
+        "protocol": "r04-depth-adaptation-v2" if experiment is None else experiment.protocol,
         "numerical_policy": numerical_policy,
-        "plan_sha256": sha256(PLAN_DIR / "protocol.json"),
+        "plan_sha256": sha256(plan_dir / "protocol.json"),
         "parent_checkpoint": plan["parent_checkpoint"],
         "parent_loader_sha256": parent_loader_sha,
         "data": provenance,

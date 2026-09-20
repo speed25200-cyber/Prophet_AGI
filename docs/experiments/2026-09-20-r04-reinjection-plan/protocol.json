@@ -1,0 +1,75 @@
+{
+  "status": "protocol_and_component_only_not_launched",
+  "experiment": "r04-input-adapter-v1",
+  "parent_checkpoint": {
+    "step": 4096,
+    "slot": 1,
+    "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+    "bytes": 3233905547,
+    "extra": {}
+  },
+  "parent_report_sha256": "a3af3e2f1c831b5ebf4e0c5d571b83b63029fb4dd142dc8c8bc98f4b9603354d",
+  "parameters_each": {
+    "fixed_sum": 374689648,
+    "learned_mix": 381112176
+  },
+  "new_parameters": 6422528,
+  "input_equation": "fixed_sum: h + e; learned_mix: h + e + W concat(h,e), shared W initialized to zero, no bias",
+  "training_depth_policy_both": "uniform integer 2 through 6, full gradients through all visited loops",
+  "steps_each": 512,
+  "batch_size": 8,
+  "seq_len": 2048,
+  "additional_tokens_each": 8388608,
+  "original_training_corpus_tokens": 19419613,
+  "cumulative_tokens_each": 75497472,
+  "cumulative_corpus_passes_each": 3.887691891697327,
+  "seed": 0,
+  "recipe": {
+    "muon_lr": 0.001,
+    "adamw_lr": 3e-05,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "schedule": "512-step WSD, 100-step warmup and 18% decay"
+  },
+  "evaluation_depths": [
+    1,
+    2,
+    4,
+    6,
+    8
+  ],
+  "primary_gate": "All: learned_mix k6/own k4 BPB <=0.995; paired 95% CE(k6)-CE(k4) interval upper <0; learned_mix k4/fixed_sum k4 BPB <=1.01; learned_mix k6 BPB < fixed_sum k6 BPB.",
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 0,
+    "rng": "PCG64",
+    "quantile": "linear",
+    "unit": "paired whole documents, token-weighted CE"
+  },
+  "gate_maximum_seconds": 1800,
+  "paired_training_maximum_seconds": 5400,
+  "incremental_maximum_gpu_hours": 2.0,
+  "previous_measured_pair_seconds": 2920.515582674001,
+  "allocation": "Narrow additional R04 hypothesis test capped at two A100-hours including gates, separate from the unfunded generic 24-hour depth-ablation line. No authorization of a production run or the whole 300-hour illustrative plan is inferred. Recheck actual Colab availability before launch.",
+  "warm_start": "Both arms start again from the original step4096 weights and loader cursor, with new optimizers and identical schedules; neither continues a completed step512 adaptation. Reset seed after construction and parent loading. Only the declared zero adapter weight may be missing from the parent.",
+  "required_gates": [
+    "Exact initial ordinary-versus-zero-adapter predictions on CUDA with the real batch/sequence shape; original full-validation k4 reproduced in both arms",
+    "Finite actual-size k6 forward/backward and optimizer updates, allocated peak below 90% of actual A100 capacity",
+    "Both actual-size eight-step uninterrupted versus one-plus-seven separate-process checkpoints identical in every weight/optimizer/RNG/loader/history/contract value and per-document result",
+    "Preselected continuous prefixes only; no intermediate quality-based recipe change or early stop"
+  ],
+  "stop": "Stop on changed provenance, nonfinite state, failed numerical/memory/restart gate, exceeded queue deadline or exceeded four-pass corpus ceiling; preserve evidence, no automatic retraining.",
+  "sizing": {
+    "fixed_sum": {
+      "estimated_worst_k6_training_gib": 7.687589943408966,
+      "estimated_k4_forward_flops_per_token_at_context2048": 1932168496.0,
+      "attention_and_recurrent_cache_gib_at_k4_context2048": 0.005615234375
+    },
+    "learned_mix": {
+      "estimated_worst_k6_training_gib": 8.689054787158966,
+      "estimated_k4_forward_flops_per_token_at_context2048": 1983548720.0,
+      "attention_and_recurrent_cache_gib_at_k4_context2048": 0.005615234375
+    }
+  },
+  "limitations": "Component ablation adds 1.714% parameters and per-loop matrix work; it is not parameter- or FLOP-matched and cannot isolate all causes of any gain. Development data already guided R&D, with known benchmark overlaps. A seed-zero pass warrants fresh seeds and capability/held-out confirmation, not adoption. Budget estimates and device bandwidth ceilings are not measured speed or memory."
+}
