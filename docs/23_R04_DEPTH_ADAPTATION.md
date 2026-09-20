@@ -1,7 +1,7 @@
 # 23 — Does training across depths make additional loops useful?
 
-**Status: final frozen-model depth sweep completed; matched adaptation protocol
-budgeted, training driver and actual CUDA gates still pending. No new architecture
+**Status: final frozen-model depth sweep completed; matched adaptation driver
+implemented and CPU restart tests passed; actual CUDA gates still pending. No new architecture
 or training policy is adopted.**
 
 ## Why this experiment
@@ -80,6 +80,9 @@ Each arm starts a new optimizer and 512-step WSD schedule: Muon 0.001, AdamW
 and 18% decay. This is a warm start, **not** exact continuation of the previous
 optimizer. The original loader cursor continues in both arms. Within each arm,
 interruptions must restore model, optimizer, loader and CPU/CUDA RNG exactly.
+Both warm starts reset RNG to the parent's seed (zero), after model construction;
+they do not inherit the old optimizer's RNG position. Their own subsequent
+checkpoints preserve RNG without resetting it on resume.
 
 The cumulative per-model input budget is 75,497,472 tokens, or 3.8877 corpus
 passes, below the existing four-pass limit. The corpus is the original R04 pilot,
@@ -124,3 +127,47 @@ biases and output normalization that were already in the models. Exact meta-devi
 construction now matches the corrected budget at **374,689,648** and **920,679,616**.
 No weights or topology change follows; the rounded 59.3% reduction remains the
 same. Generated adaptation configurations use the corrected count.
+
+## Driver and operational checks
+
+`scripts/adapt_r04_depth.py` binds the run to the published parent checkpoint,
+generated config, plan hash, clean Git revision, driver hash, original CUDA
+runtime and corpus fingerprint. It hashes and restricted-loads the exact published
+slot, retains the original packing cursor, and verifies k=4 validation before
+training. It records actual depth per step in the checkpoint and training log.
+A changed arm or contract cannot silently resume an existing output directory.
+
+The preflight mode uses a separate disposable copy, performs three real-shape
+optimizer updates at k=6 with full gradients, and checks finite gradients/weights
+and peak allocated memory below 90% of the actual GPU capacity. It never modifies
+the original checkpoint or any training arm. Its peak excludes non-PyTorch
+allocations; the remaining capacity is a reserve, not a measured allocation.
+
+CPU CLI tests use a miniature model and real local text. They verify parent
+weights and loader transfer with an empty new optimizer, exact uninterrupted
+versus interrupted weights/optimizer/RNG/loader/depth history, changed-arm
+rejection, idempotent completion and continuation of an interrupted final depth
+evaluation without further training. Both arms also have actual CUDA cases that
+must pass without skips before the real preflight. Separate tests reject changed
+parent publication/bytes and prove the policy leaves model topology unchanged.
+The current local result is four passed and two CUDA skips; this does not count
+as an A100 gate.
+
+```bash
+# Use a fresh output directory for every arm and disposable preflight.
+python scripts/adapt_r04_depth.py --parent-run <final-loop-run> \
+  --corpus <original-pilot> --arm uniform2to6 --mode preflight --out <preflight>
+# After actual CUDA restart tests and both preflights pass:
+python scripts/adapt_r04_depth.py --parent-run <final-loop-run> \
+  --corpus <original-pilot> --arm uniform2to6 --out <new-training-arm> \
+  --max-session-steps 64
+# Repeat the same command/contract to continue toward 512 total updates.
+```
+
+Periodic and end-of-session checkpoints use the existing two-slot atomic writer.
+The driver stops on the first nonfinite update and preserves the last completed
+checkpoint. Full final evaluation is written incrementally with `complete=false`
+until every planned depth is scored; an interrupted evaluation resumes from the
+same weights. Running a completed command again leaves its report unchanged.
+The queue, rather than the individual CLI, enforces the paired 5,400-second ceiling
+and the ordering of the external CUDA tests/preflights before training.
