@@ -80,8 +80,22 @@ Evidence: [preparation manifest and integration oracle](experiments/2026-09-20-a
 [oracle](experiments/2026-09-20-arc-recovery-protocol/donor-scoring-oracle.json),
 [source parity](experiments/2026-09-20-arc-recovery-protocol/source-parity.json).
 
-The complete five-model GPU evaluation has **not run yet**. It must wait until
-the four recovery arms and their post-training GPU cache jobs release the GPU.
+The related local suite passes **62 tests with five CUDA skips**. Full CI at
+`6d36dce` passes **793 CPU tests with 15 CUDA-only skips** in 84.47 seconds.
+On Colab, all twelve scorer tests also pass and preparation reproduces the local
+manifest and items SHA256 exactly. The seven-file preparation archive is 6,481
+bytes, SHA256 `6d21a697a57fe756492aaf62f5d1202780e6140f4ef396d098336fcaaee369a0`.
+Its tests, manifest and exact executed queue source were independently checked
+after download; [Colab evidence](experiments/2026-09-20-arc-recovery-protocol/colab/queue-at-ready.json).
+
+The complete five-model GPU evaluation is **queued, not yet run**. The live worker
+has completed CPU preparation and waits until the four recovery arms and their
+post-training GPU cache jobs release the GPU. It uses an isolated worktree pinned
+to `6d36dce`, requires the exact frozen input manifest and checkpoint identities,
+and limits each model process to 30 minutes. Unexpected preceding queue failures
+stop evaluation; complete numerical cache failures remain recorded and still allow
+this separate full-forward, uncached capability measurement. The training checkout
+remains unchanged at `467d7c8`.
 All models will use the same device/precision policy; CPU oracle numbers are not
 mixed into that comparison. No answer-quality conclusion follows from preparation.
 
