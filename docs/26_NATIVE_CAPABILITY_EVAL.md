@@ -80,6 +80,16 @@ arms. Accuracy, normalized accuracy, answer BPB, disagreements and uncertainty
 must all be reported. There is no success threshold chosen from these outcomes,
 no early quality-based stop and no claim of cross-seed confidence.
 
+The analysis preselects nine contrasts per metric: k6 minus k4 for each model;
+learned minus fixed reinjection at each depth; and each adaptation minus the
+original parent at each depth. It resamples 10,000 whole questions jointly
+(PCG64 seed zero, linear quantiles). Gold CE/BPB use ratios of summed losses and
+denominators, preserving answer length weighting. Accuracy differences use
+percentage points, with both correctness disagreements and changed predictions
+reported. The 95% intervals are descriptive and unadjusted for multiplicity.
+The analyzer refuses partial sets, changed identities or arithmetic contracts,
+and recomputes every ranking, tie count and aggregate before resampling.
+
 The original overlap screen found no long lexical ARC matches but excluded short
 items and did not test semantic overlap. This is not a benchmark-clean claim.
 ARC tests basic multiple-choice science knowledge and inference, not open-ended
@@ -92,8 +102,11 @@ architectural adoption.
 ```bash
 python scripts/prepare_arc_native_eval.py --items ORIGINAL_ARC --tokenizer PILOT/tokenizer.json --out FRESH_NATIVE_ARC
 python scripts/eval_arc_native.py --run FROZEN_RUN --step 512 --loop-k 4 --items FRESH_NATIVE_ARC --tokenizer PILOT/tokenizer.json --out FRESH_REPORT.json
+python scripts/summarize_arc_native.py --reports ALL_SIX_REPORTS --items FRESH_NATIVE_ARC --out FRESH_ANALYSIS.json
 ```
 
 The original parent uses `--step 4096`; repeat each model at `--loop-k 6`.
 The launch queue must enforce the total deadline. Individual commands refuse
 existing reports and verify inputs, checkpoint provenance and the planned shapes.
+The analyzer expects names `original4096-k4.json`, `fixed_sum-k4.json`,
+`learned_mix-k4.json` and their k6 counterparts (optionally gzipped).
