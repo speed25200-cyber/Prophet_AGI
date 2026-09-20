@@ -16,7 +16,6 @@ TRAINING = "f5a7d71be1723324e36a7be2546c940a69de9fdf"
 ANALYSIS = "7f74a23038eef534bd6e828503c3abaa5ac663db"
 GATE_SHA = "e1935e51e12858e4d04099b34331501c824508f4f989fc667035fc3c54c02529"
 sys.path.insert(0, str(ROOT))
-from scripts.summarize_depth_adaptation import PLAN, REFERENCE, summarize  # noqa: E402
 
 
 def raw(name, root=HERE):
@@ -75,8 +74,16 @@ def main():
     summary_source = subprocess.check_output(
         ["git", "show", ANALYSIS + ":scripts/summarize_depth_adaptation.py"], cwd=ROOT
     )
-    assert (ROOT / "scripts/summarize_depth_adaptation.py").read_text() == summary_source.decode()
-    original = json.loads(REFERENCE.read_bytes())
+    # Recompute with the exact recorded analysis even when the shared engine grows
+    # new, separately identified experiments. Never silently use today's algorithm.
+    namespace = {
+        "__name__": "_frozen_depth_screen",
+        "__file__": str(ROOT / "scripts/summarize_depth_adaptation.py"),
+    }
+    exec(compile(summary_source, namespace["__file__"], "exec"), namespace)
+    summarize = namespace["summarize"]
+    plan_path = namespace["PLAN"]
+    original = json.loads(namespace["REFERENCE"].read_bytes())
     audit = read("analysis/final-state-audits.json")
     assert audit["passed"] and set(audit["arms"]) == {"fixed4", "uniform2to6"}
     reports, durations = {}, {}
@@ -127,8 +134,8 @@ def main():
     summary = summarize(
         reports["fixed4"],
         reports["uniform2to6"],
-        json.loads(PLAN.read_bytes()),
-        digest(PLAN.read_bytes()),
+        json.loads(plan_path.read_bytes()),
+        digest(plan_path.read_bytes()),
         original,
     )
     summary["input_files"] = {

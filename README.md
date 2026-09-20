@@ -160,8 +160,9 @@ L'amplitude des états augmente avec les boucles, sans que cela identifie à lui
 la cause de l'échec. Aucune nouvelle architecture n'est adoptée.
 Le prochain [essai de réinjection apprise](docs/25_R04_LEARNED_REINJECTION.md)
 ajoute une correction initialement nulle au mélange entre entrée et état récurrent.
-Le composant et le protocole sont préparés, désactivés par défaut ; aucun résultat
-d'entraînement GPU n'est encore disponible pour cette variante.
+Le composant reste désactivé par défaut. Les contrôles CUDA à taille réelle et
+les reprises exactes passent dans les deux variantes ; la comparaison de 512
+mises à jour chacune est en cours. Aucun gain de qualité n'est encore établi.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

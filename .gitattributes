@@ -13,6 +13,7 @@
 /scripts/gate_r04_input_adapter.py text eol=lf
 /scripts/summarize_reinjection.py text eol=lf
 /docs/experiments/2026-09-20-r04-reinjection-plan/*.txt whitespace=-blank-at-eof
+/docs/experiments/2026-09-20-r04-reinjection-gates/*.txt whitespace=-blank-at-eof
 # Preserve original Windows console bytes referenced by the diagnostic manifest.
 /docs/experiments/2026-09-20-qwen-sharing-scout/residual-spectrum/*.txt -text whitespace=cr-at-eol,-blank-at-eof
 /docs/experiments/2026-09-20-qwen-adjacent-and-calibration-plan/budget/budget-proxy-config.json -text whitespace=cr-at-eol

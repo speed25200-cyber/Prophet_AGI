@@ -1,6 +1,7 @@
 # R04: controlled learned input reinjection
 
-Status: component and executable protocol prepared; no GPU training result yet.
+Status: full-size CUDA gates passed; the paired 512-step continuation is running.
+No final quality result is available yet.
 This is an experimental option, disabled in all existing model configurations.
 
 ## Why this experiment
@@ -111,9 +112,37 @@ The full local suite passes **858 tests with 21 skips**. Component tests cover
 unchanged initial predictions/base gradients, an effective adapter update, learned
 full-versus-cached decoding, checkpointed backward, old-config compatibility,
 budget accounting and both miniature CLI interrupted restarts. The new screen
-rejects unequal paired depth histories and mislabeled old experiments. CUDA cases
-remain pending; neither CPU restart equivalence nor these test counts establish
+rejects unequal paired depth histories and mislabeled old experiments. The local
+run skips CUDA; neither CPU restart equivalence nor these test counts establish
 full-size GPU determinism or scientific improvement.
+
+The actual A100 run at revision `dce35abc439fdeeb8f1482b1219dee3cc242c267`
+subsequently passes all **52 targeted CPU/CUDA tests without skips**. Initial
+hidden states and full logits match exactly at k4 and k6 for the real 8 x 2,048
+batch. Both arms reproduce every original k4 validation document before training.
+Their three k6 preflight updates remain finite, using 13,444,140,032 peak allocated
+bytes for the control and 14,214,843,392 for the adapter, below the 90% limit on
+the 42,405,855,232-byte device.
+
+Both full-size interrupted restart gates pass. Eight continuous updates exactly
+equal one plus seven in separate processes: 315 tensors / 867,172,946 elements
+for the control, and 317 tensors / 880,018,002 elements for the adapter, including
+optimizer state. All other checkpoint values and document evaluations agree.
+Both sampled histories are `[6, 6, 5, 2, 5, 6, 4, 5]`. The gate queue finishes in
+949.40 seconds under its 1,800-second limit; all fourteen process handles exit zero.
+
+The [48-source export](experiments/2026-09-20-r04-reinjection-gates/export-manifest.json)
+is downloaded and independently [verified locally](experiments/2026-09-20-r04-reinjection-gates/verification.json),
+including source identities, terminal PIDs, baseline rows, paired logs and
+evaluations. Its ZIP is 353,122 bytes with SHA256
+`b3a61f1e268994132b2f566fa10d2eb7f2fb6bb93848166efaab5c75f7a8c935`.
+Tensor equality was checked by the A100 auditor; the local verifier does not
+reload those weights. These are numerical/restart results, not quality results.
+
+Only after all gates passed, the preselected continuous prefixes started the
+paired 512-step continuation, with the unchanged `dce35ab` source and 5,400-second
+pair-wide ceiling. A [final evidence verifier](experiments/2026-09-20-r04-reinjection-final/verify.py)
+is prepared to recompute the screen after completion; no final receipt exists yet.
 
 ```bash
 python scripts/gate_r04_input_adapter.py --parent-run PARENT --corpus CORPUS --out equality.json
