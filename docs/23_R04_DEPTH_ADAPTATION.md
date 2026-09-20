@@ -366,3 +366,11 @@ python scripts/summarize_depth_adaptation.py \
   --variable <uniform2to6>/evaluation-step-000512.json \
   --out <fresh-summary.json>
 ```
+
+The [local final-evidence verifier](experiments/2026-09-20-r04-depth-adaptation-final/verify.py)
+is prepared while the paired run is still active. Once its exported evidence is
+available, it checks source hashes, terminal process records, checkpoint metadata,
+continuity with the previously verified eight-step prefixes, all 512 training
+records and exact agreement with a locally recomputed final screen. Its formatting,
+lint and syntax checks pass; execution against the final evidence remains pending.
+It does not reload checkpoint tensors or repeat GPU inference.
