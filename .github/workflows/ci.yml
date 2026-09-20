@@ -29,6 +29,7 @@ jobs:
         run: |
           python -m compileall -q prophet tests scripts
           ruff check \
+            scripts/prepare_fresh_pilot.py tests/test_fresh_pilot.py \
             scripts/prepare_arc_native_eval.py scripts/eval_arc_native.py scripts/summarize_arc_native.py tests/test_native_choice_eval.py tests/test_native_choice_summary.py prophet/eval/choices.py \
             scripts/adapt_r04_reinjection.py scripts/build_r04_reinjection_plan.py scripts/gate_r04_input_adapter.py scripts/summarize_reinjection.py tests/test_input_adapter.py tests/test_reinjection_adaptation.py \
             prophet/config.py prophet/budget.py prophet/data prophet/convert prophet/eval/__init__.py \

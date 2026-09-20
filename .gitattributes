@@ -29,3 +29,4 @@
 /docs/experiments/2026-09-20-r04-depth-adaptation-plan/worst-k6-sizing-only.json -text whitespace=cr-at-eol
 /docs/experiments/2026-09-20-r04-depth-adaptation-plan/*.txt whitespace=-blank-at-eof
 /docs/experiments/2026-09-20-activation-fit/calibration-resumed.txt whitespace=-blank-at-eol
+/docs/experiments/2026-09-20-fresh-pilot/*.json -text whitespace=cr-at-eol

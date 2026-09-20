@@ -57,6 +57,29 @@ set as consumed once it informs a decision, rather than repeatedly calling it a
 fresh holdout. Training, its numerical/restart gates and new-seed confirmation
 remain separate work.
 
+The command completed locally at `1748981809bba8317414e0fe619644d3c1c546da`.
+After the original 20,204-row prefix, it scanned 21,739 raw rows and rejected
+1,563 through the prior-data/ARC index: 1,141 shared long spans, 109 short phrases,
+312 prior URL variants and one exact normalized duplicate. The remaining 20,176
+rows yielded 20,000 selected documents after 175 quality/length rejections and
+one internal duplicate. Eight train documents then overlapped the new validation
+set. The published corpus contains **19,600 train and 392 validation documents**,
+with 84,374,663 and 1,703,816 UTF-8 text bytes respectively. Its exclusion index
+contains 14,265,304 distinct span hashes, covering all 19,945 original documents
+and all 2,376 ARC questions with every choice. Of 11,877 ARC fragments, 6,352 have
+fewer than five words; the stated short-fragment limitation remains material.
+
+The [frozen manifest](experiments/2026-09-20-fresh-pilot/manifest.json) retains the
+inputs, counters and exact output hashes. Both CI runs at `1748981` pass. No
+model has been trained or scored on this new corpus.
+Counting with the unchanged parent tokenizer, including one EOS per document,
+gives **19,038,456 train tokens and 383,685 validation tokens**. The
+[count report](experiments/2026-09-20-fresh-pilot/token-counts.json) binds corpus
+and tokenizer hashes; [publication verification](experiments/2026-09-20-fresh-pilot/verification.json)
+independently checks artifact bytes, hashes and row counts. This verification
+does not rerun the lexical exclusion index. The original Windows JSON bytes are
+preserved in Git. The new corpus has not consumed any GPU training budget.
+
 The memory index holds hashes of old-corpus spans; its RAM use scales with the
 protected corpus. This bounded-pilot implementation is not a scalable web-corpus
 index. Failed or interrupted preparation must be inspected before a new output

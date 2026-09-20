@@ -1,0 +1,79 @@
+{
+  "format_version": 2,
+  "source": "HuggingFaceFW/fineweb-edu",
+  "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+  "subset": "sample-10BT",
+  "source_split": "train",
+  "source_license": "odc-by",
+  "attribution_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu/tree/87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+  "code_revision": "1748981809bba8317414e0fe619644d3c1c546da",
+  "seed": 20260920,
+  "validation_per_mille": 20,
+  "skip_rows": 20204,
+  "max_scan_rows": 200000,
+  "max_docs": 20000,
+  "max_bytes": 200000000,
+  "exclusion_inputs": {
+    "prior_manifest_sha256": "0453700076294fe12fecb7bab8ded259854d2a8f915d078639bb83374fdec872",
+    "prior_artifacts": {
+      "train/fineweb-edu/part-00000.jsonl": {
+        "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e",
+        "bytes": 91838924,
+        "documents": 19569
+      },
+      "validation/fineweb-edu/part-00000.jsonl": {
+        "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939",
+        "bytes": 1858016,
+        "documents": 376
+      }
+    },
+    "arc_items_sha256": "5011ec1abef00263b75101c484acdd4e8e2a1e51f8d6895059e87126ccdc6b3b",
+    "arc_questions": 2376,
+    "protected": {
+      "prior_documents": 19945,
+      "benchmark_fragments": 11877,
+      "benchmark_fragments_under_five_words": 6352
+    },
+    "unique_13_word_hashes": 14265304
+  },
+  "exclusion_stats": {
+    "raw_rows_scanned": 21739,
+    "last_source_ordinal": 41942,
+    "rows_passed_exclusions": 20176,
+    "protected_13_word_span": 1141,
+    "protected_short_phrase": 109,
+    "prior_url": 312,
+    "prior_exact_content": 1
+  },
+  "stats": {
+    "rows_seen": 20176,
+    "selected_docs": 20000,
+    "selected_bytes": 86121024,
+    "quality_or_length_rejected": 175,
+    "duplicate_rejected": 1,
+    "document_cap_reached": 1,
+    "heldout_overlap_rejected": 8,
+    "train_docs": 19600,
+    "train_bytes": 84374663,
+    "validation_docs": 392,
+    "validation_bytes": 1703816
+  },
+  "decontamination": "both new splits exclude prior train/validation content, URL and any 13-word span; ARC question and all choices exclude any 13-word span or entire 5-12-word phrase; new train excludes new validation 13-word spans",
+  "limitations": "under-five-word ARC fragments excluded only on whole-document equality; no semantic or other-benchmark screen; bounded English prefix, not final mixture",
+  "external_benchmarks_decontaminated": false,
+  "tokenizer_policy": "reuse parent tokenizer; no tokenizer trained or copied by this script",
+  "validation_policy": "freeze before experiment; do not use for iterative recipe selection",
+  "artifacts": {
+    "train/fineweb-edu/part-00000.jsonl": {
+      "sha256": "41b7c3179322e87174a4e252028b261c857327def204a456163c08e733e87570",
+      "bytes": 89926122,
+      "documents": 19600
+    },
+    "validation/fineweb-edu/part-00000.jsonl": {
+      "sha256": "87763ac23b03060f375f21b1a132b10cfd232cd39e7bd9b13c2426ce2f5fc1a0",
+      "bytes": 1814223,
+      "documents": 392
+    }
+  },
+  "complete": true
+}

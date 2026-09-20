@@ -174,6 +174,10 @@ locale complète des six rapports. À quatre boucles, le modèle initial obtient
 que trois réponses à quatre boucles, avec un intervalle d'incertitude qui traverse
 zéro. Aucun gain utile dû aux boucles supplémentaires n'est établi ; les faibles
 écarts de précision entre les deux adaptations restent incertains.
+La [préparation des nouvelles données](docs/27_FRESH_DATA.md) exclut les anciens
+documents d'entraînement et de validation ainsi que les recoupements lexicaux
+avec ARC. Elle fournit 19 600 nouveaux documents d'entraînement et 392 documents
+réservés. Aucun nouveau score de modèle ni gain architectural n'en découle encore.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
