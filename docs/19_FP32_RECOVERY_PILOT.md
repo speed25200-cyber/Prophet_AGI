@@ -7,7 +7,93 @@ CUDA restart check. This enables an explicit FP32 recovery experiment; it does
 not clear the BF16 failure described in
 [the conversion report](18_DONOR_CONVERSION_REHEARSAL.md). After 256 real updates,
 the recovered checkpoint also passes the previously failing FP32 cache case,
-as detailed below; broader cached-decoding validation remains outstanding.
+as detailed below. All four final checkpoints now also pass eight CPU and eight
+CUDA cache prefixes at the trained depth and within the 512-token window.
+
+## Completed four-arm result
+
+All four seed-zero arms finish 2,048 updates and 4,194,304 student tokens without
+skipped nonfinite updates. KL adds 4,194,304 teacher input tokens per arm. Validation
+uses the same 372 documents, 366,762 target tokens and 1,722,551 scored bytes.
+
+| Final model | CE, nats/token | Bits/byte |
+|---|---:|---:|
+| GDN CE | 4.571112242 | 1.404134362 |
+| Attention CE | 4.530511577 | 1.391662827 |
+| GDN CE + KL | 4.332629851 | 1.330878379 |
+| Attention CE + KL | **4.296796569** | **1.319871268** |
+| Unchanged donor reference | 3.157778885 | 0.969992773 |
+
+| Contrast (negative favors left) | CE difference | Paired document-bootstrap 95% interval |
+|---|---:|---:|
+| GDN minus attention, CE | +0.040600665 | [+0.037362236, +0.043829997] |
+| GDN minus attention, CE + KL | +0.035833282 | [+0.033104843, +0.038676156] |
+| CE + KL minus CE, GDN | -0.238482391 | [-0.243985113, -0.233098130] |
+| CE + KL minus CE, attention | -0.233715007 | [-0.239225033, -0.228450563] |
+
+The teacher improves every document in both architectures. Attention beats GDN on
+324/372 documents under CE and 330/372 under CE + KL. These four unadjusted,
+10,000-resample intervals condition on the trained models; they exclude training
+seed uncertainty. The KL arms use more compute. This result supports distillation
+within this pilot but does not justify adopting GDN, establish competitiveness,
+or demonstrate useful extra inference depth.
+
+Attention KL finishes in two bounded sessions (steps 0–2,029 and 2,029–2,048).
+Its evaluated checkpoint is 3,503,296,025 bytes, SHA256
+`4f79c0db8c12540449117a6c33a4d71d3ce4dcd38ffe6d1d07e3eeb61a014abf`.
+The separate checkpoint audit passes. The final strict comparator is independently
+recomputed on the PC from all four downloaded endpoints and matches the Colab
+JSON exactly, including all paired contrasts. Corpus/tokenizer identities,
+configuration, teacher identities, update contracts and all training rows agree.
+
+All four final models pass both cache paths on four deterministic prefixes at
+128 and 512 tokens: **64 CPU and 64 CUDA paths** in total. The source token IDs
+are independently rebuilt locally. CPU/CUDA cache tensor sizes agree. The four
+miniature CPU/CUDA checks also pass (two actual CUDA cases, zero skips), including
+deliberately corrupted longer-prefix cases that the auditor must reject.
+
+| CUDA checkpoint suite | Maximum absolute logit error | Maximum tolerance ratio |
+|---|---:|---:|
+| GDN CE | 4.38690e-5 | 0.171346 |
+| Attention CE | 4.95911e-5 | 0.188167 |
+| GDN CE + KL | 4.57764e-5 | 0.190065 |
+| Attention CE + KL | 4.57764e-5 | 0.188364 |
+
+All argmax positions match the complete forward pass under unchanged 1e-4 absolute
+and relative tolerances. CUDA uses A100 40 GB, full FP32, TF32 disabled and FLA
+chunk32 for GDN. This certifies only the measured prefixes/depth/precision, not
+BF16, long contexts, device deployment or useful language quality.
+
+The [27-file completed evidence export](experiments/2026-09-20-qwen-recovery-attention-kl-final/export-manifest.json)
+is 254,375 bytes, SHA256
+`24983169e321264244882545e6c9fc56f649fbd291c21812e4a4aab4c5abaefc`.
+The downloaded archive matches the source size/hash, and every member passes its
+manifest checksum. [Independent analysis](experiments/2026-09-20-qwen-recovery-attention-kl-final/independent-analysis.py)
+and [verification result](experiments/2026-09-20-qwen-recovery-attention-kl-final/independent-verification.json)
+are committed. Report checks do not replace fresh checkpoint loads or persistence.
+
+The hybrid-KL original checkpoint is now also reconstructed outside Colab on the
+local PC. All seven part hashes and the complete 3,707,789,145-byte file match the
+source. A fresh restricted CPU load checks 165 model and 301 optimizer tensors,
+configuration, input/update contracts and saved RNG. Its JSON-normalized audit
+matches Colab except the PyTorch version (2.14.0+cpu locally, 2.11.0+cu128 on Colab).
+[Transport and loading proof](experiments/2026-09-20-qwen-recovery-hybrid-kl-final/persistence/local-transfer-verification.json)
+establishes local persistence, not a Drive copy or a new inference measurement.
+Attention-KL transfer is prepared but not yet verified outside Colab.
+
+A [local generation integration check](experiments/2026-09-20-qwen-recovery-attention-ce-final/generation/local-generation-check.json)
+uses the persisted attention-CE checkpoint and two prompts fixed before execution.
+All 64 emitted greedy tokens agree with complete-forward argmax predictions.
+The outputs are nevertheless repetitive: an English prompt repeats village
+descriptions, and `Dans un petit village, une jeune fille` continues in English
+with repeated family descriptions. This is negative qualitative evidence, not a
+capability score or an instruction-following test. No sampling or prompt selection
+was used to improve the examples. The recorded script and its SHA256 are retained.
+
+ARC-Easy has started after the successful GPU cache queue; the donor process has
+completed and the first recovered model is running at the latest observation.
+Scores are not yet included here. Historical launch and interim reports below
+record what was known at each earlier stage.
 
 ## Precision and validation
 
@@ -387,9 +473,10 @@ come from a twelve-file, 225,462-byte downloaded ZIP, local SHA256
 After a temporary browser interruption, notebook cell 268 independently reproduces
 the archive size and SHA256 at the source. The three substantive report hashes
 above also match the source queue. This export contains reports, not a durable
-copy of the hybrid-KL weights. Those weights remain on the Colab runtime.
+copy of the hybrid-KL weights. Those weights were still only on Colab at that
+interim point; the later local persistence proof is reported above.
 
-At the last direct process poll, attention KL PID 141999 was live and its log
+At that interim process poll, attention KL PID 141999 was live and its log
 reached step 1,263 after browser reconnection. The final four-arm comparison, CUDA
 cache suites and ARC-Easy evaluation remain queued. Browser access is intermittent;
 observation failures are not evidence that training stopped and do not justify
@@ -405,7 +492,7 @@ Tiny trained-model cases cover both correct cached decoding and a deliberate err
 beyond the shorter prefix. The local focused run passes 41 cases with four CUDA
 skips; full GitHub CI passes **781 CPU cases with 15 CUDA-only skips** in 94.27 seconds.
 The earlier actual A100 gates cover thirteen CUDA cases; the two new CUDA cache
-cases are **queued, not yet executed**.
+cases have since passed, as reported in the completed result above.
 
 The GPU queue waits for all four training/audit processes to finish, then runs the
 four CPU/CUDA miniature cache cases and each arm's eight real CUDA prefixes in an

@@ -1,0 +1,9 @@
+{
+  "complete": true,
+  "bytes": 254375,
+  "sha256": "24983169e321264244882545e6c9fc56f649fbd291c21812e4a4aab4c5abaefc",
+  "files": 27,
+  "matches_downloaded_archive": true,
+  "source": "Colab notebook export cell executed after all four endpoint audits, CPU cache suites and GPU cache suites completed; source printed size, SHA256 and count match the downloaded archive.",
+  "scope": "Report archive and every member checked; does not establish durable checkpoint weights or ARC scores."
+}

@@ -1,0 +1,197 @@
+{
+  "complete": true,
+  "protocol": "four-arm-independent-report-verification-v1",
+  "factorial_report_reproduced_exactly": true,
+  "bootstrap_draws": 10000,
+  "comparison_sha256": "f1fd71d8657d26ed7d25009017e3a2734417c5a5bde900859a663d9c14a7e863",
+  "export_members_verified": 27,
+  "miniature_cases": 4,
+  "miniature_cuda_cases": 2,
+  "cache": {
+    "hybrid-ce-cpu": {
+      "cases": 8,
+      "paths": 16,
+      "maximum_logit_error": 2.86102294921875e-05,
+      "maximum_tolerance_ratio": 0.24302417039871216,
+      "cache_by_length": {
+        "128": {
+          "slots": 28,
+          "position": 128,
+          "attention_bytes": 8388608,
+          "recurrent_bytes": 43909120,
+          "total_bytes": 52297728
+        },
+        "512": {
+          "slots": 28,
+          "position": 512,
+          "attention_bytes": 33554432,
+          "recurrent_bytes": 43909120,
+          "total_bytes": 77463552
+        }
+      },
+      "execution_seconds": 547.0872248199994
+    },
+    "hybrid-ce-cuda": {
+      "cases": 8,
+      "paths": 16,
+      "maximum_logit_error": 4.38690185546875e-05,
+      "maximum_tolerance_ratio": 0.17134518921375275,
+      "cache_by_length": {
+        "128": {
+          "slots": 28,
+          "position": 128,
+          "attention_bytes": 8388608,
+          "recurrent_bytes": 43909120,
+          "total_bytes": 52297728
+        },
+        "512": {
+          "slots": 28,
+          "position": 512,
+          "attention_bytes": 33554432,
+          "recurrent_bytes": 43909120,
+          "total_bytes": 77463552
+        }
+      },
+      "execution_seconds": 220.10993549100385
+    },
+    "attention-ce-cpu": {
+      "cases": 8,
+      "paths": 16,
+      "maximum_logit_error": 2.765655517578125e-05,
+      "maximum_tolerance_ratio": 0.16947327554225922,
+      "cache_by_length": {
+        "128": {
+          "slots": 28,
+          "position": 128,
+          "attention_bytes": 29360128,
+          "recurrent_bytes": 0,
+          "total_bytes": 29360128
+        },
+        "512": {
+          "slots": 28,
+          "position": 512,
+          "attention_bytes": 117440512,
+          "recurrent_bytes": 0,
+          "total_bytes": 117440512
+        }
+      },
+      "execution_seconds": 416.99525783399804
+    },
+    "attention-ce-cuda": {
+      "cases": 8,
+      "paths": 16,
+      "maximum_logit_error": 4.9591064453125e-05,
+      "maximum_tolerance_ratio": 0.18816621601581573,
+      "cache_by_length": {
+        "128": {
+          "slots": 28,
+          "position": 128,
+          "attention_bytes": 29360128,
+          "recurrent_bytes": 0,
+          "total_bytes": 29360128
+        },
+        "512": {
+          "slots": 28,
+          "position": 512,
+          "attention_bytes": 117440512,
+          "recurrent_bytes": 0,
+          "total_bytes": 117440512
+        }
+      },
+      "execution_seconds": 91.36196450800344
+    },
+    "hybrid-kl-cpu": {
+      "cases": 8,
+      "paths": 16,
+      "maximum_logit_error": 2.86102294921875e-05,
+      "maximum_tolerance_ratio": 0.1857631355524063,
+      "cache_by_length": {
+        "128": {
+          "slots": 28,
+          "position": 128,
+          "attention_bytes": 8388608,
+          "recurrent_bytes": 43909120,
+          "total_bytes": 52297728
+        },
+        "512": {
+          "slots": 28,
+          "position": 512,
+          "attention_bytes": 33554432,
+          "recurrent_bytes": 43909120,
+          "total_bytes": 77463552
+        }
+      },
+      "execution_seconds": 549.8904652609999
+    },
+    "hybrid-kl-cuda": {
+      "cases": 8,
+      "paths": 16,
+      "maximum_logit_error": 4.57763671875e-05,
+      "maximum_tolerance_ratio": 0.19006450474262238,
+      "cache_by_length": {
+        "128": {
+          "slots": 28,
+          "position": 128,
+          "attention_bytes": 8388608,
+          "recurrent_bytes": 43909120,
+          "total_bytes": 52297728
+        },
+        "512": {
+          "slots": 28,
+          "position": 512,
+          "attention_bytes": 33554432,
+          "recurrent_bytes": 43909120,
+          "total_bytes": 77463552
+        }
+      },
+      "execution_seconds": 146.08852756400302
+    },
+    "attention-kl-cpu": {
+      "cases": 8,
+      "paths": 16,
+      "maximum_logit_error": 3.337860107421875e-05,
+      "maximum_tolerance_ratio": 0.18220089375972748,
+      "cache_by_length": {
+        "128": {
+          "slots": 28,
+          "position": 128,
+          "attention_bytes": 29360128,
+          "recurrent_bytes": 0,
+          "total_bytes": 29360128
+        },
+        "512": {
+          "slots": 28,
+          "position": 512,
+          "attention_bytes": 117440512,
+          "recurrent_bytes": 0,
+          "total_bytes": 117440512
+        }
+      },
+      "execution_seconds": 429.4194876379988
+    },
+    "attention-kl-cuda": {
+      "cases": 8,
+      "paths": 16,
+      "maximum_logit_error": 4.57763671875e-05,
+      "maximum_tolerance_ratio": 0.1883634328842163,
+      "cache_by_length": {
+        "128": {
+          "slots": 28,
+          "position": 128,
+          "attention_bytes": 29360128,
+          "recurrent_bytes": 0,
+          "total_bytes": 29360128
+        },
+        "512": {
+          "slots": 28,
+          "position": 512,
+          "attention_bytes": 117440512,
+          "recurrent_bytes": 0,
+          "total_bytes": 117440512
+        }
+      },
+      "execution_seconds": 90.19808777700382
+    }
+  },
+  "scope": "All four strict endpoint contracts and paired comparisons reproduced from downloaded reports. Cache input IDs independently rebuilt from corpus/tokenizer; all 64 CPU and 64 CUDA paths checked. No new tensor load, remote weight durability, seed robustness, long-context or capability claim."
+}

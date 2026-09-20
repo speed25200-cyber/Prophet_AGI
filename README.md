@@ -108,13 +108,19 @@ poids et les espaces de travail. Le checkpoint attention est désormais aussi
 reconstruit et audité sur le PC local, hors de la session Colab. La variante hybride
 guidée par le donneur termine à **4,3326 nats/token** : elle améliore les 372 documents
 par rapport à l'hybride entraîné seulement sur texte et passe les huit cas de cache CPU.
-Le quatrième bras, attention guidée, est confirmé en entraînement au dernier relevé.
+Ses poids sont également reconstruits et audités sur le PC local.
+Le quatrième bras, attention guidée, termine à **4,2968 nats/token**. La comparaison
+complète, reproduite sur le PC, favorise l'attention sous les deux objectifs ;
+la distillation améliore les deux architectures, qui restent derrière le donneur.
+Les quatre checkpoints passent chacun huit cas de cache CPU et huit cas GPU FP32.
+La génération locale du témoin attention fonctionne mais reste répétitive ; une
+amorce française produit une suite anglaise. Ces contrôles ne démontrent pas une
+capacité d'assistant.
 Le corpus de récupération
 exclut les neuf chevauchements connus et les quatre extraits du diagnostic initial.
 La reprise exacte CE/KL est testée sur CUDA. Le contrôle des gradients GDN échoue
 encore en BF16 ; les essais FP32 réussis constituent une politique expérimentale
-explicite. La comparaison finale, les autres graines et les évaluations de capacités
-restent à effectuer.
+explicite. Les autres graines et les évaluations de capacités restent à terminer.
 Une [évaluation de capacités ARC-Easy](docs/20_RECOVERY_CAPABILITY_EVAL.md) est
 préparée sur les 2 376 questions de test, avec un protocole commun au donneur et aux
 quatre modèles récupérés. Le calcul des probabilités passe un contrôle indépendant
