@@ -1,0 +1,72 @@
+{
+  "arms": {
+    "lc_gdn": {
+      "name": "prophet-lc-gdn",
+      "params_resident": 374689648,
+      "params_active_per_token": 374689648,
+      "parameterised_depth": 8,
+      "effective_depth": 20,
+      "blocks_per_token_at_k4": 20,
+      "core_pattern": [
+        "gdn"
+      ],
+      "train_loop": [
+        2,
+        6,
+        "uniform"
+      ],
+      "truncated_backprop_steps": 6,
+      "ffn_hidden_mult": 4.0,
+      "accepted_design_warnings": [],
+      "config_sha256": "d1d479bf5a06ac91100ea35a9062fea99da164805bf3f1307d5b43f903656001"
+    },
+    "lc_attn": {
+      "name": "prophet-lc-attn",
+      "params_resident": 376209152,
+      "params_active_per_token": 376209152,
+      "parameterised_depth": 8,
+      "effective_depth": 20,
+      "blocks_per_token_at_k4": 20,
+      "core_pattern": [
+        "full_attn"
+      ],
+      "train_loop": [
+        2,
+        6,
+        "uniform"
+      ],
+      "truncated_backprop_steps": 6,
+      "ffn_hidden_mult": 4.93,
+      "accepted_design_warnings": [
+        "attention inside the looped core (core[0], core[1], core[2], core[3]): its KV cache is duplicated per iteration, so memory scales with k (x4 at the default depth). This is decision D1's invariant; enable it only as the deliberate A-KV ablation."
+      ],
+      "config_sha256": "32f72eb85a66f7c6bd15e1e93dd812d2c59e3ba2b9c8b3484c96bfba6c73858b"
+    },
+    "lc_plain": {
+      "name": "prophet-lc-plain",
+      "params_resident": 920679616,
+      "params_active_per_token": 920679616,
+      "parameterised_depth": 20,
+      "effective_depth": 20,
+      "blocks_per_token_at_k4": 20,
+      "core_pattern": [
+        "gdn"
+      ],
+      "train_loop": [
+        1,
+        1,
+        "log_uniform"
+      ],
+      "truncated_backprop_steps": 1,
+      "ffn_hidden_mult": 4.0,
+      "accepted_design_warnings": [],
+      "config_sha256": "25d51bc28ffe6765e3eda0ac61383724355ce64fd239c349f082ea6f28cc2c2f"
+    }
+  },
+  "attention_parameter_match": {
+    "target_params": 374689648,
+    "params": 376209152,
+    "ffn_hidden_mult": 4.93,
+    "relative_gap": 0.004055366909949965
+  }
+}
