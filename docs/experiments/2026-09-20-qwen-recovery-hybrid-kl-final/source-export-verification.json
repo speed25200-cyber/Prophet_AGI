@@ -1,0 +1,17 @@
+{
+  "protocol": "colab-export-source-check-v1",
+  "complete": true,
+  "observation_date_utc": "2026-09-20",
+  "notebook_cell_execution": 268,
+  "source_archive": "/content/prophet-hybrid-kl-final-evidence.zip",
+  "bytes": 225462,
+  "sha256": "10df8cf98212574a4897b318e6f32c6f0b8cb211bb42fa1de6456d95de6da334",
+  "matches_downloaded_archive": true,
+  "pilot_status": "training_attention-kl",
+  "attention_kl_process": {
+    "pid": 141999,
+    "poll_result": null,
+    "last_logged_step": 1263
+  },
+  "scope": "Read-only notebook output observed after browser reconnection: archive size and SHA256 calculated at the source, plus the existing process handle polled and its training log read. No new training, final attention-KL evaluation or weight-persistence claim."
+}

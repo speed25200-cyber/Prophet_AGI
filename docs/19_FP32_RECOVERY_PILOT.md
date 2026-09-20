@@ -384,15 +384,16 @@ certify GPU decoding or contexts beyond the trained 512-token window.
 [Evidence and reproducible paired/cache analysis](experiments/2026-09-20-qwen-recovery-hybrid-kl-final/paired-and-cache-comparison.json)
 come from a twelve-file, 225,462-byte downloaded ZIP, local SHA256
 `10df8cf98212574a4897b318e6f32c6f0b8cb211bb42fa1de6456d95de6da334`.
-The archive checksum itself was not retrieved from Colab before browser access
-became unavailable; the three substantive report hashes above were independently
-matched to the source queue. This export contains reports, not a durable copy of
-the hybrid-KL weights. Those weights remain on the Colab runtime.
+After a temporary browser interruption, notebook cell 268 independently reproduces
+the archive size and SHA256 at the source. The three substantive report hashes
+above also match the source queue. This export contains reports, not a durable
+copy of the hybrid-KL weights. Those weights remain on the Colab runtime.
 
 At the last direct process poll, attention KL PID 141999 was live and its log
-reached step 512. The final four-arm comparison, CUDA cache suites and ARC-Easy
-evaluation remain queued. Subsequent loss of browser access is not evidence that
-training stopped and does not justify restarting that process.
+reached step 1,263 after browser reconnection. The final four-arm comparison, CUDA
+cache suites and ARC-Easy evaluation remain queued. Browser access is intermittent;
+observation failures are not evidence that training stopped and do not justify
+restarting that process.
 
 ## CUDA cache coverage and queued checks
 

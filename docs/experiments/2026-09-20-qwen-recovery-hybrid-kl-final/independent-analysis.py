@@ -58,6 +58,9 @@ record = read(out / 'endpoint-queue-record.json')
 assert record['checkpoint'] == audits['hybrid-kl']['checkpoint']
 assert record['audit_sha256'] == sha(out / 'hybrid-kl-final-audit.json')
 assert record['evaluation_sha256'] == sha(out / 'hybrid-kl-seed0/evaluation-step-002048.json')
+export = read(out / 'source-export-verification.json')
+assert export['complete'] and export['matches_downloaded_archive']
+assert export['bytes'] == 225462 and export['sha256'] == '10df8cf98212574a4897b318e6f32c6f0b8cb211bb42fa1de6456d95de6da334'
 cache = read(out / 'hybrid-kl-cache.json')
 old_cache = read(sources['hybrid-ce'] / 'cache/chunk64.json')
 assert cache['recovery_checkpoint_audit'] == audits['hybrid-kl']
@@ -103,7 +106,7 @@ result = {
     'cpu_cache': {'cases': len(cache['cases']), 'paths': len(errors), 'maximum_logit_error': max(errors),
                   'maximum_tolerance_ratio': max(ratios), 'execution_seconds': cache['execution_seconds']},
     'archive': {'bytes': 225462, 'sha256': '10df8cf98212574a4897b318e6f32c6f0b8cb211bb42fa1de6456d95de6da334',
-                'verification': 'Downloaded archive identity; checkpoint-audit, evaluation and cache report hashes separately match the live Colab queue. Archive checksum itself was not retrieved from the source before browser access was lost.'},
+                'verification': 'Downloaded archive size and SHA256 match the source notebook read in cell 268 after reconnection. Checkpoint-audit, evaluation and cache report hashes also match the live Colab queue.'},
     'scope': 'Single-seed within-hybrid comparison at equal student tokens. KL adds teacher compute. All three endpoint reports pass the strict comparator before its required refusal at the absent attention-KL report. Cross-arm normalized inputs/contracts also match independently. Conditional document intervals exclude seed uncertainty. No architecture adoption, new weight reload, GPU cache result or capability score. Hybrid-KL weights remain on Colab.'
 }
 (out / 'paired-and-cache-comparison.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8', newline='\n')

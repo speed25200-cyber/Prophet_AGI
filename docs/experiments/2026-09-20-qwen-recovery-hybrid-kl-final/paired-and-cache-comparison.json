@@ -50,7 +50,7 @@
   "archive": {
     "bytes": 225462,
     "sha256": "10df8cf98212574a4897b318e6f32c6f0b8cb211bb42fa1de6456d95de6da334",
-    "verification": "Downloaded archive identity; checkpoint-audit, evaluation and cache report hashes separately match the live Colab queue. Archive checksum itself was not retrieved from the source before browser access was lost."
+    "verification": "Downloaded archive size and SHA256 match the source notebook read in cell 268 after reconnection. Checkpoint-audit, evaluation and cache report hashes also match the live Colab queue."
   },
   "scope": "Single-seed within-hybrid comparison at equal student tokens. KL adds teacher compute. All three endpoint reports pass the strict comparator before its required refusal at the absent attention-KL report. Cross-arm normalized inputs/contracts also match independently. Conditional document intervals exclude seed uncertainty. No architecture adoption, new weight reload, GPU cache result or capability score. Hybrid-KL weights remain on Colab."
 }
