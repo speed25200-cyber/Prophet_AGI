@@ -39,10 +39,10 @@ jobs:
             scripts/audit_qwen_blocks.py scripts/audit_qwen_stack.py scripts/audit_qwen_cache.py scripts/rehearse_qwen_conversion.py scripts/smoke_qwen_conversion.py scripts/ablate_qwen_initialization.py \
             scripts/recover_qwen.py scripts/eval_qwen_recovery.py scripts/gate_qwen_recovery.py scripts/audit_recovery_checkpoint.py scripts/audit_recovery_cache_suite.py scripts/summarize_recovery_pilot.py scripts/audit_initialization_identity.py scripts/audit_donor_tokenizer.py scripts/prepare_recovery_data.py scripts/audit_recovery_pair.py \
             scripts/gpu_check.py scripts/train.py scripts/pilot_smoke.py scripts/train_tokenizer.py scripts/run_r04_pilot.py scripts/summarize_r04.py scripts/eval_r04_depth.py scripts/audit_r04_checkpoint.py \
-            scripts/prepare_arc_recovery_eval.py scripts/eval_arc_recovery.py scripts/probe_qwen_relaxed.py scripts/probe_qwen_selective.py \
+            scripts/prepare_arc_recovery_eval.py scripts/eval_arc_recovery.py scripts/probe_qwen_relaxed.py scripts/probe_qwen_selective.py scripts/probe_qwen_covariance.py \
             tests/test_config_budget.py tests/test_continual.py tests/test_data.py tests/test_convert.py \
             tests/test_memory.py tests/test_modeling.py tests/test_tokenizer.py \
-            tests/test_recovery_cli.py tests/test_recovery_data.py tests/test_recovery_gate.py tests/test_recovery_summary.py tests/test_choice_eval.py tests/test_relaxed_probe.py tests/test_selective_probe.py \
+            tests/test_recovery_cli.py tests/test_recovery_data.py tests/test_recovery_gate.py tests/test_recovery_summary.py tests/test_choice_eval.py tests/test_relaxed_probe.py tests/test_selective_probe.py tests/test_shared_fit.py \
             tests/test_training.py tests/test_chunked_loss.py tests/test_distillation.py tests/test_donor_tokenizer.py tests/test_pilot_data.py tests/test_gpu.py tests/test_text_eval.py tests/test_r04_pilot.py tests/test_paired_eval.py tests/test_checkpoint_audit.py tests/test_r04_snapshot.py
       - name: Tests
         run: python -m pytest -q

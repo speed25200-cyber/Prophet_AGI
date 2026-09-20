@@ -1,0 +1,39 @@
+{
+  "complete": true,
+  "files": {
+    "adjacent-prefix.json": {
+      "bytes": 21882,
+      "sha256": "f3efd5d5089ce9226c04ee1cbd7be463cf47bbfdc7d5a64945c7066b0f937e42"
+    },
+    "adjacent-executed-source.py": {
+      "bytes": 4737,
+      "sha256": "e1817345ada6bd8074dd98cba1e69da1546e50dd240c924efe4050a29e162763"
+    },
+    "budget-executed-source.py": {
+      "bytes": 2369,
+      "sha256": "0e4bfc92b620d3cf9cdede30fc521a8b84e50f3efe79f3ea89d60867edead03f"
+    },
+    "budget/budget-proxy-config.json": {
+      "bytes": 3382,
+      "sha256": "6263dcf6a8d7d86008397584a3946469ae894384ce086802f4a6c1dcb07724a9"
+    },
+    "budget/budget-scope.json": {
+      "bytes": 685,
+      "sha256": "21b021a0866ad3d3ee08671b2b249b55b3e7d00b7d8edc3b3a80474325b0c7e3"
+    },
+    "budget/budget.txt": {
+      "bytes": 2510,
+      "sha256": "1ebcf8662ba520af89593819cca183e4f1b533b8ab37b3758820fa8b9f85952d"
+    },
+    "budget/plan.txt": {
+      "bytes": 4593,
+      "sha256": "cf96ba06d81839313d8dd1e3e2f398f5e585b055b96fa5efd3485eea41e6fb6c"
+    },
+    "budget/search.txt": {
+      "bytes": 252,
+      "sha256": "e70c2f89471b261bbd02538d6a68ff5b2d1167301cbdade701945814295eacc0"
+    }
+  },
+  "same_prior_prefix_identities": true,
+  "scope": "Exact local source/report bytes, input equality and score sums verified. Budget planning outputs are UTF-8 with CRLF normalized to LF by the recorded generation script."
+}

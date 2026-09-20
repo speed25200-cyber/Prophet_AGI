@@ -108,9 +108,27 @@ and directly retains original per-depth norms; therefore its parameter totals
 above are deliberately different. Extension FLOPs/weight/state bytes are explicit
 arithmetic, not measured activation, optimizer or device-memory consumption.
 
-The next justified test is **less aggressive, local sharing of neighboring donor
-depths**, evaluated against the same unchanged donor and pruning control before
-training. Any selected recurrent candidate still needs an implemented reversible
+The local-sharing follow-up is now complete. Ten neighboring pairs `(4,5)` through
+`(22,23)` share their seven linear projections, retaining all original norms and
+outer layers. Three initializations were fixed before scoring, each with
+**438,763,520** registered parameters and the same 8,176 development targets:
+
+| Adjacent-pair initialization | Prefix nats/token |
+|---|---:|
+| Mean of the pair | 12.213892 |
+| First layer's projections reused | 12.330183 |
+| Last layer's projections reused | 10.774335 |
+
+The separately rerun donor is again exactly 3.126084. All three local-sharing
+initializations remain worse than the previous pruning control (5.188328), despite
+keeping 28 executed layers. The negative result rules out allocating a recovery
+run simply because layers are adjacent or because averaging was avoided.
+[Exact script and reports](experiments/2026-09-20-qwen-adjacent-and-calibration-plan/archive-verification.json).
+
+The next experiment fits shared weights against **training activations**, with a
+fixed local ridge objective and independent development evaluation
+([protocol](22_ACTIVATION_WEIGHTED_SHARING.md)). Any selected recurrent candidate
+still needs an implemented reversible
 configuration, exact cache and resume gates, a matched 50–500M recovery ablation,
 capability evaluation, multiple training seeds and actual target-device evidence.
 No current candidate has passed those adoption requirements.
