@@ -1,0 +1,18 @@
+{
+  "verified_source_files": 22,
+  "cuda_suite_passed": 6,
+  "cuda_restart_cases": 2,
+  "preflight_peak_allocated_bytes": [
+    13444140032,
+    13444140032
+  ],
+  "first_gradient_norms": [
+    5.207744598388672,
+    5.207338333129883
+  ],
+  "partial_step": 54,
+  "partial_tokens": 884736,
+  "partial_ce": 3.8533956392204405,
+  "paired_adaptation_complete": false,
+  "scope": "Export hashes, code/protocol identities, miniature CUDA tests, reported memory gates and partial-run aggregates. No checkpoint tensor reload, repeated GPU forward, real-shape restart equivalence or cause of gradient discrepancy is established here."
+}

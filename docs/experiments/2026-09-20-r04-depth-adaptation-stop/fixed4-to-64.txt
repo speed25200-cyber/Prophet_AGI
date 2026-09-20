@@ -1,0 +1,4 @@
+step      16  loss  3.4423  lr 1.60e-04  warmup       0.26M tok    1.95s  train/grad_norm=0.5341 k 4
+step      32  loss  3.7759  lr 3.20e-04  warmup       0.52M tok    1.95s  train/grad_norm=0.4873 k 4
+step      48  loss  3.7175  lr 4.80e-04  warmup       0.79M tok    1.96s  train/grad_norm=0.6455 k 4
+DEPTH_ADAPTATION_SESSION_COMPLETE 54 {4: 54}

@@ -1,0 +1,3 @@
+......                                                                   [100%]
+- generated xml file: /content/r04-depth-adaptation-v1/cuda-restart-tests.xml --
+6 passed in 15.70s

@@ -138,8 +138,12 @@ Les 70 ajustements satisfont pourtant leur objectif local ; cela ne suffit pas
 à préserver les prédictions du réseau entier. Ce résultat n'est pas adopté.
 Le [contrôle de profondeur sur les poids R04 finaux](docs/23_R04_DEPTH_ADAPTATION.md)
 confirme aussi que huit boucles dégradent la prédiction : +16,16 % de BPB par
-rapport aux quatre boucles d'entraînement. Une comparaison entre entraînement
-à profondeur fixe et variable est budgétée, mais pas encore lancée.
+rapport aux quatre boucles d'entraînement. La comparaison entre entraînement
+à profondeur fixe et variable est implémentée ; ses tests CUDA sur petit modèle
+et ses essais mémoire à taille réelle passent. Son premier segment a été arrêté
+proprement après 54 mises à jour : des écarts de gradients entre les préflights
+exigent de vérifier la reproductibilité à taille réelle avant de poursuivre.
+La comparaison des deux politiques d'entraînement reste inachevée.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

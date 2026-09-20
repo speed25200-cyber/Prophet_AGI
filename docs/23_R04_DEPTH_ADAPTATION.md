@@ -1,7 +1,9 @@
 # 23 — Does training across depths make additional loops useful?
 
 **Status: final frozen-model depth sweep completed; matched adaptation driver
-implemented and CPU restart tests passed; actual CUDA gates still pending. No new architecture
+implemented, six CPU/CUDA tests and both real-shape memory gates passed. The first
+training segment was stopped at step 54 after real-shape preflights showed different
+gradients. Exact full-size reproducibility remains unresolved. No new architecture
 or training policy is adopted.**
 
 ## Why this experiment
@@ -150,14 +152,19 @@ rejection, idempotent completion and continuation of an interrupted final depth
 evaluation without further training. Both arms also have actual CUDA cases that
 must pass without skips before the real preflight. Separate tests reject changed
 parent publication/bytes and prove the policy leaves model topology unchanged.
-The current local result is four passed and two CUDA skips; this does not count
-as an A100 gate.
+The local targeted result is four passed and two CUDA skips. The actual A100 run
+at `4f5c566` subsequently passed all six tests without skips, including both CUDA
+restart cases, in 15.70 seconds. These use miniature fixtures, not the 375M model.
+The full local suite at that revision passed 807 tests with 18 skips; both CI runs
+were green. Passing miniature restart tests does not establish full-size restart
+equivalence.
 
 ```bash
 # Use a fresh output directory for every arm and disposable preflight.
 python scripts/adapt_r04_depth.py --parent-run <final-loop-run> \
   --corpus <original-pilot> --arm uniform2to6 --mode preflight --out <preflight>
-# After actual CUDA restart tests and both preflights pass:
+# Do not start further segments until the real-shape reproducibility issue below is resolved.
+# Once all gates, including real-shape restart equivalence, pass:
 python scripts/adapt_r04_depth.py --parent-run <final-loop-run> \
   --corpus <original-pilot> --arm uniform2to6 --out <new-training-arm> \
   --max-session-steps 64
@@ -171,3 +178,46 @@ until every planned depth is scored; an interrupted evaluation resumes from the
 same weights. Running a completed command again leaves its report unchanged.
 The queue, rather than the individual CLI, enforces the paired 5,400-second ceiling
 and the ordering of the external CUDA tests/preflights before training.
+
+## First launch stopped for numerical investigation
+
+The [exported evidence](experiments/2026-09-20-r04-depth-adaptation-stop/export-manifest.json)
+records both disposable three-update preflights at batch 8, sequence 2,048 and
+explicit k=6, with full backpropagation. Both used **13,444,140,032 bytes** of peak
+PyTorch allocation (12.52 GiB), below 90% of the A100's 42,405,855,232-byte capacity.
+All reported losses, gradients and resulting weights were finite. Per-step times
+were approximately 2.74–3.06 seconds, including these preflight updates only.
+
+However, the two processes did not report identical gradients despite the shared
+parent, loader cursor, seed and explicit depth. The first loss was exactly
+4.108038902282715 in both, but gradient norms were 5.207744598388672 and
+5.207338333129883. Subsequent losses also differed. This identifies a missing
+full-size reproducibility gate; it does not isolate an operation or demonstrate
+that checkpoint restoration is the cause.
+
+The fixed-k4 training process received SIGTERM, completed its current update,
+saved step **54** and evaluated k4, then exited with code zero. All six queue
+process handles were confirmed terminal. The queue stopped when its expected
+step-64 report was absent; neither variable-depth training nor either long segment
+started. The retained partial report has 884,736 new input tokens, 54 recorded
+k4 depths, no nonfinite skips and CE 3.8533956392204405. This partial CE is not the
+planned matched comparison and does not select a recipe. The recorded checkpoint
+SHA256 is `a8b86f376632269f6fe51294022619aff737faf8ea7ae267b9fe7fe142742296`;
+its metadata was exported, not its 3.23 GB tensor file.
+
+The 124,475-byte evidence ZIP has SHA256
+`7f4355f7f0e4cd998e1f8d8bb21449c905946168dddb8459279a7f4b9013aa86`.
+The [local verifier](experiments/2026-09-20-r04-depth-adaptation-stop/verify.py)
+checks all 22 original file hashes, exact source/protocol identities, all 376
+baseline document losses against the frozen original, XML test results, partial
+training counters and independently recomputed evaluation aggregates. Large JSON
+files are losslessly gzipped. This audit does not reload checkpoint tensors or
+repeat GPU computation.
+
+Next require separate-process equality of actual-size inputs, RNG, gradients and
+weights, followed by interrupted-versus-continuous actual-size training. A
+disposable strict-PyTorch-determinism preflight finished three updates, but a single
+run cannot establish reproducibility. The subsequent instrumented two-process
+probe failed at launch before producing a comparison; its cause remains to inspect.
+Neither observation authorizes resuming the long experiment. Any arithmetic-policy
+change must be recorded as a new run contract with a fresh baseline and both arms.

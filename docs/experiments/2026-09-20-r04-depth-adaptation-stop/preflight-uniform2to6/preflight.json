@@ -1,0 +1,84 @@
+{
+  "passed": true,
+  "maximum_loop_k": 6,
+  "full_backprop": true,
+  "actual_depths": [
+    6,
+    6,
+    6
+  ],
+  "steps": 3,
+  "step_seconds": [
+    2.9773837000029744,
+    2.909924621002574,
+    2.7359404939998058
+  ],
+  "losses": [
+    {
+      "loss": 4.108038902282715,
+      "gradient_norm": 5.207338333129883
+    },
+    {
+      "loss": 4.13669490814209,
+      "gradient_norm": 4.382856845855713
+    },
+    {
+      "loss": 4.020462989807129,
+      "gradient_norm": 3.1467297077178955
+    }
+  ],
+  "peak_allocated_bytes": 13444140032,
+  "device_capacity_bytes": 42405855232,
+  "memory_limit_fraction": 0.9,
+  "scope": "Disposable model/optimizer, real next training batches; original weights and loader untouched. Allocated peak excludes non-PyTorch allocations.",
+  "identity": {
+    "protocol": "r04-depth-adaptation-v1",
+    "plan_sha256": "ba92d3450dce2b9317c739d2bd22c440532c1efa7c9cb23e076eef93e419d792",
+    "parent_checkpoint": {
+      "step": 4096,
+      "slot": 1,
+      "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+      "bytes": 3233905547,
+      "extra": {}
+    },
+    "parent_loader_sha256": "4a398330bf498c7964b8432ddbe34c13260b2a720ac88e3a051340cfff5701a0",
+    "data": {
+      "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+      "artifacts": {
+        "train/fineweb-edu/part-00000.jsonl": {
+          "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e",
+          "bytes": 91838924,
+          "documents": 19569
+        },
+        "validation/fineweb-edu/part-00000.jsonl": {
+          "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939",
+          "bytes": 1858016,
+          "documents": 376
+        }
+      },
+      "tokenizer_semantic_sha256": "7d8d36adb2b2bf9dac7a6060294641ea16c59ce20506e2294c556c7abd99537b"
+    },
+    "runtime": {
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "fla": "0.5.2",
+      "triton": "3.6.0",
+      "device": "NVIDIA A100-SXM4-40GB",
+      "triton_f32_default": "tf32x3"
+    },
+    "code": {
+      "revision": "4f5c56613f3b9b99485931945438cb86a8f70c7a",
+      "driver_sha256": "7cdf0737bbd1ac2014fb00d571c211a1f616f9d53a0578d2c75789ecbc95feaa"
+    },
+    "arm": "uniform2to6",
+    "mode": "preflight",
+    "evaluation_depths": [
+      4,
+      1,
+      2,
+      6,
+      8
+    ],
+    "warm_start": "parent weights and loader, new optimizer/schedule, RNG reset to parent seed"
+  }
+}

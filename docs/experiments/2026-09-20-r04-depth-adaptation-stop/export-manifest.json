@@ -1,0 +1,119 @@
+{
+  "source_revision": "4f5c56613f3b9b99485931945438cb86a8f70c7a",
+  "processes": {
+    "fetch": {
+      "pid": 189536,
+      "returncode": 0
+    },
+    "worktree": {
+      "pid": 189551,
+      "returncode": 0
+    },
+    "cuda-restart-tests": {
+      "pid": 189554,
+      "returncode": 0
+    },
+    "preflight-fixed4": {
+      "pid": 189642,
+      "returncode": 0
+    },
+    "preflight-uniform2to6": {
+      "pid": 189917,
+      "returncode": 0
+    },
+    "fixed4-to-64": {
+      "pid": 190179,
+      "returncode": 0
+    }
+  },
+  "files": {
+    "cuda-restart-tests.txt": {
+      "bytes": 180,
+      "sha256": "050d2ab16b3d52f21332d81efaf5a4b54042295a65c63770c4244cca06cb7b09"
+    },
+    "cuda-restart-tests.xml": {
+      "bytes": 1096,
+      "sha256": "272a3283c12c29752ed67322ed9292c74336fa55f01c30747d39c76326adb4fb"
+    },
+    "error.txt": {
+      "bytes": 851,
+      "sha256": "aa95bc14be003fa1986a93641561a804675ceaf16e6fe180cd2b7cc3149fe363"
+    },
+    "fetch.txt": {
+      "bytes": 221,
+      "sha256": "c5fcef04dc0ade6d982796702e05b31ac5f505a8107ce223254d7002a431090b"
+    },
+    "fixed4/adaptation.json": {
+      "bytes": 7974,
+      "sha256": "b25f074c8c959e817f0b9f133bbea4cbe349a176acafd195b6c69fcfe420300c"
+    },
+    "fixed4/baseline.json": {
+      "bytes": 86907,
+      "sha256": "54c08fc91be2c6daffd768424e2391be91cc16c6ccb6f54613f7cf8944d97e83"
+    },
+    "fixed4/checkpoints/manifest.json": {
+      "bytes": 378,
+      "sha256": "dc344a6bc83729a5a663ebdff034d51bf01cc59137bdd1c2466953f2999e9618"
+    },
+    "fixed4/evaluation-step-000054.json": {
+      "bytes": 92953,
+      "sha256": "1ce9eecd715a0fac34b298f03085fe797270f88b7d94bd7ce3275850f6f2cab4"
+    },
+    "fixed4/training.jsonl": {
+      "bytes": 11390,
+      "sha256": "1721347a5a3f222a0dc8d73f3609f48c0a538409ccdde331ca1fd98e9a0629b2"
+    },
+    "fixed4-to-64.txt": {
+      "bytes": 348,
+      "sha256": "ecf2c997dcb4c26967d8ceccf5e2b4198b7e31f616036518c33c0bc1277e6c45"
+    },
+    "operator-stop.json": {
+      "bytes": 130,
+      "sha256": "ff0cfa5c3d354617136e2b3429f2b3bf11399cd1a4c8ca3bdf59ba2e4ef810a5"
+    },
+    "preflight-fixed4/adaptation.json": {
+      "bytes": 7982,
+      "sha256": "7e8b99d8fdd464cd48b5fdeaea7221e9b9b241a02a0990878013182ca9fa7001"
+    },
+    "preflight-fixed4/baseline.json": {
+      "bytes": 86911,
+      "sha256": "4664c69e0150b20f24f929eb1f0116022ec3e48ed13ce14aa6e202465f3fb9e7"
+    },
+    "preflight-fixed4/preflight.json": {
+      "bytes": 2448,
+      "sha256": "0ff2e863c4314f538074c789532dbef83446b4ccacbc21ab108a26ba669528d4"
+    },
+    "preflight-fixed4.txt": {
+      "bytes": 1059,
+      "sha256": "37313f62db1230e8a974243043136eea3387af5a2e94196c1f79977d47312c27"
+    },
+    "preflight-uniform2to6/adaptation.json": {
+      "bytes": 7992,
+      "sha256": "135ee074c5bc878b2808c77f9d7c0ccaeae715451b441210d3330476cceb9b0e"
+    },
+    "preflight-uniform2to6/baseline.json": {
+      "bytes": 86916,
+      "sha256": "41c773246443b64a994ee1a059e31c7d3122a5438d9e88dd92ec6f362edff721"
+    },
+    "preflight-uniform2to6/preflight.json": {
+      "bytes": 2452,
+      "sha256": "332d48632a1fdc83d8d51d65b88eee11836b9228984082c817d6a7247049ce5e"
+    },
+    "preflight-uniform2to6.txt": {
+      "bytes": 1058,
+      "sha256": "3c331d7a275e1b06802167000670af06127514c6d66988c5f7ecb5fac935b94e"
+    },
+    "queue-source.py": {
+      "bytes": 5748,
+      "sha256": "68bc794d7fd4206c9d272b0d0e676cd181cd161d3c17a705ef14eff1776aa009"
+    },
+    "queue.json": {
+      "bytes": 1220,
+      "sha256": "358531fb4f5979917273cd6e4a6225cd567345cf6762fa664d213f09516f66a5"
+    },
+    "worktree.txt": {
+      "bytes": 121,
+      "sha256": "b76b4203994cd4c592985ded752cf5d8ec7fbf0b71e86392a1cced5c6f479c46"
+    }
+  }
+}
