@@ -1,0 +1,45 @@
+{
+  "revision": "90c970b5520a6b6c1da3d7bd78d5d7fc2b7567f6",
+  "files": {
+    "calibration-first-document.txt": {
+      "bytes": 246,
+      "sha256": "39c3770c2e75b8556f4e0dbfe0f4557e2fa4d0a8f0f516eb57e4fef1fda2fa72"
+    },
+    "calibration-resumed.txt": {
+      "bytes": 1471,
+      "sha256": "d6494ed57b7e82c932aed7889764995c226ccada073e23989b2e51726cb4e3b9"
+    },
+    "fetch.txt": {
+      "bytes": 221,
+      "sha256": "b5c6658c6a65472514ccdcc444330f3c21c9d34290ba85c5b96f8474d03903e3"
+    },
+    "first-document-report.json": {
+      "bytes": 19757,
+      "sha256": "8f6bf4399cdd182ab01e1440d74b3c936bc87998a1c993010cf649687976b0f2"
+    },
+    "fit/report.json": {
+      "bytes": 59184,
+      "sha256": "89c61b3d2f047424c1f6fd5cfc0112dd49ffa2dcac8ed8dd09329c96f5534266"
+    },
+    "queue-source.py": {
+      "bytes": 4452,
+      "sha256": "300a489a8a7e9e81616a3614817c15045014c1b7669347f98560abd689c36d66"
+    },
+    "queue.json": {
+      "bytes": 912,
+      "sha256": "458b75ca2ff62328b187755723ec6e8b170263e19aa4051d903ed0bf69b2dbbe"
+    },
+    "solver-tests.txt": {
+      "bytes": 183,
+      "sha256": "bf7f01a84c540c90dda05c9f7bd1f8e5181f9fa3f95f6b5e615dc027e32072f1"
+    },
+    "solver-tests.xml": {
+      "bytes": 903,
+      "sha256": "6f67655959857139b3988c4b736fb87ac2fabcb2f02ed83bdb13f7a138c3bdcc"
+    },
+    "worktree.txt": {
+      "bytes": 135,
+      "sha256": "cbff2d5feb812083062fee300bac26389258677210d6ad45cecd5a0d96cb9668"
+    }
+  }
+}

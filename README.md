@@ -131,6 +131,15 @@ Des [diagnostics de partage des poids](docs/21_DONOR_SHARING_SCOUT.md) sur des p
 de développement montrent aussi que des corrections SVD propres à chaque profondeur
 ne suffisent pas sans entraînement ; retirer huit couches préserve mieux la prédiction
 que les partages cycliques testés. Aucune de ces variantes n'est adoptée.
+Une [calibration sur les activations d'entraînement](docs/22_ACTIVATION_WEIGHTED_SHARING.md)
+améliore ensuite le partage adjacent par moyenne, mais reste très loin du donneur
+sur les mêmes préfixes de développement : 11,2588 contre 3,1261 nats/token.
+Les 70 ajustements satisfont pourtant leur objectif local ; cela ne suffit pas
+à préserver les prédictions du réseau entier. Ce résultat n'est pas adopté.
+Le [contrôle de profondeur sur les poids R04 finaux](docs/23_R04_DEPTH_ADAPTATION.md)
+confirme aussi que huit boucles dégradent la prédiction : +16,16 % de BPB par
+rapport aux quatre boucles d'entraînement. Une comparaison entre entraînement
+à profondeur fixe et variable est budgétée, mais pas encore lancée.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

@@ -10,3 +10,8 @@
 /docs/experiments/2026-09-20-qwen-sharing-scout/residual-spectrum/*.txt -text whitespace=cr-at-eol,-blank-at-eof
 /docs/experiments/2026-09-20-qwen-adjacent-and-calibration-plan/budget/budget-proxy-config.json -text whitespace=cr-at-eol
 /docs/experiments/2026-09-20-qwen-adjacent-and-calibration-plan/budget/*.txt whitespace=-blank-at-eof
+/docs/experiments/2026-09-20-r04-depth-adaptation-plan/fixed4.json -text whitespace=cr-at-eol
+/docs/experiments/2026-09-20-r04-depth-adaptation-plan/uniform2to6.json -text whitespace=cr-at-eol
+/docs/experiments/2026-09-20-r04-depth-adaptation-plan/worst-k6-sizing-only.json -text whitespace=cr-at-eol
+/docs/experiments/2026-09-20-r04-depth-adaptation-plan/*.txt whitespace=-blank-at-eof
+/docs/experiments/2026-09-20-activation-fit/calibration-resumed.txt whitespace=-blank-at-eol

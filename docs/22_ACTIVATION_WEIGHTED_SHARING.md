@@ -1,10 +1,46 @@
 # 22 — Train-only activation calibration for shared projections
 
-**Status: experimental driver and analytic tests implemented; real A100 result
-pending. No architecture is adopted.** Neighboring-layer means and direct reuse
+**Status: A100 experiment complete; calibration improves the mean baseline but
+does not preserve donor language quality. No architecture is adopted.** Neighboring-layer means and direct reuse
 both damage the donor heavily ([measured scouts](21_DONOR_SHARING_SCOUT.md)). The
 next bounded diagnostic tests whether fitting actual layer behavior is more useful
 than averaging weights without their input distribution.
+
+## Measured result
+
+The fixed protocol below completed on A100 40 GB in **109.11 seconds**, including
+five passing solver tests (the CPU and actual CUDA independent least-squares
+oracles), an interruption after one training document, and successful continuation
+from that document to all 64. All 70 projection fits satisfy their local objective
+bound; even the largest fitted/mean regularized objective ratio is only 0.79524.
+This local improvement does not recover the network's final predictions.
+
+| Native Qwen execution, same 16 development prefixes | Nats/token, lower is better |
+|---|---:|
+| Unmodified donor | 3.126128284 |
+| Adjacent weight mean | 12.213935210 |
+| Activation-fitted adjacent sharing | 11.258849859 |
+
+The fit reduces mean-control CE by **7.82%**, but remains far behind the donor.
+Both shared variants register 438,763,520 unique parameters versus the donor's
+596,049,920. They retain all 28 execution depths; this is weight sharing, not a
+test of adaptive inference depth. These short development diagnostics do not
+measure downstream capability or prove that subsequent training cannot recover.
+
+The [source reports, queue and test XML](experiments/2026-09-20-activation-fit/export-manifest.json)
+were exported in a 27,359-byte ZIP with SHA256
+`7f0f68ba39494df8d4e8f61e26e79ce1f9b97a83fcbeb06a5de5cf98d86fc0eb`.
+A [local verification](experiments/2026-09-20-activation-fit/verification.json)
+checks every exported byte identity, the executed Git source hashes, independently
+reselects and tokenizes all 64 training and 16 development inputs, recomputes
+all aggregate scores over 8,176 targets, and checks the 70 recorded objective
+bounds and actual CUDA test result. It does not repeat GPU inference or refit
+the weights. No corpus text, weights or 2.34 GiB moment snapshot is committed.
+
+**Decision:** do not adopt this initialization or launch a long recovery run from
+it on this evidence. Return to the native R04 recurrent model to measure depth
+sensitivity at its final checkpoint before changing the training depth policy.
+This closes the untrained donor-sharing diagnostic series for now.
 
 This is motivated by feature-space least-squares fitting in
 [PLeaS (CVPR 2025)](https://openaccess.thecvf.com/content/CVPR2025/html/Nasery_PLeaS_-_Merging_Models_with_Permutations_and_Least_Squares_CVPR_2025_paper.html).

@@ -239,10 +239,10 @@ python scripts/summarize_r04.py \
   --step 4096 --seed 0 --out /tmp/r04-step4096-summary.json
 ```
 
-## Inference depth sensitivity on the same weights
+## Inference depth sensitivity at step 1,024
 
 `scripts/eval_r04_depth.py`, from revision
-`04b744b195a54a28026021fb63fb25bec19ee501`, loaded the exact checkpoint above while
+`04b744b195a54a28026021fb63fb25bec19ee501`, loaded the exact step-1,024 checkpoint while
 retaining the frozen training implementation and runtime. Four complete evaluations
 used the same documents and targets. The first, at the trained depth of four loops,
 reproduced the saved validation CE exactly.
@@ -265,6 +265,17 @@ order k=4,1,2,8. They include I/O and possible compilation and are not controlle
 latency benchmarks. Peak allocated GPU memory was 5.21–5.27 GiB for the standalone
 model and evaluation workspace, excluding training optimizer and gradients.
 [Full depth results](experiments/2026-09-19-r04-continuation/loop-seed0/depth-step-001024.json).
+
+The [completed final step-4,096 sweep](23_R04_DEPTH_ADAPTATION.md) reproduces
+the final k=4 result exactly and scores all 376 documents at k=1,2,4,6,8.
+At k=6 CE is 4.424840339; at k=8 it is 4.479179774, versus 3.855913359
+at k=4. Eight loops increase BPB by 16.1639% at the final checkpoint too.
+The next matched variable-depth adaptation is budgeted but not yet trained.
+
+Parameter-count note: the historical budget omitted existing GDN gate biases
+and output normalization. Corrected exact counts are 374,689,648 shared and
+920,679,616 unshared; historical source reports are retained unchanged.
+The model weights, topology, loss results and rounded 59.3% saving are unaffected.
 
 ## Snapshot workflow
 
