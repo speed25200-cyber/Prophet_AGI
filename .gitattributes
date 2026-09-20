@@ -1,0 +1,3 @@
+# Experiment reports contain byte-level SHA256 references to Linux/Colab exports.
+# Keep their committed bytes stable when checked out on Windows as well.
+/docs/experiments/** text eol=lf
