@@ -1,0 +1,102 @@
+{
+  "passed": true,
+  "step": 8,
+  "tokens_seen": 131072,
+  "depth_history": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+  ],
+  "identity": {
+    "protocol": "r04-depth-adaptation-v2",
+    "numerical_policy": {
+      "name": "r04-strict-determinism-v1",
+      "deterministic_algorithms": true,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "cublas_workspace_config": ":4096:8",
+      "matmul_allow_tf32": true,
+      "cudnn_allow_tf32": true,
+      "cudnn_version": 91900,
+      "sdpa_backends": {
+        "flash": true,
+        "memory_efficient": true,
+        "math": true,
+        "cudnn": true
+      }
+    },
+    "plan_sha256": "ba92d3450dce2b9317c739d2bd22c440532c1efa7c9cb23e076eef93e419d792",
+    "parent_checkpoint": {
+      "step": 4096,
+      "slot": 1,
+      "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+      "bytes": 3233905547,
+      "extra": {}
+    },
+    "parent_loader_sha256": "4a398330bf498c7964b8432ddbe34c13260b2a720ac88e3a051340cfff5701a0",
+    "data": {
+      "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+      "artifacts": {
+        "train/fineweb-edu/part-00000.jsonl": {
+          "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e",
+          "bytes": 91838924,
+          "documents": 19569
+        },
+        "validation/fineweb-edu/part-00000.jsonl": {
+          "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939",
+          "bytes": 1858016,
+          "documents": 376
+        }
+      },
+      "tokenizer_semantic_sha256": "7d8d36adb2b2bf9dac7a6060294641ea16c59ce20506e2294c556c7abd99537b"
+    },
+    "runtime": {
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "fla": "0.5.2",
+      "triton": "3.6.0",
+      "device": "NVIDIA A100-SXM4-40GB",
+      "triton_f32_default": "tf32x3"
+    },
+    "code": {
+      "revision": "f5a7d71be1723324e36a7be2546c940a69de9fdf",
+      "driver_sha256": "a170094e9ba780146790f9f8bfac7781f8890da5c92fd462fec85f9531f78a95"
+    },
+    "arm": "fixed4",
+    "mode": "train",
+    "evaluation_depths": [
+      4,
+      1,
+      2,
+      6,
+      8
+    ],
+    "warm_start": "parent weights and loader, new optimizer/schedule, RNG reset to parent seed"
+  },
+  "left_checkpoint": {
+    "step": 8,
+    "slot": 1,
+    "sha256": "af070f0fb9c4bfd8eb1436f80923659d61cf81b523a2475fea3bb678be598b3e",
+    "bytes": 3233904139,
+    "extra": {}
+  },
+  "right_checkpoint": {
+    "step": 8,
+    "slot": 0,
+    "sha256": "29c25f2212df511aa2dbf84c05b2e59f7b29839aa1364aa927aefa7ee801af2c",
+    "bytes": 3233904203,
+    "extra": {}
+  },
+  "state_comparison": {
+    "tensors": 315,
+    "tensor_elements": 867172946
+  },
+  "per_document_evaluation_equal": true,
+  "scope": "Exact equality of every checkpoint tensor/value, including model, optimizers, RNG, loader, depth history, contract and counters, plus all saved evaluation results. Session/process separation must additionally be established by the launch queue."
+}

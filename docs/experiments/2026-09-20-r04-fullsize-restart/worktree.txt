@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD f5a7d71)
+HEAD is now at f5a7d71 Bind R04 adaptation to verified deterministic numerical policy

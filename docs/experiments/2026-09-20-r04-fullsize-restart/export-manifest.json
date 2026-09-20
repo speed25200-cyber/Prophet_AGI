@@ -1,0 +1,244 @@
+{
+  "revision": "f5a7d71be1723324e36a7be2546c940a69de9fdf",
+  "processes": {
+    "fetch": {
+      "pid": 202193,
+      "returncode": 0
+    },
+    "worktree": {
+      "pid": 202205,
+      "returncode": 0
+    },
+    "cpu-cuda-tests": {
+      "pid": 202208,
+      "returncode": 0
+    },
+    "preflight-fixed4": {
+      "pid": 202319,
+      "returncode": 0
+    },
+    "preflight-uniform2to6": {
+      "pid": 202602,
+      "returncode": 0
+    },
+    "fixed4-continuous8": {
+      "pid": 202902,
+      "returncode": 0
+    },
+    "fixed4-interrupted1": {
+      "pid": 203503,
+      "returncode": 0
+    },
+    "fixed4-resumed7": {
+      "pid": 204009,
+      "returncode": 0
+    },
+    "fixed4-audit": {
+      "pid": 204464,
+      "returncode": 0
+    },
+    "uniform2to6-continuous8": {
+      "pid": 204591,
+      "returncode": 0
+    },
+    "uniform2to6-interrupted1": {
+      "pid": 205172,
+      "returncode": 0
+    },
+    "uniform2to6-resumed7": {
+      "pid": 205687,
+      "returncode": 0
+    },
+    "uniform2to6-audit": {
+      "pid": 206162,
+      "returncode": 0
+    }
+  },
+  "files": {
+    "cpu-cuda-tests.txt": {
+      "bytes": 180,
+      "sha256": "b91fc1f2b3936ba8c98498898b2984da32cf70231b6a134bb876a85c017e5df8"
+    },
+    "cpu-cuda-tests.xml": {
+      "bytes": 1461,
+      "sha256": "58570af625d34fe4fd225902226c3af42952b6db0fa5b1b99ed1ba027676ac0c"
+    },
+    "fetch.txt": {
+      "bytes": 221,
+      "sha256": "f621a542309427fb9a18c0708bf779c2ada889f13ccf6c5c2eeb71768a1e95ec"
+    },
+    "fixed4-audit.txt": {
+      "bytes": 76,
+      "sha256": "84a29fe0bff7c42f6e8c57d1743194b1ce48738eda11e2031425972b88ac30d9"
+    },
+    "fixed4-continuous/adaptation.json": {
+      "bytes": 8972,
+      "sha256": "7a07632ff3e4f59b6ff70a98f465fe127f44e6abbf50b04f96cc5753331972ce"
+    },
+    "fixed4-continuous/baseline.json": {
+      "bytes": 87389,
+      "sha256": "250829babe3206f3c8c402ef3cd85b17562bb8299f628c75b9936046181c0ce5"
+    },
+    "fixed4-continuous/checkpoints/manifest.json": {
+      "bytes": 377,
+      "sha256": "bf3af2baeeee0fb775465d5626a1555469352a62f798d006797443853bb76d4f"
+    },
+    "fixed4-continuous/evaluation-step-000008.json": {
+      "bytes": 93136,
+      "sha256": "883e7400fb9b99595bfabf7967e6bf0ce6908a0f24316647c9c4ebff3fdc7104"
+    },
+    "fixed4-continuous/training.jsonl": {
+      "bytes": 1651,
+      "sha256": "527d7f63f8f1aac4a4baccb28977f4ef87a442b5eb225b6362ae25cef5c0c8b2"
+    },
+    "fixed4-continuous8.txt": {
+      "bytes": 43,
+      "sha256": "b646ff7f4f75804cf9c1de6dbc80e1944dc74a3f68ea1780a8429ff96709390c"
+    },
+    "fixed4-interrupted/adaptation.json": {
+      "bytes": 8972,
+      "sha256": "7a07632ff3e4f59b6ff70a98f465fe127f44e6abbf50b04f96cc5753331972ce"
+    },
+    "fixed4-interrupted/baseline.json": {
+      "bytes": 87389,
+      "sha256": "250829babe3206f3c8c402ef3cd85b17562bb8299f628c75b9936046181c0ce5"
+    },
+    "fixed4-interrupted/checkpoints/manifest.json": {
+      "bytes": 377,
+      "sha256": "0fb7c85a7f27fbe9133d4c7bfc097cff53b1dcca406bf1f526c57c567965459f"
+    },
+    "fixed4-interrupted/evaluation-step-000001.json": {
+      "bytes": 93084,
+      "sha256": "7046631bdb883aafa9b26d5c6e2adcbdb625fc8e59c0386ed14ec04192a4c696"
+    },
+    "fixed4-interrupted/evaluation-step-000008.json": {
+      "bytes": 93136,
+      "sha256": "aebae0da4582ab26c3b5cfc6c20fd86395ebbea28dabf383fe9c955925359edc"
+    },
+    "fixed4-interrupted/training.jsonl": {
+      "bytes": 1651,
+      "sha256": "d6e00c09e82ba98d23daec5f935c94e2d9276793f29351cd968c87c1d4917a60"
+    },
+    "fixed4-interrupted1.txt": {
+      "bytes": 43,
+      "sha256": "368591d27ccf63d03f2e6eb94e807f8eaa2638cef82cd9b154cebac07bf7a2b1"
+    },
+    "fixed4-restart-audit.json": {
+      "bytes": 3038,
+      "sha256": "e62e3f59f8801fda7cb68ec53a84040375aba1fc69d547c1129b770cd5de794b"
+    },
+    "fixed4-resumed7.txt": {
+      "bytes": 43,
+      "sha256": "b646ff7f4f75804cf9c1de6dbc80e1944dc74a3f68ea1780a8429ff96709390c"
+    },
+    "preflight-fixed4/adaptation.json": {
+      "bytes": 8980,
+      "sha256": "0e85f6afa5ed778bb7b64dedc327066654cb4c1a7e6c0827b852bc4a58c3d7c5"
+    },
+    "preflight-fixed4/baseline.json": {
+      "bytes": 87393,
+      "sha256": "22c6a144af70f4d7d05bc36cea6e5eba316c4863a9b0dc40e0a61ee6443107e6"
+    },
+    "preflight-fixed4/preflight.json": {
+      "bytes": 2931,
+      "sha256": "e4e4675f75e4f4a7c72994f1b03c6a247d9d8f738333fc6887521bb925c36d0e"
+    },
+    "preflight-fixed4.txt": {
+      "bytes": 671,
+      "sha256": "5cd7d91a2859fad688bd6db47c7889a65796b807690bfd863883a16483a95715"
+    },
+    "preflight-uniform2to6/adaptation.json": {
+      "bytes": 8990,
+      "sha256": "f98097a82f4d167b9d359d09d78d074d12b8d65d0f72013e34dde281eebf2762"
+    },
+    "preflight-uniform2to6/baseline.json": {
+      "bytes": 87398,
+      "sha256": "85aafee100c8def447188b2baebe0f76afda15e834f5c259fa9b3f46842e27a2"
+    },
+    "preflight-uniform2to6/preflight.json": {
+      "bytes": 2935,
+      "sha256": "7c6c5646de5ac657a43b4077eb61ce3be643e2d360b19f914d91a9cb5b1756d5"
+    },
+    "preflight-uniform2to6.txt": {
+      "bytes": 670,
+      "sha256": "761d49a59ca3a87a43fa4526532cf2be085f059f105d17cba148583c61ff7686"
+    },
+    "queue-source.py": {
+      "bytes": 5778,
+      "sha256": "f1fccdf0822f965708009c509b6a4e9b7cde32d2120615ec1547b17f596f48e7"
+    },
+    "queue.json": {
+      "bytes": 1444,
+      "sha256": "6d25291aa62a9cb7923cfd4d098db0507ab092278cef1e7add70144a33c1e050"
+    },
+    "uniform2to6-audit.txt": {
+      "bytes": 76,
+      "sha256": "84a29fe0bff7c42f6e8c57d1743194b1ce48738eda11e2031425972b88ac30d9"
+    },
+    "uniform2to6-continuous/adaptation.json": {
+      "bytes": 8982,
+      "sha256": "f45520883c0987e73b5232def586242047c6b5dbbe33f222eafedb2341c41149"
+    },
+    "uniform2to6-continuous/baseline.json": {
+      "bytes": 87394,
+      "sha256": "8dca3831d8c574448d61ada8f258a7b345a4a4f79ad75e8797e1f0cb755d0104"
+    },
+    "uniform2to6-continuous/checkpoints/manifest.json": {
+      "bytes": 377,
+      "sha256": "2cfad69fd6d3586d8e954e54233c1be52ed839849dd87f631c9126d1ebb75dcc"
+    },
+    "uniform2to6-continuous/evaluation-step-000008.json": {
+      "bytes": 93156,
+      "sha256": "c78bf1ad94cbb8c845581e669bc4d321d7696a00f6d410df8edf9fa3069b178d"
+    },
+    "uniform2to6-continuous/training.jsonl": {
+      "bytes": 1642,
+      "sha256": "d7e09915852490c45d1435d1f4175fd0a446e1d664f9cea08947d2c2de10e97f"
+    },
+    "uniform2to6-continuous8.txt": {
+      "bytes": 61,
+      "sha256": "55f62694daea1d258ecfa9304eae1814303bb6d64544882a15d254c00774bcdf"
+    },
+    "uniform2to6-interrupted/adaptation.json": {
+      "bytes": 8982,
+      "sha256": "f45520883c0987e73b5232def586242047c6b5dbbe33f222eafedb2341c41149"
+    },
+    "uniform2to6-interrupted/baseline.json": {
+      "bytes": 87394,
+      "sha256": "8dca3831d8c574448d61ada8f258a7b345a4a4f79ad75e8797e1f0cb755d0104"
+    },
+    "uniform2to6-interrupted/checkpoints/manifest.json": {
+      "bytes": 377,
+      "sha256": "b761682f854cc4717dafeda4c71357783fd64d4b11038637764e8048d0125f02"
+    },
+    "uniform2to6-interrupted/evaluation-step-000001.json": {
+      "bytes": 93085,
+      "sha256": "99b06e1117bff386470fba3cde2beccb53b2bdc618be5926206d21fb647bbc62"
+    },
+    "uniform2to6-interrupted/evaluation-step-000008.json": {
+      "bytes": 93156,
+      "sha256": "425498f17765279f6730af9cbc239be680be19df6ad4c27615960f40f0b31825"
+    },
+    "uniform2to6-interrupted/training.jsonl": {
+      "bytes": 1639,
+      "sha256": "ad3a6b44b29e3cf5aee6a3f38b802a124b45f7b8b5bf63cfd138fe5fbcaef76f"
+    },
+    "uniform2to6-interrupted1.txt": {
+      "bytes": 43,
+      "sha256": "3c31da3c83ccd0afc457a5db95cfdfd9214b972ae9b493bca8fd8e1679a1d8e3"
+    },
+    "uniform2to6-restart-audit.json": {
+      "bytes": 3043,
+      "sha256": "68128b94268c17f1cb0493ad45e92b404037b489d3b11242e013d7ce84819f6e"
+    },
+    "uniform2to6-resumed7.txt": {
+      "bytes": 61,
+      "sha256": "55f62694daea1d258ecfa9304eae1814303bb6d64544882a15d254c00774bcdf"
+    },
+    "worktree.txt": {
+      "bytes": 129,
+      "sha256": "d07dbced4630b9961cb5a9cce89f2a4394448230ae3679981c5f5d4f65174b57"
+    }
+  },
+  "scope": "reports, logs and checkpoint metadata; weights excluded"
+}

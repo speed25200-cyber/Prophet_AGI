@@ -144,8 +144,11 @@ et ses essais mémoire à taille réelle passent. Son premier segment a été ar
 proprement après 54 mises à jour : des écarts de gradients entre les préflights
 ont motivé une politique de calcul déterministe. Avec cette politique, trois mises
 à jour à taille réelle donnent des gradients et poids identiques dans deux processus
-séparés ; la reprise après interruption à cette taille reste à vérifier.
-La comparaison des deux politiques d'entraînement reste inachevée.
+séparés. Les deux variantes réussissent ensuite la reprise exacte à 375M paramètres :
+huit étapes continues et une étape suivie de sept dans un nouveau processus donnent
+les mêmes poids, états d'optimiseur, RNG, curseurs et évaluations par document.
+Les continuations appariées vers 512 étapes sont lancées avec ce même code figé ;
+la comparaison finale des deux politiques d'entraînement reste inachevée.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

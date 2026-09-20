@@ -1,11 +1,11 @@
 # 23 — Does training across depths make additional loops useful?
 
-**Status: final frozen-model depth sweep completed; matched adaptation driver
-implemented, six CPU/CUDA tests and both real-shape memory gates passed. The first
-training segment was stopped at step 54 after real-shape preflights showed different
-gradients. A strict deterministic numerical policy now reproduces three full-size
-k6 updates across separate processes exactly; interrupted-versus-continuous
-full-size training is the remaining gate. No new architecture is adopted.**
+**Status: final frozen-model depth sweep completed. Under the amended strict
+numerical policy, all nine CPU/CUDA tests, both real-shape memory gates and both
+375M interrupted-versus-continuous restart gates pass. The matched continuations
+to 512 steps are now launched from the preselected eight-step prefixes; their
+final quality comparison remains pending. The earlier numerical failure and
+stopped step-54 run are retained below. No new architecture is adopted.**
 
 ## Why this experiment
 
@@ -164,8 +164,8 @@ equivalence.
 # Use a fresh output directory for every arm and disposable preflight.
 python scripts/adapt_r04_depth.py --parent-run <final-loop-run> \
   --corpus <original-pilot> --arm uniform2to6 --mode preflight --out <preflight>
-# Do not start further segments until the real-shape reproducibility issue below is resolved.
-# Once all gates, including real-shape restart equivalence, pass:
+# The v2 full-size gates below pass with the strict policy and frozen f5a7d71 driver.
+# Continue the preselected output, preserving its numerical/training contract:
 python scripts/adapt_r04_depth.py --parent-run <final-loop-run> \
   --corpus <original-pilot> --arm uniform2to6 --out <new-training-arm> \
   --max-session-steps 64
@@ -281,6 +281,69 @@ restricted-loads their tensors, rejects nonfinite state, and compares the entire
 state recursively without numerical tolerance. Its report also requires identical
 per-document evaluations. It is exercised by both miniature CLI restart cases;
 a corruption test demonstrates rejection of changed optimizer momentum or RNG.
-The updated local targeted suite passes seven tests with two CUDA skips. Before
-adding this auditor, the full strict-policy suite passed 809 tests with 18 skips
-in 168.95 seconds; that result does not substitute for the actual A100 prefix gate.
+The updated local targeted suite passes seven tests with two CUDA skips. The
+full strict-policy suite including the auditor passed 810 tests with 18 skips
+in 182.38 seconds; that result does not substitute for the actual A100 prefix gate.
+
+## Actual-size restart gates passed
+
+The [exported full-size evidence](experiments/2026-09-20-r04-fullsize-restart/export-manifest.json)
+records thirteen separate processes, all terminal with exit zero. Nine CPU/CUDA
+tests pass without skips, including the two miniature CUDA restart cases. Both
+new actual-size k6 memory preflights pass and reproduce the same losses; peak
+allocation remains 13,444,140,032 bytes.
+
+For **each** 374,689,648-parameter arm, the auditor compares eight continuous
+updates against one update followed by seven in a new process. All **315 tensors,
+867,172,946 tensor elements** and all other checkpoint state compare exactly:
+weights, optimizer states, CPU/CUDA RNG, loader, contracts, counters and depth
+history. Every saved document-level evaluation matches too. Fixed-depth history
+is eight fours; the sampled history is **[6, 6, 5, 2, 5, 6, 4, 5]** in both paths.
+The whole gate queue takes 897.32 seconds, below its 1,800-second diagnostic limit.
+
+The 349,577-byte ZIP has SHA256
+`e1935e51e12858e4d04099b34331501c824508f4f989fc667035fc3c54c02529`.
+The [local verifier](experiments/2026-09-20-r04-fullsize-restart/verify.py) checks all
+46 original file hashes, executed driver identity, separate terminal process IDs,
+test XML, parent baseline rows, checkpoint metadata, training logs and recomputed
+evaluation aggregates. Twelve large JSON files are losslessly gzipped. The
+multi-gigabyte weights are excluded; local verification does not repeat the
+recorded A100 checkpoint tensor comparison.
+
+The continuous prefixes were designated as production runs in the gate launcher
+before observing their quality. They now continue with the **same frozen
+`f5a7d71` driver and numerical policy**, first 56 more updates to step 64 in both
+arms, then 448 more to step 512. The new queue is bounded at 5,400 seconds;
+diagnostic gate time is reported separately. Its first process was observed live
+at step 50 with finite losses and gradients. No intermediate score selects an arm
+or changes the recipe; final all-depth results and the primary screen remain
+pending.
+
+## Final comparison implementation
+
+Before the long segments, `scripts/summarize_depth_adaptation.py` implements the
+unchanged step-512 decision above. It rejects incomplete runs, changed paired
+identities, mismatched document identities/denominators, invalid depth histories,
+nonfinite losses and inconsistent aggregates. Every score is recomputed from
+the document rows. Training depth counts and the realized mean are reported.
+
+The previously specified 10,000 draws and seed zero are made operational with
+NumPy PCG64 and linear 2.5/97.5% quantiles, matching the published frozen-depth
+analysis. Each draw samples whole documents jointly; its CE contrast divides
+the summed k6-minus-k4 losses by the summed token counts. This is uncertainty
+conditional on these checkpoints, not across training seeds. All four primary
+checks must pass; the program never selects a recipe from intermediate scores.
+It does not reload weights or repeat GPU inference.
+
+Fourteen focused tests cover successful and unsuccessful screens, token-weighted
+contrasts with an interval crossing zero, and corrupted or unmatched reports.
+Together with the adaptation CLI tests, the local targeted run passes 21 tests
+with two CUDA skips. The training driver remains frozen at `f5a7d71`; this
+analysis addition does not change its numerical or training contract.
+
+```bash
+python scripts/summarize_depth_adaptation.py \
+  --fixed <fixed4>/evaluation-step-000512.json \
+  --variable <uniform2to6>/evaluation-step-000512.json \
+  --out <fresh-summary.json>
+```

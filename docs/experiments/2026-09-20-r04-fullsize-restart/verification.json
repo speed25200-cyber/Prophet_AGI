@@ -1,0 +1,41 @@
+{
+  "verified": true,
+  "source_files": 46,
+  "results": {
+    "fixed4": {
+      "depth_history": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4
+      ],
+      "exact_restart": true,
+      "tensors": 315,
+      "tensor_elements": 867172946
+    },
+    "uniform2to6": {
+      "depth_history": [
+        6,
+        6,
+        5,
+        2,
+        5,
+        6,
+        4,
+        5
+      ],
+      "exact_restart": true,
+      "tensors": 315,
+      "tensor_elements": 867172946
+    }
+  },
+  "queue_seconds": 897.3237882410031,
+  "cpu_cuda_tests_passed": 9,
+  "source_zip_bytes": 349577,
+  "source_zip_sha256": "e1935e51e12858e4d04099b34331501c824508f4f989fc667035fc3c54c02529",
+  "scope": "Exported source identities, separate terminal process IDs, metadata, original baseline rows, paired evaluations and training logs recomputed locally. Exact checkpoint tensor/optimizer/RNG equality was checked by the recorded A100 auditor; weights are not included or reloaded here. No quality decision."
+}

@@ -1,0 +1,3 @@
+.........                                                                [100%]
+--- generated xml file: /content/r04-depth-strict-gate-v1/cpu-cuda-tests.xml ---
+9 passed in 16.80s
