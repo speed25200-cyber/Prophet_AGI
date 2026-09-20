@@ -111,6 +111,10 @@ La reprise exacte CE/KL est testée sur CUDA. Le contrôle des gradients GDN éc
 encore en BF16 ; les essais FP32 réussis constituent une politique expérimentale
 explicite. La comparaison finale, les autres graines et les évaluations de capacités
 restent à effectuer.
+Une [évaluation de capacités ARC-Easy](docs/20_RECOVERY_CAPABILITY_EVAL.md) est
+préparée sur les 2 376 questions de test, avec un protocole commun au donneur et aux
+quatre modèles récupérés. Le calcul des probabilités passe un contrôle indépendant
+sur Qwen réel ; les scores complets restent à mesurer après les entraînements.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

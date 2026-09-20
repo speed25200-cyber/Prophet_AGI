@@ -1,0 +1,33 @@
+{
+  "complete": true,
+  "protocol": "arc-easy-raw-choice-v1",
+  "source": {
+    "hf_id": "allenai/ai2_arc",
+    "revision": "210d026faf9955653af8916fad021475a3f00453",
+    "config": "ARC-Easy",
+    "split": "test",
+    "license": "cc-by-sa-4.0"
+  },
+  "rows": 2376,
+  "items_sha256": "5011ec1abef00263b75101c484acdd4e8e2a1e51f8d6895059e87126ccdc6b3b",
+  "tokenizer": {
+    "format": "donor-bytelevel-raw-text-v1",
+    "source_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "eos_id": 151645,
+    "pad_id": 151643,
+    "vocab_size": 151936,
+    "normalizer": {
+      "type": "NFC"
+    },
+    "policy": "no added-token recognition; no postprocessor; explicit EOS"
+  },
+  "max_tokens": 512,
+  "max_observed_tokens": 167,
+  "total_candidate_tokens": 297436,
+  "prompt_template": "Question: {question}\nAnswer:",
+  "continuation_prefix": " ",
+  "fewshot": 0,
+  "scoring": "continuation-only summed nats; character-normalized nats divide by original choice length",
+  "tie_policy": "first source choice; report ties",
+  "scope": "Full exploratory test split; no chat, truncation, cached generation or instruction-following claim. Prior lexical overlap screen is incomplete; donor pretraining contamination is unknown."
+}
