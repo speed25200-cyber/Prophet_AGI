@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD 2e4d25e)
+HEAD is now at 2e4d25e Add bounded observational diagnostics for frozen recurrent states

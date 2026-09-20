@@ -1,0 +1,30 @@
+{
+  "status": "complete",
+  "analysis_revision": "7f74a23038eef534bd6e828503c3abaa5ac663db",
+  "training_revision": "f5a7d71be1723324e36a7be2546c940a69de9fdf",
+  "post_training_maximum_seconds": 600,
+  "wait_limit_seconds": 5400,
+  "scope": "CPU-only final checkpoint integrity and preregistered depth-policy screen. No additional training or inference.",
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/r04-depth-analysis-code-7f74a23/scripts/summarize_depth_adaptation.py",
+    "--fixed",
+    "/content/r04-depth-strict-gate-v1/fixed4-continuous/evaluation-step-000512.json",
+    "--variable",
+    "/content/r04-depth-strict-gate-v1/uniform2to6-continuous/evaluation-step-000512.json",
+    "--out",
+    "/content/r04-depth-adaptation-analysis-v1/summary.json"
+  ],
+  "pid": 220507,
+  "screen_tests_passed": 14,
+  "seed0_screen_passed": false,
+  "checks": {
+    "variable_k6_improves_own_k4_by_at_least_half_percent": false,
+    "paired_ce_interval_upper_below_zero": false,
+    "variable_k4_within_one_percent_of_control_k4": true,
+    "variable_k6_improves_control_k6": true
+  },
+  "analysis_seconds": 30.29182409799978,
+  "elapsed_seconds_including_wait": 2152.516181799001
+}

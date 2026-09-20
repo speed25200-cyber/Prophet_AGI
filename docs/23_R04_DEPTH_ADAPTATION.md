@@ -1,11 +1,11 @@
 # 23 — Does training across depths make additional loops useful?
 
-**Status: final frozen-model depth sweep completed. Under the amended strict
-numerical policy, all nine CPU/CUDA tests, both real-shape memory gates and both
-375M interrupted-versus-continuous restart gates pass. The matched continuations
-to 512 steps are now launched from the preselected eight-step prefixes; their
-final quality comparison remains pending. The earlier numerical failure and
-stopped step-54 run are retained below. No new architecture is adopted.**
+**Status: both matched 512-step adaptations and all final depth evaluations are
+complete and independently verified. The primary seed-zero screen fails: variable
+depth greatly reduces sensitivity to loop count, but six loops remain worse than
+four. All strict numerical, memory and actual-size restart gates pass. The earlier
+numerical failure and stopped step-54 run are retained below. No architecture is
+adopted and useful additional inference computation remains unproven.**
 
 ## Why this experiment
 
@@ -330,13 +330,11 @@ multi-gigabyte weights are excluded; local verification does not repeat the
 recorded A100 checkpoint tensor comparison.
 
 The continuous prefixes were designated as production runs in the gate launcher
-before observing their quality. They now continue with the **same frozen
+before observing their quality. They continued with the **same frozen
 `f5a7d71` driver and numerical policy**, first 56 more updates to step 64 in both
-arms, then 448 more to step 512. The new queue is bounded at 5,400 seconds;
-diagnostic gate time is reported separately. Its first process was observed live
-at step 50 with finite losses and gradients. No intermediate score selects an arm
-or changes the recipe; final all-depth results and the primary screen remain
-pending.
+arms, then 448 more to step 512. This queue completed in 2,920.52 seconds under its
+5,400-second limit; diagnostic gate time is reported separately. No intermediate
+score selected an arm or changed the recipe. Final results follow below.
 
 ## Final comparison implementation
 
@@ -368,9 +366,76 @@ python scripts/summarize_depth_adaptation.py \
 ```
 
 The [local final-evidence verifier](experiments/2026-09-20-r04-depth-adaptation-final/verify.py)
-is prepared while the paired run is still active. Once its exported evidence is
-available, it checks source hashes, terminal process records, checkpoint metadata,
-continuity with the previously verified eight-step prefixes, all 512 training
-records and exact agreement with a locally recomputed final screen. Its formatting,
-lint and syntax checks pass; execution against the final evidence remains pending.
-It does not reload checkpoint tensors or repeat GPU inference.
+now passes against the exported evidence. It checks source hashes, terminal process
+records, checkpoint metadata, continuity with the previously verified eight-step
+prefixes, all 512 training records and exact agreement with a locally recomputed
+final screen. It does not reload checkpoint tensors or repeat GPU inference.
+
+## Final matched result: robust to depth, no gain from additional loops
+
+Both models finish 512 additional updates, 8,388,608 input tokens, loader cursor
+36,864 and zero skipped nonfinite updates. All five depths use all 376 unchanged
+development documents, 393,040 scored tokens and 1,750,592 payload bytes.
+
+| Inference loops | Fixed-four CE | Variable-depth CE | Fixed-four BPB | Variable-depth BPB |
+|---:|---:|---:|---:|---:|
+| 1 | 4.803387449 | 4.083040002 | 1.555872374 | 1.322543561 |
+| 2 | 4.187250954 | 3.874768834 | 1.356298685 | 1.255082137 |
+| 4 | 3.842789566 | 3.846897464 | 1.244723685 | 1.246054280 |
+| 6 | 4.416418312 | 3.863485786 | 1.430528625 | 1.251427428 |
+| 8 | 4.476420184 | 3.980072203 | 1.449963921 | 1.289191108 |
+
+CE is nats per token; lower is better for both metrics. The variable arm improves
+k6 BPB by **12.5199%** over the matched fixed-depth arm, while its k4 BPB is only
+**0.1069%** worse. However, its own k6 BPB is **0.4312% worse** than k4, instead of
+the required improvement of at least 0.5%. Its paired CE(k6)-CE(k4) difference is
+**+0.0165883**, with 95% document-bootstrap interval **[+0.0157351, +0.0174359]**.
+The interval is conditional on these weights; it is not training-seed uncertainty.
+
+| Preregistered check | Result |
+|---|---|
+| Variable k6 / own k4 BPB ≤ 0.995 | **Fail:** 1.004312130 |
+| Upper paired CE(k6)-CE(k4) interval < 0 | **Fail:** +0.017435901 |
+| Variable k4 / control k4 BPB ≤ 1.01 | Pass: 1.001068988 |
+| Variable k6 better than control k6 | Pass |
+
+The primary screen therefore **fails**. Training across depths reduces the fixed
+model's sharp optimum at k4, but does not make six loops useful relative to four.
+At the untrained k8, variable BPB remains **3.4619% worse** than its k4 result.
+The secondary k2 result is **0.7245% worse** than its own k4, or **0.8322% worse**
+than control k4; it suggests a possible quality/computation tradeoff at reduced
+depth, not a measured latency advantage or fulfillment of the extra-computation
+objective. Neither lower language loss nor robustness establishes reasoning.
+
+Actual variable-depth counts are k2=116, k3=101, k4=91, k5=105, k6=99, giving a
+mean **3.94140625** loops against exactly 4 for the control. Expected depth was
+matched, not realized FLOPs. Summed recorded update times are 1,111.60 seconds
+for fixed depth and 1,098.24 for variable depth; these exclude checkpoint writes,
+validation and process startup, and are not an inference-speed benchmark.
+
+All four queue process handles exit zero. The CPU final-state audit then reloads
+the published files, validates their hashes/contracts/counters and inspects all
+315 tensors / 867,172,946 elements per arm for finiteness. It does not compare
+the two differently trained states for equality. The fourteen screen tests pass
+in Colab, and the final audit plus screen takes 30.29 seconds.
+
+The [31-file evidence export](experiments/2026-09-20-r04-depth-adaptation-final/export-manifest.json)
+has ZIP size 478,876 bytes and SHA256
+`7bac6bc695ccbc7f23345604d595df35eb499ada7143bf62893117e991ae20de`.
+Every member hash is verified locally; large JSON/JSONL files are losslessly
+gzipped. The [local recomputation](experiments/2026-09-20-r04-depth-adaptation-final/verification.json)
+exactly reproduces all scores, the bootstrap interval and every decision bit.
+
+## Consequence for the research sequence
+
+Do not adopt this recipe as evidence of useful additional computation or expand
+the seed-zero screen into a positive result by changing its endpoint. The planned
+success-triggered multi-seed extension is not triggered. Retain both endpoints as
+references for a new controlled hypothesis, while preserving the corpus-pass
+ceiling: this adaptation already reaches 3.8877 passes of the original corpus.
+
+The [bounded internal-state observations](24_R04_RECURRENCE_OBSERVATION.md) are
+also complete. They help constrain the next hypothesis but do not identify a
+causal architecture defect. Any change to normalization, input reinjection or
+the mixer still requires budget/search/plan checks, a separately fixed controlled
+experiment and demonstrated capability gains before adoption.

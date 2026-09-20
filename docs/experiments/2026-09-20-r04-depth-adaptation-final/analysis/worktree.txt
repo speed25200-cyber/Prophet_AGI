@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD 7f74a23)
+HEAD is now at 7f74a23 Verify full-size R04 restart gates and implement depth-policy screen

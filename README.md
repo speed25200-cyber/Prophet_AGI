@@ -147,8 +147,17 @@ ont motivé une politique de calcul déterministe. Avec cette politique, trois m
 séparés. Les deux variantes réussissent ensuite la reprise exacte à 375M paramètres :
 huit étapes continues et une étape suivie de sept dans un nouveau processus donnent
 les mêmes poids, états d'optimiseur, RNG, curseurs et évaluations par document.
-Les continuations appariées vers 512 étapes sont lancées avec ce même code figé ;
-la comparaison finale des deux politiques d'entraînement reste inachevée.
+Les deux continuations de 512 étapes sont maintenant terminées et leurs résultats
+recalculés localement. L'entraînement entre deux et six boucles réduit fortement
+la sensibilité à la profondeur : à six boucles, il améliore le BPB de 12,52 %
+par rapport au témoin entraîné à quatre. Mais six boucles restent **0,43 % moins
+bonnes que ses propres quatre boucles** ; le critère principal échoue. À quatre
+boucles, il reste à +0,11 % du témoin. Cela démontre une meilleure robustesse sur
+cette graine, pas un gain de raisonnement ou l'utilité du calcul supplémentaire.
+Les [observations internes des deux modèles](docs/24_R04_RECURRENCE_OBSERVATION.md),
+sur seize documents, ne montrent pas de convergence de tous les états de tokens vers une même direction.
+L'amplitude des états augmente avec les boucles, sans que cela identifie à lui seul
+la cause de l'échec. Aucune nouvelle architecture n'est adoptée.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

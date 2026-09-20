@@ -1,0 +1,193 @@
+{
+  "protocol": "r04-depth-adaptation-screen-v1",
+  "plan_sha256": "ba92d3450dce2b9317c739d2bd22c440532c1efa7c9cb23e076eef93e419d792",
+  "identity_without_arm": {
+    "protocol": "r04-depth-adaptation-v2",
+    "numerical_policy": {
+      "name": "r04-strict-determinism-v1",
+      "deterministic_algorithms": true,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "cublas_workspace_config": ":4096:8",
+      "matmul_allow_tf32": true,
+      "cudnn_allow_tf32": true,
+      "cudnn_version": 91900,
+      "sdpa_backends": {
+        "flash": true,
+        "memory_efficient": true,
+        "math": true,
+        "cudnn": true
+      }
+    },
+    "plan_sha256": "ba92d3450dce2b9317c739d2bd22c440532c1efa7c9cb23e076eef93e419d792",
+    "parent_checkpoint": {
+      "step": 4096,
+      "slot": 1,
+      "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+      "bytes": 3233905547,
+      "extra": {}
+    },
+    "parent_loader_sha256": "4a398330bf498c7964b8432ddbe34c13260b2a720ac88e3a051340cfff5701a0",
+    "data": {
+      "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+      "artifacts": {
+        "train/fineweb-edu/part-00000.jsonl": {
+          "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e",
+          "bytes": 91838924,
+          "documents": 19569
+        },
+        "validation/fineweb-edu/part-00000.jsonl": {
+          "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939",
+          "bytes": 1858016,
+          "documents": 376
+        }
+      },
+      "tokenizer_semantic_sha256": "7d8d36adb2b2bf9dac7a6060294641ea16c59ce20506e2294c556c7abd99537b"
+    },
+    "runtime": {
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "fla": "0.5.2",
+      "triton": "3.6.0",
+      "device": "NVIDIA A100-SXM4-40GB",
+      "triton_f32_default": "tf32x3"
+    },
+    "code": {
+      "revision": "f5a7d71be1723324e36a7be2546c940a69de9fdf",
+      "driver_sha256": "a170094e9ba780146790f9f8bfac7781f8890da5c92fd462fec85f9531f78a95"
+    },
+    "mode": "train",
+    "evaluation_depths": [
+      4,
+      1,
+      2,
+      6,
+      8
+    ],
+    "warm_start": "parent weights and loader, new optimizer/schedule, RNG reset to parent seed"
+  },
+  "arms": {
+    "fixed4": {
+      "depth_counts": {
+        "4": 512
+      },
+      "mean_training_loops": 4.0,
+      "scores": {
+        "1": {
+          "total_nats": 1887923.4030159493,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 4.803387449155173,
+          "bits_per_byte": 1.5558723740936355
+        },
+        "2": {
+          "total_nats": 1645757.114776217,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 4.187250953531999,
+          "bits_per_byte": 1.3562986852421222
+        },
+        "4": {
+          "total_nats": 1510370.0111380084,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.842789566298617,
+          "bits_per_byte": 1.244723684888434
+        },
+        "6": {
+          "total_nats": 1735829.053283879,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 4.4164183118356375,
+          "bits_per_byte": 1.4305286251757328
+        },
+        "8": {
+          "total_nats": 1759412.1890285101,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 4.4764201837688535,
+          "bits_per_byte": 1.4499639207713888
+        }
+      }
+    },
+    "uniform2to6": {
+      "depth_counts": {
+        "6": 99,
+        "5": 105,
+        "2": 116,
+        "4": 91,
+        "3": 101
+      },
+      "mean_training_loops": 3.94140625,
+      "scores": {
+        "1": {
+          "total_nats": 1604798.0422521909,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 4.0830400016593495,
+          "bits_per_byte": 1.322543560798606
+        },
+        "2": {
+          "total_nats": 1522939.14256674,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.874768834130725,
+          "bits_per_byte": 1.255082137103749
+        },
+        "4": {
+          "total_nats": 1511984.579073346,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.8468974635491198,
+          "bits_per_byte": 1.2460542799976826
+        },
+        "6": {
+          "total_nats": 1518504.4531422488,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.863485785523735,
+          "bits_per_byte": 1.251427428044987
+        },
+        "8": {
+          "total_nats": 1564327.5787756098,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.9800722032760274,
+          "bits_per_byte": 1.2891911080511118
+        }
+      }
+    }
+  },
+  "variable_k6_over_k4_bpb": 1.0043121300039308,
+  "variable_k4_over_control_k4_bpb": 1.001068988342877,
+  "variable_k6_minus_k4_ce": 0.01658832197461534,
+  "paired_document_95pct_ce_interval": [
+    0.015735134522752926,
+    0.01743590139648696
+  ],
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 0,
+    "rng": "PCG64",
+    "quantile": "linear"
+  },
+  "checks": {
+    "variable_k6_improves_own_k4_by_at_least_half_percent": false,
+    "paired_ce_interval_upper_below_zero": false,
+    "variable_k4_within_one_percent_of_control_k4": true,
+    "variable_k6_improves_control_k6": true
+  },
+  "seed0_screen_passed": false,
+  "scope": "Recomputed exported document losses, conditional on these checkpoints. No weight reload, repeated inference, training-seed uncertainty, reasoning or architecture-adoption claim.",
+  "input_files": {
+    "fixed4": {
+      "sha256": "4e7ea52504d2530718bdbfbbe5807ed923641dcf59a76c02868e8d62ea5f3dc9",
+      "bytes": 458605
+    },
+    "uniform2to6": {
+      "sha256": "5bfbc55c39edce0e049832f4ca5a1d338d9d88c8c1a4e8fc80094a87cf9115b0",
+      "bytes": 458709
+    }
+  }
+}
