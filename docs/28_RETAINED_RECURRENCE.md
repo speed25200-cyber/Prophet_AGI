@@ -1,6 +1,7 @@
 # Retained-donor recurrence: preserve before adapting
 
-Status: experimental implementation and CPU tests, not an adopted architecture.
+Status: experimental implementation, CPU tests and full-donor CPU gate pass;
+not an adopted architecture.
 The previous negative screens stand. This candidate retains all donor parameters
 and tests a different starting condition: the original computation at one loop.
 It does not claim compression, useful additional depth, bounded context, memory,
@@ -123,3 +124,39 @@ two CPU threads and deterministic algorithms are fixed.
 This is an identity/cache/update gate, not a trained quality comparison. It does
 not establish that extra loops help. A future quality protocol must include
 matched controls, untouched evaluation, retention and actual compute accounting.
+
+## Completed full-donor gate
+
+The frozen gate at `7e088f59e2db8f7401664d755a05470f0d642181` passes in
+25.44 seconds after source/artifact auditing, including loading, forward checks,
+cache cases and the single plumbing update. The actual unique counts match the
+meta-device arithmetic: 495,638,400 resident and 1,605,632 trainable parameters.
+Initial k1 logits are **bitwise identical** on all four preselected 32-token
+prefixes. After the bridge-only update, every original unique parameter hash is
+unchanged and all initial k1 logits remain bitwise identical.
+
+| Loops | Maximum cached/full logit error | Argmax identical | Actual cache bytes, batch 4 x 16 |
+|---:|---:|---|---:|
+| 1 | 0.000028610230 | yes | 1,572,864 |
+| 2 | 0.000024795532 | yes | 2,359,296 |
+| 4 | 0.000020027161 | yes | 3,932,160 |
+
+Both bridge matrices have finite, nonzero gradients in all 802,816 entries. Their
+gradient norms are 417.0892 (state) and 414.6850 (input). This verifies an active
+learning path, not a useful update or a stable multi-step training recipe.
+
+Eighteen targeted miniature tests pass, covering exact native identity, learned
+bridge/cache equivalence, left padding and explicit positions, causality, frozen
+base retention, optional core updates, serialization/numerical-contract rejection,
+cache ownership/depth/failure handling and exact optimizer interruption. The wider
+modeling/conversion selection passed 113 tests before the additional numerical-
+contract test was added and the targeted eighteen rerun.
+
+The [full report](experiments/2026-09-20-retained-recurrence-cpu/gate.json) and
+[verified donor manifest](experiments/2026-09-20-retained-recurrence-cpu/donor-manifest.json)
+retain exact input and source identities without text or weights. The
+[archive verification](experiments/2026-09-20-retained-recurrence-cpu/verification.json)
+checks source hashes against frozen Git bytes, recorded checks and cache arithmetic;
+it does not repeat model inference or reload tensors. The recorded cache checks
+precede the bridge update; real-size post-update cache and interrupted restart
+checks remain next gates. No CUDA or quality result is implied.

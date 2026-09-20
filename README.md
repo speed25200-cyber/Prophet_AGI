@@ -178,6 +178,13 @@ La [préparation des nouvelles données](docs/27_FRESH_DATA.md) exclut les ancie
 documents d'entraînement et de validation ainsi que les recoupements lexicaux
 avec ARC. Elle fournit 19 600 nouveaux documents d'entraînement et 392 documents
 réservés. Aucun nouveau score de modèle ni gain architectural n'en découle encore.
+Un [prototype conservant le donneur](docs/28_RETAINED_RECURRENCE.md), distinct
+des essais R04, conserve les 24 couches de Qwen2.5-0.5B-Instruct et répète son
+cœur. Sur le contrôle CPU à taille réelle, ses 495,6M paramètres reproduisent
+exactement les logits initiaux à une boucle ; cette égalité subsiste après une
+mise à jour des seules projections de réentrée. Le cache passe à 1/2/4 boucles,
+mais sa mémoire croît avec la profondeur et le contexte. Le gain de qualité,
+l'entraînement CUDA et l'adoption de cette architecture restent non démontrés.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

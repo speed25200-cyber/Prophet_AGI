@@ -1,0 +1,220 @@
+{
+  "status": "passed",
+  "scope": "CPU identity/cache/one-update plumbing only; not quality, useful depth, CUDA validation, full-size restart or an architecture adoption",
+  "source_revision": "7e088f59e2db8f7401664d755a05470f0d642181",
+  "source_files": {
+    "prophet/convert/retained_recurrence.py": "97f77cf4f6bbcdf00ba40b9447e2ce5e16d38c859e3ef886dfc3e7cdce4da6b1",
+    "scripts/gate_retained_recurrence.py": "0b508bc0e97ccf91673699163e5eea34d52b8026eeede6a7e4c2a388fa0d42ba"
+  },
+  "donor_manifest_sha256": "514a5f6be9f4619b061a0aab72ad6501573a780086606dcc93c7944f252f5185",
+  "donor": {
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "license": "apache-2.0",
+    "gated": false,
+    "artifacts": {
+      "config.json": {
+        "bytes": 659,
+        "sha256": "18e18afcaccafade98daf13a54092927904649e1dd4eba8299ab717d5d94ff45"
+      },
+      "tokenizer.json": {
+        "bytes": 7031645,
+        "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+      },
+      "tokenizer_config.json": {
+        "bytes": 7305,
+        "sha256": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583"
+      },
+      "vocab.json": {
+        "bytes": 2776833,
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      },
+      "merges.txt": {
+        "bytes": 1671839,
+        "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"
+      },
+      "generation_config.json": {
+        "bytes": 242,
+        "sha256": "e558847a8b4402616f1273797b015104dc266fe4b520056fca88823ba8f8ebe6"
+      },
+      "LICENSE": {
+        "bytes": 11343,
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+      },
+      "model.safetensors": {
+        "bytes": 988097824,
+        "sha256": "fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe"
+      }
+    },
+    "complete": true
+  },
+  "train_file_sha256": "41b7c3179322e87174a4e252028b261c857327def204a456163c08e733e87570",
+  "inputs": [
+    {
+      "content_sha256": "c3fab2da6809f554a6921816edffa65103efa8bf8c6aa069f4a8409f22b9fa03",
+      "token_ids_sha256": "a06c3c9107059ecb8263e54ef286c725bd852c96a7badf7b58c6eccd1364ad0a"
+    },
+    {
+      "content_sha256": "4dda91b284210de6ab8148d7c4a6f7d2501336448f34458bd81765dd107353cb",
+      "token_ids_sha256": "d6e745233b6d0f8756bb3f1e7e2ac53d7da6f0c78343bb23b3766e1acb008144"
+    },
+    {
+      "content_sha256": "89ae1ce2a1cb4c27caf81a76196ccc36c2f4c1ed0228e1f9c6c074533b61c22e",
+      "token_ids_sha256": "c0ce27127f88a96a18639953448935823f6893528643911d93ece243eaad4569"
+    },
+    {
+      "content_sha256": "327432d7b818a0a382eec20bc410a9da732c2e312d31b968c18cce6c09b2641b",
+      "token_ids_sha256": "c44f72694ddee651aff2e311b68bb0a457e9333965b3da55995ed7bf12cb511b"
+    }
+  ],
+  "runtime": {
+    "torch": "2.14.0+cpu",
+    "transformers": "5.17.0",
+    "device": "cpu",
+    "dtype": "float32",
+    "attention": "sdpa",
+    "threads": 2
+  },
+  "recurrence_contract": {
+    "format_version": 1,
+    "recurrence": {
+      "core_start": 6,
+      "core_end": 18,
+      "max_loops": 8,
+      "train_core": false
+    },
+    "native_config": {
+      "architectures": [
+        "Qwen2ForCausalLM"
+      ],
+      "output_hidden_states": false,
+      "return_dict": true,
+      "dtype": "float32",
+      "chunk_size_feed_forward": 0,
+      "is_encoder_decoder": false,
+      "id2label": {
+        "0": "LABEL_0",
+        "1": "LABEL_1"
+      },
+      "label2id": {
+        "LABEL_0": 0,
+        "LABEL_1": 1
+      },
+      "problem_type": null,
+      "vocab_size": 151936,
+      "hidden_size": 896,
+      "intermediate_size": 4864,
+      "num_hidden_layers": 24,
+      "num_attention_heads": 14,
+      "num_key_value_heads": 2,
+      "hidden_act": "silu",
+      "max_position_embeddings": 32768,
+      "initializer_range": 0.02,
+      "rms_norm_eps": 1e-06,
+      "use_cache": true,
+      "tie_word_embeddings": true,
+      "rope_parameters": {
+        "rope_theta": 1000000.0,
+        "rope_type": "default"
+      },
+      "use_sliding_window": false,
+      "sliding_window": null,
+      "max_window_layers": 21,
+      "layer_types": [
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention",
+        "full_attention"
+      ],
+      "attention_dropout": 0.0,
+      "pad_token_id": null,
+      "bos_token_id": 151643,
+      "eos_token_id": 151645,
+      "model_type": "qwen2",
+      "output_attentions": false
+    },
+    "attention_implementation": "sdpa",
+    "parameter_dtype": "torch.float32"
+  },
+  "resident_parameters": 495638400,
+  "trainable_parameters": 1605632,
+  "weight_bytes_fp32": 1982553600,
+  "gradient_and_adam_moment_bytes_fp32": 19267584,
+  "identity": {
+    "exact": true,
+    "max_absolute_error": 0.0,
+    "argmax_equal": true
+  },
+  "cache": [
+    {
+      "loops": 1,
+      "batch": 4,
+      "sequence": 16,
+      "comparison": {
+        "exact": false,
+        "max_absolute_error": 2.86102294921875e-05,
+        "argmax_equal": true
+      },
+      "cache_bytes": 1572864
+    },
+    {
+      "loops": 2,
+      "batch": 4,
+      "sequence": 16,
+      "comparison": {
+        "exact": false,
+        "max_absolute_error": 2.47955322265625e-05,
+        "argmax_equal": true
+      },
+      "cache_bytes": 2359296
+    },
+    {
+      "loops": 4,
+      "batch": 4,
+      "sequence": 16,
+      "comparison": {
+        "exact": false,
+        "max_absolute_error": 2.002716064453125e-05,
+        "argmax_equal": true
+      },
+      "cache_bytes": 3932160
+    }
+  ],
+  "bridge_gradients": {
+    "state_delta.weight": {
+      "nonzero": 802816,
+      "norm": 417.0892333984375
+    },
+    "input_delta.weight": {
+      "nonzero": 802816,
+      "norm": 414.6850280761719
+    }
+  },
+  "post_update_identity": {
+    "exact": true,
+    "max_absolute_error": 0.0,
+    "argmax_equal": true
+  },
+  "all_unique_base_parameter_hashes_unchanged": true,
+  "seconds": 25.44141079999099
+}
