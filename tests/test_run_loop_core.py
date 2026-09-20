@@ -62,8 +62,8 @@ def tiny_config(core: str, *, loop: bool = True) -> ProphetConfig:
     )
 
 
-@pytest.fixture(scope="module")
-def corpus(tmp_path_factory) -> dict:
+def build_loop_core_fixture(tmp_path_factory) -> dict:
+    """A miniature corpus, tokenizer and the three arm configs; shared by test modules."""
     root = tmp_path_factory.mktemp("loop-core")
     tokenizer_path = root / "tok.json"
     ProphetTokenizer([], vocab_size=512).save(tokenizer_path)
@@ -100,6 +100,9 @@ def corpus(tmp_path_factory) -> dict:
         "tokenizer_sha256": tokenizer_semantic_hash(tokenizer_path),
         "configs": configs,
     }
+
+
+corpus = pytest.fixture(scope="module")(build_loop_core_fixture)
 
 
 def base_args(corpus: dict, arm: str, out: Path, **extra) -> list[str]:
@@ -241,3 +244,15 @@ def test_depth_trainer_refuses_an_inconsistent_history(corpus):
     trainer.model_config = cfg
     with pytest.raises(ValueError, match="depth history"):
         trainer.load_state_dict({"step": 2, "depth_history": [2, 9]})
+
+
+def test_preflight_runs_three_updates_at_the_deepest_depth_and_freezes_nothing(
+    corpus, tmp_path, capsys
+):
+    out = tmp_path / "preflight"
+    assert main(base_args(corpus, "lc_gdn", out, preflight=[])) == 0
+    assert "PREFLIGHT" in capsys.readouterr().out
+    report = json.loads((out / "preflight.json").read_text())
+    assert report["depth_history"] == [3, 3, 3] and report["finite"]
+    assert len(report["losses"]) == 3 and not (out / "protocol.json").exists()
+    assert not list(out.glob("evaluation-*.json"))

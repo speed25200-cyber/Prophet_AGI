@@ -201,6 +201,49 @@ def publish_snapshot(out: Path, step: int, persistent_run: Path) -> dict:
     return {**marker, "destination": str(destination)}
 
 
+def preflight(trainer: DepthTrainer, cfg: ProphetConfig, protocol: dict, args) -> int:
+    """Three real updates at the deepest depth: the memory and speed gate of docs/29 §7."""
+    deepest = cfg.recurrent.train_loop_max
+    trainer.model.sample_loop_k = lambda generator=None: deepest  # type: ignore[method-assign]
+    trainer.cfg.checkpoint_every = 10**9
+    if args.device == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+    metrics = trainer.train(max_steps=3)
+    report = {
+        "arm": args.arm,
+        "seed": args.seed,
+        "config_sha256": protocol["config_sha256"],
+        "revision": protocol["revision"],
+        "runtime": protocol["runtime"],
+        "batch_size": args.batch_size,
+        "seq_len": args.seq_len,
+        "loop_k": deepest,
+        "depth_history": list(trainer.depth_history),
+        "losses": [m.loss for m in metrics],
+        "seconds_per_step": [m.seconds for m in metrics],
+        "peak_allocated_bytes": torch.cuda.max_memory_allocated()
+        if args.device == "cuda"
+        else None,
+        "device_total_bytes": torch.cuda.get_device_properties(0).total_memory
+        if args.device == "cuda"
+        else None,
+        "finite": all(math.isfinite(m.loss) for m in metrics),
+        "scope": "disposable preflight; no checkpoint, no evaluation, no protocol frozen",
+    }
+    write_json(args.out / "preflight.json", report)
+    print(
+        "PREFLIGHT",
+        json.dumps(
+            {
+                k: report[k]
+                for k in ("loop_k", "losses", "seconds_per_step", "peak_allocated_bytes", "finite")
+            }
+        ),
+        flush=True,
+    )
+    return 0 if report["finite"] else 1
+
+
 def eval_subset(examples: list[dict], per_level: int) -> list[dict]:
     """The first ``per_level`` items of every (kind, level), in source order."""
     return [e for e in examples if int(e.get("index", 0)) < per_level]
@@ -238,6 +281,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--allow-cpu", action="store_true", help="miniature runs only; recorded")
     ap.add_argument("--skip-shard-hashes", action="store_true", help="size check only; recorded")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--preflight",
+        action="store_true",
+        help="three real updates at the deepest training depth in a disposable directory; "
+        "reports peak memory and step time, trains nothing else",
+    )
     args = ap.parse_args(argv)
     if (
         args.max_session_steps < 1
@@ -268,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     tokens_per_step = args.batch_size * args.seq_len
     planned = args.total_steps * tokens_per_step
     web_tokens = provenance["tokens"]["splits"]["train"]["estimated_tokens"]
-    if planned * (1 - args.composition_share) > web_tokens:
+    if not args.preflight and planned * (1 - args.composition_share) > web_tokens:
         raise ValueError("planned web tokens exceed one pass over the corpus")
     milestones = sorted(
         m
@@ -329,13 +378,18 @@ def main(argv: list[str] | None = None) -> int:
 
     run_name = f"{args.arm}-seed{args.seed}"
     persistent_run = args.persistent / run_name if args.persistent else None
+    if args.preflight:
+        if args.out.exists() and any(args.out.iterdir()):
+            raise ValueError("preflight needs a fresh disposable directory")
+        persistent_run = None
     args.out.mkdir(parents=True, exist_ok=True)
     restored = restore_from_persistent(args.out, persistent_run) if persistent_run else None
     if restored:
         print("RESTORED", json.dumps(restored), flush=True)
-    if not (args.out / "protocol.json").exists() and any(args.out.iterdir()):
-        raise ValueError("output contains artifacts without a protocol; use a fresh directory")
-    freeze_protocol(args.out / "protocol.json", protocol)
+    if not args.preflight:
+        if not (args.out / "protocol.json").exists() and any(args.out.iterdir()):
+            raise ValueError("output contains artifacts without a protocol; use a fresh directory")
+        freeze_protocol(args.out / "protocol.json", protocol)
     if args.device == "cuda":
         error = kernel_agreement(cfg, seed=args.seed)
         write_json(args.out / "kernel-check.json", {"max_abs_error": error, "tolerance": 0.002})
@@ -385,6 +439,8 @@ def main(argv: list[str] | None = None) -> int:
         tokenizer=tokenizer,
         on_log=log,
     )
+    if args.preflight:
+        return preflight(trainer, cfg, protocol, args)
     resumed = trainer.maybe_resume()
     if not resumed and (args.out / "train.jsonl").exists():
         raise RuntimeError(

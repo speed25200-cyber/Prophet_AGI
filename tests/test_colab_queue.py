@@ -348,3 +348,52 @@ def test_cli_runs_a_queue_file_and_reports_status(tmp_path):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert '"status": "complete"' in result.stdout
+
+
+def test_arguments_expand_environment_names_and_the_state_records_the_revision(
+    tmp_path, monkeypatch
+):
+    repo = _repo(tmp_path)
+    monkeypatch.setenv("PROPHET_PERSISTENT", str(tmp_path / "drive"))
+    commands = [
+        {
+            "id": "touch",
+            "timeout_s": 30,
+            "argv": _py(
+                "import sys, pathlib; pathlib.Path(sys.argv[1]).mkdir(parents=True); print('ok')"
+            )
+            + ["${PROPHET_PERSISTENT}/made"],
+        }
+    ]
+    queue = _queue(repo, commands)
+    del queue["revision"]
+    outcome = run_queue(
+        queue,
+        repo=repo,
+        state_dir=tmp_path / "s",
+        deadline_s=None,
+        push="none",
+        remote=None,
+        branch=None,
+        token_env=None,
+    )
+    assert outcome["status"] == "complete"
+    assert (tmp_path / "drive" / "made").is_dir()
+    state = json.loads((tmp_path / "s" / "queue-state.json").read_text())
+    assert (
+        state["revision"]
+        == subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    )
+    assert state["commands"]["touch"]["argv"][-1] == str(tmp_path / "drive" / "made")
+    missing = _queue(repo, [{"id": "m", "timeout_s": 5, "argv": ["echo", "${NOT_SET_ANYWHERE}"]}])
+    with pytest.raises(KeyError, match="NOT_SET_ANYWHERE"):
+        run_queue(
+            missing,
+            repo=repo,
+            state_dir=tmp_path / "s2",
+            deadline_s=None,
+            push="none",
+            remote=None,
+            branch=None,
+            token_env=None,
+        )

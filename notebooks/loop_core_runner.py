@@ -1,7 +1,7 @@
 # %% [markdown]
 # # Prophet loop-core runner (Colab A100)
 #
-# Runs one queue of commands from `queue/loop_core/*.json` at a pinned revision and ships
+# Runs the programme queue (`queue/loop_core/programme.json`) at a pinned revision and ships
 # the evidence (reports, logs, hashes; never weights) to the `results/loop-core` branch on
 # GitHub after every command. Checkpoints stay on Drive. Repeat the queue cell in a new
 # session to resume: completed commands are skipped.
@@ -25,10 +25,12 @@ from pathlib import Path
 
 BRANCH = "claude/codex-results-analysis-5jz95y"
 REVISION = None  # set to the exact commit the queue file names; None = branch head
-QUEUE = "queue/loop_core/seed0.json"
+QUEUE = "queue/loop_core/programme.json"
 
 PERSISTENT = Path("/content/drive/MyDrive/Prophet_AGI/loop-core")
+PILOT = Path("/content/drive/MyDrive/Prophet_AGI/R04/corpus-v1")  # audited pilot: tokenizer.json lives here
 STATE = PERSISTENT / "queue-state"
+assert (PILOT / "tokenizer.json").exists(), "point PILOT at the cached R04 pilot corpus (docs/13)"
 PERSISTENT.mkdir(parents=True, exist_ok=True)
 repo = Path("/content/Prophet_AGI")
 if not repo.exists():
@@ -59,7 +61,7 @@ queue_process = subprocess.Popen(
      "--remote", "https://github.com/speed25200-cyber/Prophet_AGI.git",
      "--branch", "results/loop-core", "--token-env", "GITHUB_TOKEN"],
     cwd=repo, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-    env={**os.environ, "PROPHET_PERSISTENT": str(PERSISTENT)})
+    env={**os.environ, "PROPHET_PERSISTENT": str(PERSISTENT), "PROPHET_PILOT": str(PILOT)})
 print("queue pid", queue_process.pid)
 
 # %%

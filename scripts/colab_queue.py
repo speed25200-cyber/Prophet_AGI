@@ -43,6 +43,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -125,15 +126,28 @@ class QueueState:
         write_json(self.path, self.data)
 
 
+def expand_argv(argv: list[str], env: dict) -> list[str]:
+    """``${NAME}`` in an argument is replaced from ``env``; an unknown name is an error."""
+
+    def replace(match):
+        name = match.group(1)
+        if name not in env:
+            raise KeyError(f"queue argument needs ${{{name}}} which is not set")
+        return env[name]
+
+    return [re.sub(r"\$\{(\w+)\}", replace, argument) for argument in argv]
+
+
 def run_command(command: dict, *, cwd: Path, log_path: Path, env: dict) -> int:
     """Run one attempt in its own process group; kill the whole group on timeout."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    argv = expand_argv(command["argv"], env)
     with log_path.open("w", encoding="utf-8", buffering=1) as stream:
         # The command line is in the queue file and the state; it must not be echoed
         # here, or a marker quoted in argv would count as the command's own output.
         stream.write(f"# started: {time.time()}\n")
         process = subprocess.Popen(
-            command["argv"],
+            argv,
             cwd=cwd,
             stdout=stream,
             stderr=subprocess.STDOUT,
@@ -289,7 +303,7 @@ def run_queue(
         if revision != queue["revision"]:
             raise RuntimeError(f"queue is bound to {queue['revision']}, checkout is {revision}")
     state = QueueState(state_dir / "queue-state.json")
-    state.data.update({"queue": queue["name"], "revision": queue.get("revision")})
+    state.data.update({"queue": queue["name"], "revision": current_revision(repo)})
     state.save()
     env = {**os.environ, **{k: str(v) for k, v in queue.get("env", {}).items()}}
     token = resolve_token(token_env) if push == "github" else None
@@ -331,6 +345,7 @@ def run_queue(
                 ship(f"deadline before {command['id']}")
                 return outcome
             entry["attempts"] += 1
+            entry["argv"] = expand_argv(command["argv"], env)
             log_path = state_dir / "logs" / f"{command['id']}-{entry['attempts']:03d}.log"
             print(f"RUN {command['id']} attempt {entry['attempts']}", flush=True)
             code = run_command(command, cwd=repo, log_path=log_path, env=env)

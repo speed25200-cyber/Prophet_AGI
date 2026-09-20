@@ -78,9 +78,9 @@ Un échec de H2, H3, H4 ou H5 est un résultat, publié tel quel. Le programme n
 
 | Bras | Paramètres résidents | Cœur bouclé | Profondeur à l'entraînement | Graines |
 |---|---:|---|---|---|
-| `lc_gdn` | ≈ 375M | 4 blocs GDN, sans attention | uniforme 2..6, gradient sur toutes les passes | 0, 1, 2 |
-| `lc_attn` | ≈ 375M (à égaliser par la largeur du FFN) | 4 blocs attention (l'ablation A-KV, avertissement D1 accepté explicitement) | uniforme 2..6, gradient sur toutes les passes | 0, 1, 2 |
-| `lc_plain` | ≈ 921M | pile de 16 blocs, une passe | — | 0 |
+| `lc_gdn` | 374,7M | 4 blocs GDN, sans attention | uniforme 2..6, gradient sur toutes les passes | 0, 1, 2 |
+| `lc_attn` | 376,2M (FFN élargi à 4,93× pour égaliser, écart +0,41 %) | 4 blocs attention (l'ablation A-KV, avertissement D1 accepté explicitement) | uniforme 2..6, gradient sur toutes les passes | 0, 1, 2 |
+| `lc_plain` | 920,7M | pile de 16 blocs, une passe | — | 0 |
 
 Commun aux trois : prélude 2 blocs et coda 2 blocs à attention, largeur 1 792, vocabulaire
 32 768 (tokenizer du pilote, inchangé), 20 blocs exécutés par token à *k* = 4, halte,
@@ -183,7 +183,47 @@ Courbes intermédiaires à 100 M et 200 M tokens pour les mesures 1 et 2.
 - Un notebook Colab épinglé qui exécute une file de commandes et renvoie les preuves
   vers GitHub (voir `notebooks/loop_core_runner.ipynb`).
 
-## 10. Ordre d'exécution
+## 10. Exécution : ce qui est construit, et la procédure
+
+Tout ce qui ne demande pas de GPU est écrit et testé sur CPU (branche
+`claude/codex-results-analysis-5jz95y`) :
+
+| Pièce | Fichier | Test |
+|---|---|---|
+| Les trois bras, budgétés, avertissement D1 accepté explicitement | `scripts/build_loop_core_configs.py`, `configs/loop_core/` | `tests/test_loop_core_configs.py` |
+| Tâches de composition et leur notation | `prophet/data/composition.py`, `prophet/eval/composition.py` | `tests/test_composition.py` |
+| Corpus en une passe, exclusions, manifeste | `scripts/prepare_loop_core_corpus.py`, `scripts/stage_corpus.py` | `tests/test_loop_core_corpus.py`, `tests/test_loop_core_queue.py` |
+| Lanceur de session : protocole figé, jalons exacts, historique des profondeurs, instantané Drive, préflight mémoire | `scripts/run_loop_core.py` | `tests/test_run_loop_core.py` |
+| Mesures finales : BPB par profondeur, composition, octets de cache, int8/int4 | `scripts/eval_loop_core.py`, `prophet/quant/rtn.py` | `tests/test_eval_loop_core.py` |
+| Transport Colab → GitHub : file de commandes reprenable, preuves sans poids | `scripts/colab_queue.py`, `queue/loop_core/programme.json`, `notebooks/loop_core_runner.ipynb` | `tests/test_colab_queue.py` |
+
+La file `programme.json` enchaîne, dans l'ordre du §11 : porte GPU, cache des benchmarks,
+construction du corpus et publication sur Drive, préflights mémoire à *k* = 6 des trois
+bras, puis pour chaque run l'entraînement par sessions bornées jusqu'au marqueur
+`RUN_COMPLETE` et ses mesures finales. Une commande qui échoue arrête la file ; une
+session Colab qui expire reprend là où elle s'est arrêtée.
+
+### Côté utilisateur
+
+1. Créer un jeton GitHub à grain fin, portée *Contents : read and write* sur
+   `speed25200-cyber/Prophet_AGI`, et l'enregistrer dans les secrets Colab sous
+   `GITHUB_TOKEN` (accès notebook activé). Sans jeton, les preuves restent sur Drive
+   sous `loop-core/queue-state/export/`.
+2. Vérifier que le corpus pilote audité (docs/13) est bien sous
+   `MyDrive/Prophet_AGI/R04/corpus-v1/` avec son `tokenizer.json` ; sinon corriger
+   `PILOT` dans la première cellule.
+3. Ouvrir `notebooks/loop_core_runner.ipynb` sur un A100, exécuter les cellules 1 et 2,
+   surveiller avec la cellule 3. À chaque nouvelle session, réexécuter 1 et 2.
+4. Relever la branche `results/loop-core` : chaque commande terminée y pousse ses
+   rapports sous `results/loop-core-programme/`.
+
+### Côté analyse
+
+Les rapports de `results/loop-core` sont relus à chaque étape ; les critères du §2 sont
+calculés par un script d'analyse à écrire une fois les trois graines mesurées, jamais
+avant, pour que le calcul ne s'ajuste pas aux premiers résultats.
+
+## 11. Ordre d'exécution
 
 0. Ce document ; accord sur la question.
 1. Configs des trois bras, budget, avertissements de conception ; générateur de tâches
