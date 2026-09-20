@@ -117,6 +117,12 @@ def main():
             arm + "-continuous/evaluation-step-000008.json", GATE
         )
         durations[arm] = sum(r["seconds"] for r in records)
+    previous = read(
+        "uniform2to6/evaluation-step-000512.json",
+        HERE.parent / "2026-09-20-r04-depth-adaptation-final",
+    )
+    assert reports["fixed_sum"]["results"] == previous["results"]
+    assert reports["fixed_sum"]["depth_history"] == previous["depth_history"]
     summary = namespace["summarize"](
         reports["fixed_sum"],
         reports["learned_mix"],
@@ -144,6 +150,7 @@ def main():
         "queue_seconds": queue["elapsed_seconds"],
         "sum_recorded_update_seconds": durations,
         "seed0_screen_passed": summary["seed0_screen_passed"],
+        "control_reproduces_previous_variable_results": True,
         "checks": summary["checks"],
         "scope": "Exported source hashes, terminal processes, checkpoint metadata, continuity with audited eight-step prefixes, all training records and all final document scores verified locally. Paired bootstrap and decision reproduced with the exact frozen analysis source. Checkpoint tensor finiteness was inspected by the recorded Colab auditor; weights are not reloaded here. No repeated inference, cross-seed, reasoning or adoption claim.",
     }

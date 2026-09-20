@@ -1,8 +1,8 @@
 # R04: controlled learned input reinjection
 
-Status: full-size CUDA gates passed; the paired 512-step continuation is running.
-No final quality result is available yet.
-This is an experimental option, disabled in all existing model configurations.
+Status: both 512-step runs are complete and independently verified. The seed-zero
+quality screen fails all four preregistered criteria. The experimental option
+remains disabled in all existing model configurations and is not adopted.
 
 ## Why this experiment
 
@@ -106,7 +106,43 @@ capability tasks. Development data has already guided R&D and known benchmark
 overlaps remain. Neither this screen nor prediction loss demonstrates reasoning,
 an assistant, AGI or readiness for architectural adoption.
 
-## Commands
+## Final result: all four quality checks fail
+
+Both preselected continuous prefixes finish 512 updates and 8,388,608 additional
+input tokens, with matching depth histories and no nonfinite updates. The pair,
+final checkpoint audit and screen finish in 2,772.52 seconds under the 5,400-second
+ceiling. Every recorded terminal process exits zero. Numerical and restart
+correctness therefore do not explain away the negative quality outcome.
+
+All 376 documents contain 393,040 scored targets and 1,750,592 scored bytes:
+
+| Loops | Fixed-sum CE | Learned-mix CE | Fixed-sum BPB | Learned-mix BPB |
+|---:|---:|---:|---:|---:|
+| 1 | 4.083040002 | 4.202920224 | 1.322543561 | 1.361374142 |
+| 2 | 3.874768834 | 3.890272291 | 1.255082137 | 1.260103885 |
+| 4 | 3.846897464 | 3.896996378 | 1.246054280 | 1.262281894 |
+| 6 | 3.863485786 | 3.992384843 | 1.251427428 | 1.293179314 |
+| 8 | 3.980072203 | 4.340850329 | 1.289191108 | 1.406051287 |
+
+Learned k6 BPB is **2.4477% worse than its own k4**, not at least 0.5% better.
+The paired CE(k6)-CE(k4) is +0.09538847 nats/token, with 95% document interval
+**[0.09222346, 0.09869129]**, entirely above zero. Learned k4 is **1.3023% worse
+than control k4**, exceeding the 1% preservation allowance. Learned k6 is
+**3.3363% worse than control k6**. Thus all four primary conditions fail.
+
+The fixed-sum control exactly reproduces the earlier variable-depth arm's
+per-document results at every measured depth and its full sampled history.
+Both new arms use mean training depth 3.94140625, but the learned component still
+adds parameters and FLOPs. This result rejects this warm-start component/recipe
+at this scale; it neither identifies a universal cause nor disproves learned
+reinjection under other training conditions. It does not justify a success-
+conditioned seed extension or more passes over the same bounded pilot corpus.
+
+The separately preselected [native ARC evaluation](26_NATIVE_CAPABILITY_EVAL.md)
+continues regardless of this verdict and cannot reverse it. No improved reasoning
+or architectural adoption is established.
+
+## Execution and reproduction
 
 The full local suite passes **858 tests with 21 skips**. Component tests cover
 unchanged initial predictions/base gradients, an effective adapter update, learned
@@ -141,8 +177,14 @@ reload those weights. These are numerical/restart results, not quality results.
 
 Only after all gates passed, the preselected continuous prefixes started the
 paired 512-step continuation, with the unchanged `dce35ab` source and 5,400-second
-pair-wide ceiling. A [final evidence verifier](experiments/2026-09-20-r04-reinjection-final/verify.py)
-is prepared to recompute the screen after completion; no final receipt exists yet.
+pair-wide ceiling. The [final evidence verifier](experiments/2026-09-20-r04-reinjection-final/verify.py)
+now reproduces the full screen and all decision bits. The [verification receipt](experiments/2026-09-20-r04-reinjection-final/verification.json)
+checks all twenty exported source files, continuity with the eight-step prefixes,
+all 512 training records per arm, published checkpoint metadata and complete
+per-document results. The Colab auditor inspected all checkpoint tensors for
+finiteness; the local verifier does not reload tensors or repeat inference.
+The final ZIP is 420,964 bytes, SHA256
+`1cd634622e1e0bc17558b3bd457ded11f7298819a14c0256700b6325017d331d`.
 
 ```bash
 python scripts/gate_r04_input_adapter.py --parent-run PARENT --corpus CORPUS --out equality.json

@@ -1,0 +1,19 @@
+{
+  "verified": true,
+  "revision": "dce35abc439fdeeb8f1482b1219dee3cc242c267",
+  "source_files": 20,
+  "queue_seconds": 2772.521411204005,
+  "sum_recorded_update_seconds": {
+    "fixed_sum": 1095.73393034935,
+    "learned_mix": 1104.9000663757324
+  },
+  "seed0_screen_passed": false,
+  "control_reproduces_previous_variable_results": true,
+  "checks": {
+    "learned_mix_k6_improves_own_k4_by_at_least_half_percent": false,
+    "paired_ce_interval_upper_below_zero": false,
+    "learned_mix_k4_within_one_percent_of_control_k4": false,
+    "learned_mix_k6_improves_control_k6": false
+  },
+  "scope": "Exported source hashes, terminal processes, checkpoint metadata, continuity with audited eight-step prefixes, all training records and all final document scores verified locally. Paired bootstrap and decision reproduced with the exact frozen analysis source. Checkpoint tensor finiteness was inspected by the recorded Colab auditor; weights are not reloaded here. No repeated inference, cross-seed, reasoning or adoption claim."
+}

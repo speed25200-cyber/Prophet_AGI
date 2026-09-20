@@ -1,9 +1,12 @@
 # Native R04 capability evaluation
 
-Status: inputs and evaluator prepared; no native ARC-Easy score yet.
-The learned-reinjection language-loss experiment continues under its existing
-frozen protocol. This capability probe does not change that experiment's primary
-criterion or choose an intermediate checkpoint.
+Status: the bounded native inference queue is running. Its 28 targeted CPU/CUDA
+tests pass without skips and prepared inputs reproduce the frozen manifest.
+No complete six-model/depth comparison is available yet. The preceding learned-
+reinjection language-loss screen is complete and fails all four frozen criteria.
+This capability probe does not change that verdict or choose an intermediate
+checkpoint. Both CI runs at evaluator revision `4632101` pass; the PR suite
+reports 873 passed and 22 skipped tests.
 
 ## Question and scope
 

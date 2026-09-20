@@ -1,0 +1,198 @@
+{
+  "protocol": "r04-input-adapter-screen-v1",
+  "plan_sha256": "1bd62f90d8c38f2fe61cc1bd6911b5f35279aca598ce96395b1d4627ee11d114",
+  "identity_without_arm": {
+    "protocol": "r04-input-adapter-v1",
+    "numerical_policy": {
+      "name": "r04-strict-determinism-v1",
+      "deterministic_algorithms": true,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "cublas_workspace_config": ":4096:8",
+      "matmul_allow_tf32": true,
+      "cudnn_allow_tf32": true,
+      "cudnn_version": 91900,
+      "sdpa_backends": {
+        "flash": true,
+        "memory_efficient": true,
+        "math": true,
+        "cudnn": true
+      }
+    },
+    "plan_sha256": "1bd62f90d8c38f2fe61cc1bd6911b5f35279aca598ce96395b1d4627ee11d114",
+    "parent_checkpoint": {
+      "step": 4096,
+      "slot": 1,
+      "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+      "bytes": 3233905547,
+      "extra": {}
+    },
+    "parent_loader_sha256": "4a398330bf498c7964b8432ddbe34c13260b2a720ac88e3a051340cfff5701a0",
+    "data": {
+      "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+      "artifacts": {
+        "train/fineweb-edu/part-00000.jsonl": {
+          "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e",
+          "bytes": 91838924,
+          "documents": 19569
+        },
+        "validation/fineweb-edu/part-00000.jsonl": {
+          "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939",
+          "bytes": 1858016,
+          "documents": 376
+        }
+      },
+      "tokenizer_semantic_sha256": "7d8d36adb2b2bf9dac7a6060294641ea16c59ce20506e2294c556c7abd99537b"
+    },
+    "runtime": {
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "fla": "0.5.2",
+      "triton": "3.6.0",
+      "device": "NVIDIA A100-SXM4-40GB",
+      "triton_f32_default": "tf32x3"
+    },
+    "code": {
+      "revision": "dce35abc439fdeeb8f1482b1219dee3cc242c267",
+      "driver_sha256": "277d2f96ce91f65b5e2fea30cc4d377b35734a89a94b78198cb93585115290ec",
+      "entrypoint_sha256": "855539e8f660f6ba36448d943f98ee508360c54a51b010f29819153b3165c4ae"
+    },
+    "mode": "train",
+    "evaluation_depths": [
+      4,
+      1,
+      2,
+      6,
+      8
+    ],
+    "warm_start": "parent weights and loader, new optimizer/schedule, RNG reset to parent seed"
+  },
+  "arms": {
+    "fixed_sum": {
+      "depth_counts": {
+        "6": 99,
+        "5": 105,
+        "2": 116,
+        "4": 91,
+        "3": 101
+      },
+      "mean_training_loops": 3.94140625,
+      "scores": {
+        "1": {
+          "total_nats": 1604798.0422521909,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 4.0830400016593495,
+          "bits_per_byte": 1.322543560798606
+        },
+        "2": {
+          "total_nats": 1522939.14256674,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.874768834130725,
+          "bits_per_byte": 1.255082137103749
+        },
+        "4": {
+          "total_nats": 1511984.579073346,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.8468974635491198,
+          "bits_per_byte": 1.2460542799976826
+        },
+        "6": {
+          "total_nats": 1518504.4531422488,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.863485785523735,
+          "bits_per_byte": 1.251427428044987
+        },
+        "8": {
+          "total_nats": 1564327.5787756098,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.9800722032760274,
+          "bits_per_byte": 1.2891911080511118
+        }
+      }
+    },
+    "learned_mix": {
+      "depth_counts": {
+        "6": 99,
+        "5": 105,
+        "2": 116,
+        "4": 91,
+        "3": 101
+      },
+      "mean_training_loops": 3.94140625,
+      "scores": {
+        "1": {
+          "total_nats": 1651915.7648735088,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 4.202920224082813,
+          "bits_per_byte": 1.3613741419755774
+        },
+        "2": {
+          "total_nats": 1529032.6211454521,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.8902722907221965,
+          "bits_per_byte": 1.2601038847909718
+        },
+        "4": {
+          "total_nats": 1531675.45642399,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.896996378037833,
+          "bits_per_byte": 1.262281893916018
+        },
+        "6": {
+          "total_nats": 1569166.9388790708,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 3.992384843474127,
+          "bits_per_byte": 1.293179313653753
+        },
+        "8": {
+          "total_nats": 1706127.81325929,
+          "scored_tokens": 393040,
+          "scored_bytes": 1750592,
+          "nats_per_token": 4.340850328870573,
+          "bits_per_byte": 1.4060512873998678
+        }
+      }
+    }
+  },
+  "learned_mix_k6_over_k4_bpb": 1.0244774324076542,
+  "learned_mix_k4_over_control_k4_bpb": 1.0130231998547974,
+  "learned_mix_k6_minus_k4_ce": 0.09538846543629347,
+  "paired_document_95pct_ce_interval": [
+    0.09222345503060712,
+    0.09869129479233456
+  ],
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 0,
+    "rng": "PCG64",
+    "quantile": "linear"
+  },
+  "checks": {
+    "learned_mix_k6_improves_own_k4_by_at_least_half_percent": false,
+    "paired_ce_interval_upper_below_zero": false,
+    "learned_mix_k4_within_one_percent_of_control_k4": false,
+    "learned_mix_k6_improves_control_k6": false
+  },
+  "seed0_screen_passed": false,
+  "scope": "Recomputed exported document losses, conditional on these checkpoints. No weight reload, repeated inference, training-seed uncertainty, reasoning or architecture-adoption claim.",
+  "input_files": {
+    "fixed_sum": {
+      "sha256": "3c071ecbdac43b91a8b0ff7dbc15e56cdf694d5417e751be6ac3235f54a4d76a",
+      "bytes": 458799
+    },
+    "learned_mix": {
+      "sha256": "f93b05730811c493ee97f474b6c08c7e2516ee52117d4bab7d27abfe5c6274f0",
+      "bytes": 458769
+    }
+  }
+}

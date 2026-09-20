@@ -158,16 +158,19 @@ Les [observations internes des deux modèles](docs/24_R04_RECURRENCE_OBSERVATION
 sur seize documents, ne montrent pas de convergence de tous les états de tokens vers une même direction.
 L'amplitude des états augmente avec les boucles, sans que cela identifie à lui seul
 la cause de l'échec. Aucune nouvelle architecture n'est adoptée.
-Le prochain [essai de réinjection apprise](docs/25_R04_LEARNED_REINJECTION.md)
+L'[essai de réinjection apprise](docs/25_R04_LEARNED_REINJECTION.md)
 ajoute une correction initialement nulle au mélange entre entrée et état récurrent.
 Le composant reste désactivé par défaut. Les contrôles CUDA à taille réelle et
-les reprises exactes passent dans les deux variantes ; la comparaison de 512
-mises à jour chacune est en cours. Aucun gain de qualité n'est encore établi.
-Une [évaluation ARC-Easy native](docs/26_NATIVE_CAPABILITY_EVAL.md) est préparée
+les reprises exactes passent dans les deux variantes. La comparaison de 512
+mises à jour chacune est terminée et échoue aux quatre critères de qualité :
+la variante apprise est 1,3023 % moins bonne que le témoin à quatre boucles,
+et ses six boucles dégradent de 2,4477 % sa propre perte à quatre boucles.
+Les résultats et le verdict sont vérifiés localement ; le composant n'est pas adopté.
+Une [évaluation ARC-Easy native](docs/26_NATIVE_CAPABILITY_EVAL.md) est en cours
 pour comparer les réponses du modèle initial et des deux variantes à quatre et
-six boucles. Les 2 376 questions sont figées et les tests locaux du calcul des
-scores passent ; aucun score ARC natif ni contrôle GPU de cet évaluateur
-n'est encore disponible.
+six boucles. Les 2 376 questions sont figées, 28 tests CPU/GPU passent sans
+exclusion et les scores par lots sont contrôlés par un calcul individuel.
+La comparaison complète des six configurations n'est pas encore disponible.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
