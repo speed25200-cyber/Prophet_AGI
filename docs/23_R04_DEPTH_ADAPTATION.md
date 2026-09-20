@@ -122,6 +122,25 @@ early stopping based on intermediate development quality is included. A passing
 seed-0 result warrants additional training seeds and capability tests, not adoption.
 Failure does not justify simply increasing inference loops on the existing model.
 
+### What the screen can establish
+
+The primary k6-versus-k4 contrast lies **inside** the variable arm's training
+support, k2 through k6. A pass would establish a benefit from additional computation
+within that support on this language-loss evaluation. It would not establish
+extrapolation to unseen depths: k8 is outside the training support and remains a
+separately reported secondary result. Neither contrast measures reasoning ability.
+
+The frozen Prophet core uses GDN mixers, pre-normalized residual blocks and
+additive input reinjection (`h + injected`). It has no separate normalization at
+the core's output. Huginn instead uses attention, sandwich normalization, a
+learned concatenation adapter and a normalized core output; its training samples
+a heavy-tailed depth distribution with truncated gradients. These differences
+are described in [the primary paper, sections 3.2–3.3 and 4.3](https://arxiv.org/html/2502.05171v2).
+This experiment changes only the training-depth policy in Prophet. Its outcome
+cannot identify normalization, reinjection or mixer choice as the cause of a
+remaining failure, and does not reproduce the paper's architecture or scaling
+result. Such a causal claim would require another controlled experiment.
+
 ## Parameter accounting correction
 
 Historical R04 tables used an older budget estimate of 374,688,512 shared and
