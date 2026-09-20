@@ -100,8 +100,12 @@ sur les 372 documents de développement ; le donneur reste meilleur, à 3,1578.
 Son checkpoint intermédiaire à 256 étapes réussit le contrôle numérique de
 décodage qui échouait sur l'extrait initial, avec les mêmes seuils. Le checkpoint
 final passe aussi les huit cas CPU FP32 sur quatre textes à 128 et 512 tokens ;
-ses poids sont vérifiés après remontage de Drive. Le témoin à attention s'entraîne maintenant,
-puis suivront les deux variantes guidées par le donneur. Le corpus de récupération
+ses poids sont vérifiés après remontage de Drive. Le témoin à attention termine
+le même budget à **4,5305 nats/token**, devant l'hybride, et passe les huit cas CPU.
+À 512 tokens, le cache hybride occupe 73,875 Mio contre 112 Mio pour le témoin ;
+à 128 tokens il coûte davantage (49,875 contre 28 Mio). Ces nombres excluent les
+poids et les espaces de travail. La variante hybride guidée par le donneur
+s'entraîne ; le quatrième bras reste programmé. Le corpus de récupération
 exclut les neuf chevauchements connus et les quatre extraits du diagnostic initial.
 La reprise exacte CE/KL est testée sur CUDA. Le contrôle des gradients GDN échoue
 encore en BF16 ; les essais FP32 réussis constituent une politique expérimentale

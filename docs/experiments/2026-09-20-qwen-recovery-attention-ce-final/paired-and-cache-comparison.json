@@ -1,0 +1,87 @@
+{
+  "protocol": "two-completed-ce-arms-interim-analysis-v1",
+  "attention_versus_initialization": {
+    "direction": "left minus right; negative favors left",
+    "ce_delta": -4.690557396637876,
+    "bpb_delta": -1.4408250049300855,
+    "ce_document_bootstrap_95": [
+      -4.761395317234076,
+      -4.620042312400488
+    ],
+    "bpb_document_bootstrap_95": [
+      -1.473900794658758,
+      -1.408752344139075
+    ],
+    "document_win_fraction": 1,
+    "documents": 372,
+    "draws": 10000,
+    "bootstrap_seed": 0,
+    "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+  },
+  "hybrid_minus_attention": {
+    "direction": "left minus right; negative favors left",
+    "ce_delta": 0.040600665313357744,
+    "bpb_delta": 0.01247153565207714,
+    "ce_document_bootstrap_95": [
+      0.03736223601734291,
+      0.0438299965280992
+    ],
+    "bpb_document_bootstrap_95": [
+      0.011465313926897211,
+      0.013490560796794717
+    ],
+    "document_win_fraction": 0.12903225806451613,
+    "documents": 372,
+    "draws": 10000,
+    "bootstrap_seed": 0,
+    "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+  },
+  "attention_fraction_initial_ce_gap_closed": 0.7735993706493841,
+  "attention_median_logged_update_seconds_last_256": 0.8711358308792114,
+  "attention_cache": {
+    "cases": 8,
+    "paths": 16,
+    "maximum_logit_error": 2.765655517578125e-05,
+    "maximum_tolerance_ratio": 0.16947327554225922,
+    "execution_seconds": 416.99525783399804
+  },
+  "measured_cache_bytes_by_prefix_length": {
+    "128": {
+      "attention": {
+        "slots": 28,
+        "position": 128,
+        "attention_bytes": 29360128,
+        "recurrent_bytes": 0,
+        "total_bytes": 29360128
+      },
+      "hybrid": {
+        "slots": 28,
+        "position": 128,
+        "attention_bytes": 8388608,
+        "recurrent_bytes": 43909120,
+        "total_bytes": 52297728
+      }
+    },
+    "512": {
+      "attention": {
+        "slots": 28,
+        "position": 512,
+        "attention_bytes": 117440512,
+        "recurrent_bytes": 0,
+        "total_bytes": 117440512
+      },
+      "hybrid": {
+        "slots": 28,
+        "position": 512,
+        "attention_bytes": 33554432,
+        "recurrent_bytes": 43909120,
+        "total_bytes": 77463552
+      }
+    }
+  },
+  "archive": {
+    "bytes": 171906,
+    "sha256": "73fb41313b1fc28b2f88adbe3bf84e6854e43211007b410a81bd2848dc8715e6"
+  },
+  "scope": "Interim CE-only seed-zero comparison; both endpoint reports pass full-comparator checks before its required refusal at the missing third arm. Conditional document intervals exclude seed uncertainty. Cache storage excludes weights, workspace and peak allocation. No fresh checkpoint reload or remote durability check; attention weights remain local to Colab."
+}

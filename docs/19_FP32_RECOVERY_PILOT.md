@@ -242,8 +242,9 @@ evaluation, checkpoint metadata and audit. The downloaded hashes match the audit
 and queue records. [Independent paired comparisons](experiments/2026-09-20-qwen-recovery-hybrid-ce-final/paired-comparisons.json)
 are computed locally from the downloaded per-document losses.
 
-The attention CE arm has started with the same frozen revision, schedule and token
-budget. Both KL arms remain queued. The final GDN CE weights have a checksummed
+At this first endpoint, the attention CE arm had started with the same frozen
+revision, schedule and token budget; both KL arms were queued. Its completed result
+is recorded below. The final GDN CE weights have a checksummed
 Drive copy, verified again after a successful 2.85-second flush and remount.
 The full CPU audit of the remounted weights reproduces the local audit exactly,
 including the checkpoint checksum and all 466 model/optimizer tensors; training
@@ -260,7 +261,87 @@ all sixteen cached path results, exact prefix token hashes and the deterministic
 four-document selection were independently verified against the local corpus and
 pinned tokenizer. [Persistence proof](experiments/2026-09-20-qwen-recovery-hybrid-ce-final/persistence/hybrid-ce-final-persistence.json).
 
-## Evidence
+## Second final endpoint: attention CE, step 2,048
+
+The matched attention CE arm completes **2,048 updates / 4,194,304 input tokens**,
+with zero skipped updates. Its full development CE is **4.530511577**, BPB
+**1.391662827**, on the same 372 documents, 366,762 targets and 1,722,551 bytes.
+Every document improves against its own initialization. The attention-minus-initial
+CE difference is -4.690557397, with paired document-bootstrap 95% interval
+[-4.761395317, -4.620042312]. This closes 77.36% of its initial CE gap to the donor;
+the smaller gap-closure fraction than GDN does not reverse its better final CE,
+because attention started closer to the donor.
+
+The interim **GDN-minus-attention CE difference is +0.040600665**, interval
+[+0.037362236, +0.043829997]. Attention has lower loss on 324 of 372 documents.
+The interval conditions on these two models and excludes training-seed uncertainty.
+This is a completed CE-only comparison; the four-arm factorial result remains
+unavailable until both KL arms complete. Neither converted model matches the
+unchanged donor's CE of 3.157778885. GDN has 385,515,905 unique parameters and the
+attention control has 360,087,809: the hybrid is not smaller in stored parameters
+in this conversion experiment. The R04 parameter-saving result concerns a different
+controlled comparison.
+
+The attention checkpoint is 3,503,292,889 bytes, SHA256
+`428a6dd7414054b93d4861535b643a19389b40dd4641de2e0dd03f80bd76527d`.
+The separate CPU checkpoint audit passes; the downloaded reports reproduce its
+evaluation hash, complete configuration/contract, saved CUDA RNG and finite-state
+evidence. Both completed endpoints pass the strict four-arm comparator's per-arm
+checks before it correctly refuses the absent third endpoint. Their normalized
+runtime/input identities and training contracts match. All 2,048 attention training
+rows and their auxiliary metrics are finite, with exact step/token counts.
+The median of the last 256 logged attention updates is 0.87114 seconds, excluding
+setup, evaluation and checkpointing; this is not billed runtime.
+
+The attention CPU cache suite passes all eight prefixes and sixteen execution paths
+in 417.00 seconds. Maximum logit error is 2.76566e-5 and the largest tolerance ratio
+is 0.16948; all argmax positions match. Corpus/tokenizer hashes and all eight prefix
+identities are independently reproduced from the local source files and match the
+GDN suite. Both use FP32, depth five, two CPU threads and unchanged 1e-4 absolute
+and relative tolerances.
+
+| Prefix length | GDN cache | Attention cache | Measurement scope |
+|---|---:|---:|---|
+| 128 tokens | 49.875 MiB | 28 MiB | Stored cache tensors, batch one |
+| 512 tokens | 73.875 MiB | 112 MiB | Stored cache tensors, batch one |
+
+GDN retains 41.875 MiB of recurrent state at both lengths; its attention component
+grows from 8 to 32 MiB. The attention-only cache grows from 28 to 112 MiB. Thus
+bounded recurrent state has an initial cost: it saves cache storage at 512 tokens
+but costs more at 128. These are actual CPU tensor-storage measurements, excluding
+model weights, workspace, allocator overhead and peak memory. They neither prove
+lower total inference memory nor certify numerical behavior beyond the trained
+512-token window.
+
+The [downloaded evidence and paired/cache comparison](experiments/2026-09-20-qwen-recovery-attention-ce-final/paired-and-cache-comparison.json)
+come from a 171,906-byte, twelve-file ZIP, SHA256
+`73fb41313b1fc28b2f88adbe3bf84e6854e43211007b410a81bd2848dc8715e6`.
+It includes the exact executed notebook sources for the remaining CPU cache and
+four-arm analysis queue, and the post-training GPU cache queue. Attention weights
+remain on the Colab runtime; this export contains reports, not a durable weight copy.
+The GDN KL process is confirmed live after both CE training/audit processes exit
+successfully. Attention KL follows it under the frozen pilot protocol.
+
+## CUDA cache coverage and queued checks
+
+Revision `bfce7c5` adds explicit `--device cuda` to the expanded cache CLI. It keeps
+FP32 and the same thresholds, disables PyTorch TF32, requires FLA chunk32 for GDN,
+records CUDA/device/FLA identity and peak allocation, and refuses unavailable CUDA
+instead of falling back to CPU. The reference-scan option remains CPU-only.
+Tiny trained-model cases cover both correct cached decoding and a deliberate error
+beyond the shorter prefix. The local focused run passes 41 cases with four CUDA
+skips; full GitHub CI passes **781 CPU cases with 15 CUDA-only skips** in 94.27 seconds.
+The earlier actual A100 gates cover thirteen CUDA cases; the two new CUDA cache
+cases are **queued, not yet executed**.
+
+The GPU queue waits for all four training/audit processes to finish, then runs the
+four CPU/CUDA miniature cache cases and each arm's eight real CUDA prefixes in an
+isolated pinned worktree. Input identities and evaluated checkpoint hashes must
+match the CPU evidence. Numerical failures retain complete reports and do not
+relax thresholds; unexpected execution errors stop the queue. The live training
+checkout stays frozen at `467d7c8`.
+
+## Full comparison contract
 
 The final four-arm comparison uses `scripts/summarize_recovery_pilot.py`. It
 requires all four planned endpoints and their separately executed checkpoint
