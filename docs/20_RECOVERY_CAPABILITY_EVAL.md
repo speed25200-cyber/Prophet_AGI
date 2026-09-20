@@ -88,17 +88,62 @@ bytes, SHA256 `6d21a697a57fe756492aaf62f5d1202780e6140f4ef396d098336fcaaee369a0`
 Its tests, manifest and exact executed queue source were independently checked
 after download; [Colab evidence](experiments/2026-09-20-arc-recovery-protocol/colab/queue-at-ready.json).
 
-The complete five-model GPU evaluation is **running**. All four recovery arms and
-their post-training GPU cache suites have passed. The donor process has completed
-and the hybrid-CE process is running at the latest direct observation; scores have
-not yet been independently checked or published. It uses an isolated worktree pinned
-to `6d36dce`, requires the exact frozen input manifest and checkpoint identities,
-and limits each model process to 30 minutes. Unexpected preceding queue failures
-stop evaluation; complete numerical cache failures remain recorded and still allow
-this separate full-forward, uncached capability measurement. The training checkout
-remains unchanged at `467d7c8`.
-All models will use the same device/precision policy; CPU oracle numbers are not
-mixed into that comparison. No answer-quality conclusion follows from preparation.
+The complete five-model GPU evaluation is **finished**. All five process handles
+returned zero, after all four training and GPU cache suites passed. Evaluation used
+an isolated worktree pinned to `6d36dce`, with a 30-minute limit per model; training
+remained pinned to `467d7c8`. All five reports have identical A100/FP32 runtime,
+tokenizer, questions, answer ordering and scoring policy. CPU oracle numbers are
+not mixed into this comparison.
+
+## Complete ARC-Easy results
+
+| Model | Correct / 2,376 | Raw accuracy | Character-normalized accuracy | Gold-answer BPB |
+|---|---:|---:|---:|---:|
+| Unchanged donor | 1,446 | 60.8586% | 55.9764% | 0.943759 |
+| Hybrid CE | 773 | 32.5337% | 31.9865% | 1.635445 |
+| Attention CE | 811 | 34.1330% | 31.9865% | 1.621070 |
+| Hybrid KL | 834 | 35.1010% | 32.5758% | 1.585024 |
+| Attention KL | 825 | 34.7222% | 32.5758% | 1.550828 |
+
+There are no tied predictions in either scoring convention. Uniform-choice chance
+is 25.0161%. All five arms score the same 10,748 gold-answer tokens and 56,324
+gold-answer bytes. These are exploratory raw-prompt scores, not published harness
+scores or proof of an instruction-following assistant.
+
+The complete 16-member source archive is 3,719,057 bytes with SHA256
+`ce0e4f64b8c5385cdaaf1853ab5de9afac44adc2eb695cf8466e5465a0726915`.
+Its source hash was read in Colab and all member identities checked before local
+extraction. The [independent analysis](experiments/2026-09-20-arc-recovery-final/independent-analysis.py)
+reads the large per-item reports from lossless gzip files, which reproduce the
+exact original JSON bytes and hashes, and
+checks each source-row hash, gold index, choice length and candidate-token identity
+against the original frozen items kept outside Git. It recalculates all predictions,
+ties and aggregates from the recorded choice losses, verifies the executed source
+hashes against Git, and matches all four checkpoint audits to the earlier endpoint
+audits. This is independent aggregation and identity verification, **not a second
+GPU forward evaluation**. [Complete verification and paired results](experiments/2026-09-20-arc-recovery-final/independent-verification.json).
+
+For raw accuracy, paired-item bootstrap intervals (10,000 resamples, seed 0) give:
+
+| Contrast | Difference, percentage points | Descriptive 95% interval |
+|---|---:|---:|
+| Hybrid CE − attention CE | −1.5993 | [−3.0724, −0.2104] |
+| Hybrid KL − attention KL | +0.3788 | [−1.0943, +1.8098] |
+| Hybrid KL − hybrid CE | +2.5673 | [+1.0522, +4.0404] |
+| Attention KL − attention CE | +0.5892 | [−0.8838, +2.0623] |
+
+Intervals are unadjusted across eight contrasts per scoring convention and do not
+cover training-seed or contamination uncertainty. They do not select a winning
+architecture. In particular, the nine-question lead of hybrid KL over attention KL
+is weak evidence; normalized accuracy ties exactly. The attention KL model still
+has the better gold-answer likelihood, so lower language loss and higher raw
+multiple-choice accuracy do not give the same ordering.
+
+Every recovered arm is far behind the unchanged donor. Even hybrid KL loses
+25.7576 percentage points (paired interval [−27.9882, −23.4428]). The short recovery
+budget has not restored donor capabilities. **Do not adopt the conversion or scale
+this recipe on the strength of its improved text loss.** The next development
+diagnostics isolate how much damage weight sharing causes before more GPU recovery.
 
 ```bash
 python scripts/prepare_arc_recovery_eval.py \

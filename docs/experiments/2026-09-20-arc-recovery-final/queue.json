@@ -1,0 +1,95 @@
+{
+  "status": "all_five_complete",
+  "revision": "6d36dced81bfd3378279bcabe9cba9df5304f0be",
+  "results": {
+    "donor": {
+      "report_sha256": "ab6a035fbf70d28ad17bce6ec987f7a695a2682d08d6172de7c52435e9b2f30d",
+      "accuracy": 0.6085858585858586,
+      "accuracy_character_normalized": 0.5597643097643098,
+      "gold_answer_bits_per_byte": 0.9437590863430539,
+      "uniform_choice_chance": 0.25016133557800224
+    },
+    "hybrid-ce": {
+      "report_sha256": "86bbba2275607cdca0afe977f25554e4f1ba3dfdecf704e484cffa1fd3cc2d1f",
+      "accuracy": 0.3253367003367003,
+      "accuracy_character_normalized": 0.31986531986531985,
+      "gold_answer_bits_per_byte": 1.6354451836559314,
+      "uniform_choice_chance": 0.25016133557800224
+    },
+    "attention-ce": {
+      "report_sha256": "10e2c8877ffea09449df93a4fbdcd997945b3e4d6a251fb85a51d4ceb5a24f1d",
+      "accuracy": 0.3413299663299663,
+      "accuracy_character_normalized": 0.31986531986531985,
+      "gold_answer_bits_per_byte": 1.6210698493734743,
+      "uniform_choice_chance": 0.25016133557800224
+    },
+    "hybrid-kl": {
+      "report_sha256": "a90ea39ffb83fe89ce376116200654898f000f6771115a7153e0b53257895c2f",
+      "accuracy": 0.351010101010101,
+      "accuracy_character_normalized": 0.32575757575757575,
+      "gold_answer_bits_per_byte": 1.5850237336386708,
+      "uniform_choice_chance": 0.25016133557800224
+    },
+    "attention-kl": {
+      "report_sha256": "6b331bd6e8db5b4a1eb5db7e8053f66e70fbf20a867e8601d867cb31cf8afc01",
+      "accuracy": 0.3472222222222222,
+      "accuracy_character_normalized": 0.32575757575757575,
+      "gold_answer_bits_per_byte": 1.550827557770364,
+      "uniform_choice_chance": 0.25016133557800224
+    }
+  },
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "/content/prophet-recovery/arc-eval-6d36dce/scripts/eval_arc_recovery.py",
+    "--source",
+    "/content/prophet-recovery/source",
+    "--items",
+    "/content/prophet-recovery/arc-evaluation-v1/items",
+    "--out",
+    "/content/prophet-recovery/arc-evaluation-v1/attention-kl.json",
+    "--device",
+    "cuda",
+    "--arm",
+    "recovered",
+    "--run",
+    "/content/prophet-recovery/recovery-fp32-v1/attention-kl-seed0",
+    "--step",
+    "2048"
+  ],
+  "pid": 165444,
+  "input_manifest": {
+    "complete": true,
+    "protocol": "arc-easy-raw-choice-v1",
+    "source": {
+      "hf_id": "allenai/ai2_arc",
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "config": "ARC-Easy",
+      "split": "test",
+      "license": "cc-by-sa-4.0"
+    },
+    "rows": 2376,
+    "items_sha256": "5011ec1abef00263b75101c484acdd4e8e2a1e51f8d6895059e87126ccdc6b3b",
+    "tokenizer": {
+      "format": "donor-bytelevel-raw-text-v1",
+      "source_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "eos_id": 151645,
+      "pad_id": 151643,
+      "vocab_size": 151936,
+      "normalizer": {
+        "type": "NFC"
+      },
+      "policy": "no added-token recognition; no postprocessor; explicit EOS"
+    },
+    "max_tokens": 512,
+    "max_observed_tokens": 167,
+    "total_candidate_tokens": 297436,
+    "prompt_template": "Question: {question}\nAnswer:",
+    "continuation_prefix": " ",
+    "fewshot": 0,
+    "scoring": "continuation-only summed nats; character-normalized nats divide by original choice length",
+    "tie_policy": "first source choice; report ties",
+    "scope": "Full exploratory test split; no chat, truncation, cached generation or instruction-following claim. Prior lexical overlap screen is incomplete; donor pretraining contamination is unknown."
+  },
+  "scorer_tests_passed": 12,
+  "preceding_cache_status": "all_passed"
+}

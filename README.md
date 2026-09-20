@@ -121,10 +121,16 @@ exclut les neuf chevauchements connus et les quatre extraits du diagnostic initi
 La reprise exacte CE/KL est testée sur CUDA. Le contrôle des gradients GDN échoue
 encore en BF16 ; les essais FP32 réussis constituent une politique expérimentale
 explicite. Les autres graines et les évaluations de capacités restent à terminer.
-Une [évaluation de capacités ARC-Easy](docs/20_RECOVERY_CAPABILITY_EVAL.md) est
-préparée sur les 2 376 questions de test, avec un protocole commun au donneur et aux
-quatre modèles récupérés. Le calcul des probabilités passe un contrôle indépendant
-sur Qwen réel ; les scores complets restent à mesurer après les entraînements.
+L'[évaluation de capacités ARC-Easy](docs/20_RECOVERY_CAPABILITY_EVAL.md) est terminée
+sur les 2 376 questions de test, avec un protocole commun aux cinq modèles et un
+recalcul indépendant des scores exportés. Le donneur atteint **60,86 %**, contre
+32,53 % pour l'hybride CE, 34,13 % pour l'attention CE, 35,10 % pour l'hybride KL
+et 34,72 % pour l'attention KL. Les capacités du donneur ne sont donc pas récupérées.
+La petite différence entre les deux variantes KL ne suffit pas à choisir une architecture.
+Des [diagnostics de partage des poids](docs/21_DONOR_SHARING_SCOUT.md) sur des préfixes
+de développement montrent aussi que des corrections SVD propres à chaque profondeur
+ne suffisent pas sans entraînement ; retirer huit couches préserve mieux la prédiction
+que les partages cycliques testés. Aucune de ces variantes n'est adoptée.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers

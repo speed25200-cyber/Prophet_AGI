@@ -1,0 +1,49 @@
+{
+  "complete": true,
+  "source_zip_bytes": 3719057,
+  "source_zip_sha256": "ce0e4f64b8c5385cdaaf1853ab5de9afac44adc2eb695cf8466e5465a0726915",
+  "verified_members": 16,
+  "scope": "Exact source zip hash read in Colab output, then every member hash checked locally before extraction. Large per-item reports stored as deterministic gzip; decompression recovers exact source bytes.",
+  "lossless_gzip_reports": {
+    "donor.json.gz": {
+      "bytes": 740790,
+      "sha256": "6b5596233bdace6f180b4304a563a68c5088cbb4735d4d64fc4fe82667763509",
+      "expanded_identity": {
+        "bytes": 3748047,
+        "sha256": "ab6a035fbf70d28ad17bce6ec987f7a695a2682d08d6172de7c52435e9b2f30d"
+      }
+    },
+    "hybrid-ce.json.gz": {
+      "bytes": 742489,
+      "sha256": "b2970a9257aa4e6a2383b09aa0906374bd9a01037686c4faa2589e304df23939",
+      "expanded_identity": {
+        "bytes": 3759957,
+        "sha256": "86bbba2275607cdca0afe977f25554e4f1ba3dfdecf704e484cffa1fd3cc2d1f"
+      }
+    },
+    "attention-ce.json.gz": {
+      "bytes": 742389,
+      "sha256": "adc5b0754cb3aceb7f214f84de82f1a90b14684037399b5a6212633122e63084",
+      "expanded_identity": {
+        "bytes": 3759951,
+        "sha256": "10e2c8877ffea09449df93a4fbdcd997945b3e4d6a251fb85a51d4ceb5a24f1d"
+      }
+    },
+    "hybrid-kl.json.gz": {
+      "bytes": 742881,
+      "sha256": "ea52c77a5c5ac3c149152e678d68cdb4bc6409919e5e8bb91955a811abe17dbe",
+      "expanded_identity": {
+        "bytes": 3762846,
+        "sha256": "a90ea39ffb83fe89ce376116200654898f000f6771115a7153e0b53257895c2f"
+      }
+    },
+    "attention-kl.json.gz": {
+      "bytes": 743026,
+      "sha256": "e1da63a6c76d3a34edf090fb00cf7997f3f8c264f43eefddf04c5dcf7af13939",
+      "expanded_identity": {
+        "bytes": 3762916,
+        "sha256": "6b331bd6e8db5b4a1eb5db7e8053f66e70fbf20a867e8601d867cb31cf8afc01"
+      }
+    }
+  }
+}

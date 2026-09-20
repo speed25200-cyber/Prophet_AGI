@@ -1,0 +1,48 @@
+{
+  "complete": true,
+  "files": {
+    "residual-spectrum/base-budget.txt": {
+      "bytes": 2365,
+      "sha256": "7f77edcba61a7cf9153382dddb8c1d808b0ce1f5a564154b318b23b6e298e1a5"
+    },
+    "residual-spectrum/base-config.json": {
+      "bytes": 3270,
+      "sha256": "647cb9aad1cf363dbe7bafd61ff54dd9d2234930a20f9bb7959df99d81b092b5"
+    },
+    "residual-spectrum/design-search.txt": {
+      "bytes": 258,
+      "sha256": "8d55c26d1888cd2ceb7447621f1a3e53f3c98731eb84d06e39bc8cc178909609"
+    },
+    "residual-spectrum/plan.txt": {
+      "bytes": 4617,
+      "sha256": "ef1c664146dbc49f8bb5125e804760580850f30023cd2c2d4e47f2c760b0add1"
+    },
+    "residual-spectrum/report.json": {
+      "bytes": 204693,
+      "sha256": "92cd7c363200638e56aa53b6c64fb96b761cc3611abe1948c83604dde273d644"
+    },
+    "residual-spectrum/executed-source.py": {
+      "bytes": 6509,
+      "sha256": "46e72321ef5326a065ef88396c2b12e7b6a7e75244d101658e6170b204d29723"
+    },
+    "residual-prefix/report.json": {
+      "bytes": 26649,
+      "sha256": "c3dc636685974368dbd3ef6de994e0afcff6bf9ade151f6adf363ad9d6341967"
+    },
+    "residual-prefix/executed-source.py": {
+      "bytes": 9835,
+      "sha256": "b567b7e2375e1a027d53a70051227d871c932fecef6df310e211f4a1f2ecb369"
+    },
+    "selective-prefix/report.json": {
+      "bytes": 21737,
+      "sha256": "f492b4bf9209cc21dd855556d530d235fa9b7482662dc63db457f45cd5060204"
+    },
+    "selective-prefix/executed-source.py": {
+      "bytes": 7044,
+      "sha256": "d36587497b579ebf8e7c6ba7c95fb94f776b3a2db0475b3c10485bb732675f42"
+    }
+  },
+  "same_prefix_identities": true,
+  "prefix_targets": 8176,
+  "scope": "Exact local result/source bytes preserved, all prefix score sums and input identities checked; no independent model forward rerun."
+}

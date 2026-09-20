@@ -1,3 +1,8 @@
 # Experiment reports contain byte-level SHA256 references to Linux/Colab exports.
 # Keep their committed bytes stable when checked out on Windows as well.
 /docs/experiments/** text eol=lf
+/docs/experiments/**/*.gz -text
+/scripts/probe_qwen_relaxed.py text eol=lf
+/scripts/probe_qwen_selective.py text eol=lf
+# Preserve original Windows console bytes referenced by the diagnostic manifest.
+/docs/experiments/2026-09-20-qwen-sharing-scout/residual-spectrum/*.txt -text whitespace=cr-at-eol,-blank-at-eof
