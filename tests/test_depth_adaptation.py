@@ -22,6 +22,7 @@ from prophet.train.checkpoint import CheckpointManager
 from prophet.train.loop import TrainConfig, Trainer
 from scripts import adapt_r04_depth as driver
 from scripts.audit_r04_restart import audit, compare_states
+from scripts.run_r04_pilot import tokenizer_semantic_hash
 from tests.test_training import tiny_model_config
 
 
@@ -94,7 +95,7 @@ def fixture(tmp_path, monkeypatch, device, experiment=None):
     )
     trainer.train()
     meta = trainer.ckpt.save(trainer.state_dict(), 1)
-    provenance = {"fixture": "miniature real text"}
+    provenance = {"fixture": "miniature real text", "tokenizer_semantic_sha256": tokenizer_semantic_hash(corpus / "tokenizer.json")}
     parent_protocol = {
         "config": cfg.to_dict(),
         "variant": "loop",

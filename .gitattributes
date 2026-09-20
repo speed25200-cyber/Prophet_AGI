@@ -12,6 +12,9 @@
 /scripts/build_r04_reinjection_plan.py text eol=lf
 /scripts/gate_r04_input_adapter.py text eol=lf
 /scripts/summarize_reinjection.py text eol=lf
+/scripts/prepare_arc_native_eval.py text eol=lf
+/scripts/eval_arc_native.py text eol=lf
+/prophet/eval/choices.py text eol=lf
 /docs/experiments/2026-09-20-r04-reinjection-plan/*.txt whitespace=-blank-at-eof
 /docs/experiments/2026-09-20-r04-reinjection-gates/*.txt whitespace=-blank-at-eof
 # Preserve original Windows console bytes referenced by the diagnostic manifest.

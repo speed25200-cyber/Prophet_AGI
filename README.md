@@ -163,6 +163,11 @@ ajoute une correction initialement nulle au mélange entre entrée et état réc
 Le composant reste désactivé par défaut. Les contrôles CUDA à taille réelle et
 les reprises exactes passent dans les deux variantes ; la comparaison de 512
 mises à jour chacune est en cours. Aucun gain de qualité n'est encore établi.
+Une [évaluation ARC-Easy native](docs/26_NATIVE_CAPABILITY_EVAL.md) est préparée
+pour comparer les réponses du modèle initial et des deux variantes à quatre et
+six boucles. Les 2 376 questions sont figées et les tests locaux du calcul des
+scores passent ; aucun score ARC natif ni contrôle GPU de cet évaluateur
+n'est encore disponible.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
