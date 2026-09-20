@@ -1,0 +1,47 @@
+# Budget report — prophet-from-qwen3-0.6b
+
+d_model=1024  parameterised_depth=12  effective_depth=28  frontend=bpe  ffn=dense
+
+## Parameters
+
+| Component | Params | Share |
+|---|---:|---:|
+| frontend/embeddings | 155.58M | 43.2% |
+| ffn/dense | 113.25M | 31.4% |
+| mixer/full_attn | 50.33M | 14.0% |
+| mixer/swa | 25.17M | 7.0% |
+| aux_heads | 15.73M | 4.4% |
+| norms | 24.58K | 0.0% |
+| **total (resident)** | **360.09M** | 100% |
+| **active / token** | **344.35M** | 95.6% |
+| embedding share | 155.58M | 43.2% |
+
+## Training on one A100 80GB
+
+| Batch tokens | Optimiser | Weights | Grads | Optim | Acts | Total | Fits |
+|---:|---|---:|---:|---:|---:|---:|---|
+| 8192 | Muon+AdamW (5.9 B/param) | 1.3 | 1.3 | 2.0 | 1.0 | 5.6 GB | yes |
+| 8192 | 8-bit (not implemented) | 1.3 | 1.3 | 0.7 | 1.0 | 4.3 GB | yes |
+| 16384 | Muon+AdamW (5.9 B/param) | 1.3 | 1.3 | 2.0 | 1.9 | 6.6 GB | yes |
+| 16384 | 8-bit (not implemented) | 1.3 | 1.3 | 0.7 | 1.9 | 5.3 GB | yes |
+| 32768 | Muon+AdamW (5.9 B/param) | 1.3 | 1.3 | 2.0 | 3.9 | 8.5 GB | yes |
+| 32768 | 8-bit (not implemented) | 1.3 | 1.3 | 0.7 | 3.9 | 7.2 GB | yes |
+
+Token budget at 6 A100-hours and 35% MFU: **472.39M tokens** (1 tokens/param, avg loop k=5.0).
+
+## Inference
+
+| Device | Precision | Context | k | Weights | KV/state | Total | Fits | Decode ceiling |
+|---|---|---:|---:|---:|---:|---:|---|---:|
+| RTX 5090 | int4_g64 | 32768 | 5 | 0.25 | 0.52 | 1.26 GB | yes | 1828 tok/s |
+| RTX 5090 | int4_g64 | 131072 | 5 | 0.25 | 2.02 | 2.76 GB | yes | 692 tok/s |
+| Mac Studio (M-Ultra) | int4_g64 | 131072 | 5 | 0.25 | 2.02 | 2.76 GB | yes | 309 tok/s |
+| iPhone 17 Pro | int4_g64 | 8192 | 2 | 0.25 | 0.14 | 0.89 GB | yes | 228 tok/s |
+| iPhone 17 Pro | int4_g64 | 32768 | 2 | 0.25 | 0.52 | 1.26 GB | yes | 113 tok/s |
+
+Decode figures are bandwidth-bound ceilings (bytes streamed per token divided into device bandwidth). Real kernels reach roughly 50-70% of these.
+
+## Allocation warnings
+
+- frontend/embeddings holds 155.58M params (43.2% of the model), above the 20% guideline — these parameters do no computation.
+- attention inside the looped core (core[0], core[1], core[2], core[3]): its KV cache is duplicated per iteration, so memory scales with k (x5 at the default depth). This is decision D1's invariant; enable it only as the deliberate A-KV ablation.

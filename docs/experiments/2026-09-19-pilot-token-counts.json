@@ -1,0 +1,28 @@
+{
+  "tokenizer_sha256": "4d212345c25569add0ed6b2a397767062b9205f77b0fabc8f9a794107dffb1c2",
+  "eos_per_document": true,
+  "splits": {
+    "train": {
+      "documents": 19569,
+      "tokens": 19419613,
+      "seconds": 54.18915569999808,
+      "fingerprint": {
+        "files": [
+          "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e"
+        ],
+        "text_field": "text"
+      }
+    },
+    "validation": {
+      "documents": 376,
+      "tokens": 393416,
+      "seconds": 0.9191390999985742,
+      "fingerprint": {
+        "files": [
+          "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939"
+        ],
+        "text_field": "text"
+      }
+    }
+  }
+}

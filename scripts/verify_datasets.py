@@ -26,7 +26,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from prophet.data.mixture import BLOCKED_LICENSES, Mixture  # noqa: E402
+from prophet.data.mixture import (  # noqa: E402
+    Mixture,
+    MixtureError,
+    canonical_license_key,
+    validate_release_license,
+)
 from prophet.data.recipes import prophet_v1_mixture  # noqa: E402
 
 API = "https://huggingface.co/api/datasets/"
@@ -49,14 +54,17 @@ class Check:
     def license_matches(self) -> bool:
         if not self.hub_license or not self.declared_license:
             return False
-        a = self.declared_license.lower().replace(" ", "").replace("_", "-")
-        b = self.hub_license.lower().replace(" ", "").replace("_", "-")
-        return a.startswith(b[:6]) or b.startswith(a[:6])
+        return canonical_license_key(self.declared_license) == canonical_license_key(
+            self.hub_license
+        )
 
     @property
-    def hub_license_is_blocked(self) -> bool:
-        lowered = self.hub_license.lower()
-        return any(token in lowered for token in BLOCKED_LICENSES)
+    def hub_license_problem(self) -> str:
+        try:
+            validate_release_license(self.hub_license, label=f"Hub dataset {self.hf_id}")
+        except MixtureError as exc:
+            return str(exc)
+        return ""
 
 
 def fetch(hf_id: str) -> Check:
@@ -142,13 +150,15 @@ def main() -> int:
         )
         if r.exists is False:
             problems.append(f"{r.source}: `{r.hf_id}` does not exist on the Hub")
-        if r.error and r.exists is not True:
+        if r.error:
             problems.append(f"{r.source}: {r.error}")
-        if r.hub_license_is_blocked:
+        if not r.license_matches:
             problems.append(
-                f"{r.source}: Hub licence {r.hub_license!r} is on the blocked list — "
-                "using it would make the trained model un-releasable"
+                f"{r.source}: declared licence {r.declared_license!r} does not match "
+                f"Hub licence {r.hub_license or '<missing>'!r}"
             )
+        if r.hub_license_problem:
+            problems.append(f"{r.source}: {r.hub_license_problem}")
         if r.gated:
             problems.append(f"{r.source}: gated, needs an accepted licence agreement")
 

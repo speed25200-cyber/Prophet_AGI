@@ -1,0 +1,7 @@
+{
+  "source_zip_name": "prophet-r04-recurrence-observation.zip",
+  "source_zip_bytes": 30444,
+  "source_zip_sha256": "4a9854ae7775cfd051308008803511f5766df4d0ce35d5640a811881146e4bcd",
+  "source_files": 11,
+  "verification": "ZIP hash matched the Colab export metadata; every member length/hash verified before importing. Large JSON/JSONL members are losslessly gzipped with mtime zero."
+}

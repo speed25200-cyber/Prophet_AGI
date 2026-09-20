@@ -1,0 +1,66 @@
+{
+  "status": "all_three_matched_cuda_baselines_complete",
+  "revision": "4490d6640680455d9e3678017b6bd96db43f2542",
+  "results": {
+    "cuda-preflight": {
+      "exit_code": 0
+    },
+    "cuda-tests": {
+      "exit_code": 0
+    },
+    "donor": {
+      "exit_code": 0,
+      "sha256": "e35b5eec7f688a23aaa13ac291c7d282042a289302a0f65aa9f69623695fc212",
+      "nats_per_token": 3.158220781947172,
+      "bits_per_byte": 0.9701285132937556,
+      "seconds": 44.350581709000835
+    },
+    "attention": {
+      "exit_code": 0,
+      "sha256": "ba3fc67d4063ba6d3834237253a1a4c65dbb5033cd28505adb1ccd8adf93949c",
+      "nats_per_token": 9.221580099733538,
+      "bits_per_byte": 2.832644837090248,
+      "seconds": 46.13174527799856
+    },
+    "hybrid": {
+      "exit_code": 0,
+      "sha256": "01e89cca557c69ecba9b58c8c1580a71736a25e2f3ac3daf6aeb8d484d571aa8",
+      "nats_per_token": 11.310018565824437,
+      "bits_per_byte": 3.47416227494496,
+      "seconds": 138.13155353500042
+    }
+  },
+  "r04_completed_before_gpu_start": {
+    "status": "both_4096_snapshots_audited_remote_flush_still_required",
+    "pid": 71160
+  },
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "/content/prophet-recovery/gpu-repo/scripts/eval_qwen_recovery.py",
+    "--source",
+    "/content/prophet-recovery/source",
+    "--validation",
+    "/content/prophet-recovery/data/validation.jsonl",
+    "--data-audit",
+    "/content/prophet-recovery/gpu-repo/docs/experiments/2026-09-19-qwen-recovery-data.json",
+    "--arm",
+    "initialization",
+    "--device",
+    "cuda",
+    "--seq-len",
+    "512",
+    "--batch-size",
+    "1",
+    "--loop-k",
+    "5",
+    "--chunk-tokens",
+    "128",
+    "--out",
+    "/content/prophet-recovery/gpu-baselines/hybrid.json",
+    "--initialization",
+    "/content/prophet-recovery/initializations/hybrid.pt",
+    "--audit",
+    "/content/prophet-recovery/initializations/hybrid-conversion.json"
+  ],
+  "cuda_test_cases_passed": 10
+}

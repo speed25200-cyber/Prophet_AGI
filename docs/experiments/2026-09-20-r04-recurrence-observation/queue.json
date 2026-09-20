@@ -1,0 +1,27 @@
+{
+  "status": "complete",
+  "revision": "2e4d25ecd521980ee71607b2d96d3ed13b224210",
+  "model_revision": "f5a7d71be1723324e36a7be2546c940a69de9fdf",
+  "maximum_pair_seconds": 600,
+  "wait_limit_seconds": 6000,
+  "scope": "Inference-only fixed first-sixteen-document internal-state observations after both final reports and integrity audit. No training or primary-screen changes.",
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/r04-recurrence-observation-code-2e4d25e/scripts/diagnose_r04_recurrence.py",
+    "--model-repo",
+    "/content/r04-depth-adaptation-code-f5a7d71",
+    "--run",
+    "/content/r04-depth-strict-gate-v1/uniform2to6-continuous",
+    "--corpus",
+    "/content/Prophet_AGI/data/fineweb-pilot-v1",
+    "--out",
+    "/content/r04-recurrence-observation-v1/uniform2to6.json"
+  ],
+  "pid": 220666,
+  "tests_passed": 8,
+  "setup_seconds": 8.56578429399815,
+  "final_evidence_sha256": "7bac6bc695ccbc7f23345604d595df35eb499ada7143bf62893117e991ae20de",
+  "pair_seconds": 63.56563744300365,
+  "elapsed_seconds_including_wait": 637.9126841859979
+}

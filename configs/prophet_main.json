@@ -84,7 +84,8 @@
     "ingest_depth": 1,
     "token_depth_random_spans": 0.25,
     "iteration_embedding": false,
-    "iteration_readout": false
+    "iteration_readout": false,
+    "iteration_requantize": "none"
   },
   "ffn": {
     "kind": "moe",

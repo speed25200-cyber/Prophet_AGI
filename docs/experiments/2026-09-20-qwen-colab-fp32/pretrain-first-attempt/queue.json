@@ -1,0 +1,22 @@
+{
+  "status": "error",
+  "revision": "3e092eca6bb77c63ad1c5e77c3b27fec394c1e1d",
+  "results": {
+    "cuda-restart": {
+      "pid": 103219,
+      "exit_code": 2,
+      "command": [
+        "/content/prophet-recovery/venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_recovery_cli.py",
+        "-k",
+        "fp32_recovery and cuda",
+        "-q",
+        "--junitxml=/content/prophet-recovery/gpu-fp32-pretrain-checks/cuda-restart.xml"
+      ]
+    }
+  },
+  "scope": "CUDA exact restart and 512-token GDN numerical agreement; discarded updates only",
+  "error": "Traceback (most recent call last):\n  File \"/tmp/ipykernel_1330/3661197811.py\", line 36, in pretrain_work\n    assert p.returncode==0, name+' failed'\n           ^^^^^^^^^^^^^^^\nAssertionError: cuda-restart failed\n"
+}

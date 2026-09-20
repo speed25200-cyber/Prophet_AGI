@@ -1,0 +1,10 @@
+{
+  "verified": true,
+  "revision": "46321013c2b3a52eabd296ac173c255cd1369bec",
+  "source_files": 23,
+  "rows": 2376,
+  "reports": 6,
+  "queue_seconds": 772.7732469420007,
+  "preceding_training_export_seconds": 0.08019710899679922,
+  "scope": "All original export hashes, process completion, source/inputs/numerical contracts and previously audited checkpoint identities verified locally. Per-choice scores, ties, aggregates and all frozen paired contrasts recomputed; GPU inference and checkpoint tensor loads are not repeated here. No cross-seed or architectural adoption claim."
+}

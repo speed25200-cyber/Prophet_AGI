@@ -1,0 +1,46 @@
+# Budget report — prophet-from-qwen3-0.6b
+
+d_model=1024  parameterised_depth=18  effective_depth=28  frontend=bpe  ffn=dense
+
+## Parameters
+
+| Component | Params | Share |
+|---|---:|---:|
+| ffn/dense | 169.87M | 38.7% |
+| frontend/embeddings | 155.58M | 35.5% |
+| mixer/full_attn | 113.25M | 25.8% |
+| norms | 36.86K | 0.0% |
+| **total (resident)** | **438.74M** | 100% |
+| **active / token** | **438.74M** | 100.0% |
+| embedding share | 155.58M | 35.5% |
+
+## Training on one A100 80GB
+
+| Batch tokens | Optimiser | Weights | Grads | Optim | Acts | Total | Fits |
+|---:|---|---:|---:|---:|---:|---:|---|
+| 8192 | Muon+AdamW (5.4 B/param) | 1.6 | 1.6 | 2.2 | 0.9 | 6.4 GB | yes |
+| 8192 | 8-bit (not implemented) | 1.6 | 1.6 | 0.8 | 0.9 | 5.0 GB | yes |
+| 16384 | Muon+AdamW (5.4 B/param) | 1.6 | 1.6 | 2.2 | 1.9 | 7.4 GB | yes |
+| 16384 | 8-bit (not implemented) | 1.6 | 1.6 | 0.8 | 1.9 | 6.0 GB | yes |
+| 32768 | Muon+AdamW (5.4 B/param) | 1.6 | 1.6 | 2.2 | 3.8 | 9.2 GB | yes |
+| 32768 | 8-bit (not implemented) | 1.6 | 1.6 | 0.8 | 3.8 | 7.8 GB | yes |
+
+Token budget at 0 A100-hours and 35% MFU: **48.00M tokens** (0 tokens/param, avg loop k=2.0).
+
+## Inference
+
+| Device | Precision | Context | k | Weights | KV/state | Total | Fits | Decode ceiling |
+|---|---|---:|---:|---:|---:|---:|---|---:|
+| RTX 5090 | int4_g64 | 32768 | 2 | 0.28 | 1.12 | 1.91 GB | yes | 1141 tok/s |
+| RTX 5090 | int4_g64 | 131072 | 2 | 0.28 | 4.50 | 5.28 GB | yes | 345 tok/s |
+| Mac Studio (M-Ultra) | int4_g64 | 131072 | 2 | 0.28 | 4.50 | 5.28 GB | yes | 154 tok/s |
+| iPhone 17 Pro | int4_g64 | 8192 | 2 | 0.28 | 0.28 | 1.07 GB | yes | 135 tok/s |
+| iPhone 17 Pro | int4_g64 | 32768 | 2 | 0.28 | 1.12 | 1.91 GB | yes | 57 tok/s |
+
+Decode figures are bandwidth-bound ceilings (bytes streamed per token divided into device bandwidth). Real kernels reach roughly 50-70% of these.
+
+## Allocation warnings
+
+- frontend/embeddings holds 155.58M params (35.5% of the model), above the 20% guideline — these parameters do no computation.
+- attention inside the looped core (core[0], core[1], core[2], core[3], core[4], core[5], core[6], core[7], core[8], core[9]): its KV cache is duplicated per iteration, so memory scales with k (x2 at the default depth). This is decision D1's invariant; enable it only as the deliberate A-KV ablation.
+- full-attention layers are present but nope_layers is empty: without a position-free global layer, length extrapolation has to be bought with a context-extension run instead of coming for free

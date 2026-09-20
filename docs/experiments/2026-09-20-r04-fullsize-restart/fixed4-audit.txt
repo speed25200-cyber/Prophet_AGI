@@ -1,0 +1,1 @@
+R04_FULL_STATE_RESTART_EQUAL {'tensors': 315, 'tensor_elements': 867172946}

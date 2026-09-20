@@ -1,0 +1,26 @@
+{
+  "complete": true,
+  "script_revision": "5c117d1cafb3b78377c7bd2aec3bd3aa7a1ab158",
+  "model_revision": "8ad19d3c60dafd85fc67caf759981f1d765c3405",
+  "results": {
+    "attention-k5": {
+      "exit_code": 1,
+      "passed": false,
+      "seconds": 40.099723261999316,
+      "sha256": "e449c3bc3e8b9c6d50d699aa369a3752f77718959b5fff27349755ac961f8677"
+    },
+    "attention-k1": {
+      "exit_code": 1,
+      "passed": false,
+      "seconds": 31.25913389299967,
+      "sha256": "d3d0249cd9f25fd070898fe1269f5a31f65c9955cf5c6c3e97b24e85b6376b13"
+    },
+    "hybrid-k1": {
+      "exit_code": 1,
+      "passed": false,
+      "seconds": 32.811246311001014,
+      "sha256": "0a08c7efbfed9ddcbce55b6586f1209fc35e732c7c8e6424f4e75406fb41ef7f"
+    }
+  },
+  "scope": "Colab CPU FP32, same actual initialization pair and 128-token diagnostic prefix; depth controls are not recovery or quality evidence"
+}

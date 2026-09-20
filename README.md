@@ -5,7 +5,7 @@
 **Une architecture de modèle de langage repensée pour le matériel que l'on possède réellement.**
 
 `1× RTX 5090` · `Mac Studio` · `iPhone 17 Pro`
-Entraîné sur **un seul A100 80GB**.
+Cible d'entraînement : **un seul A100**. Pilote mesuré sur **A100 40 Go**.
 
 </div>
 
@@ -39,7 +39,7 @@ Nous ne pouvons pas gagner en échelle. Nous pouvons gagner en **allocation**.
 | 1 | **Dépenser les paramètres dans le calcul, pas dans le vocabulaire** — frontend adaptatif au lieu d'une table d'embedding de 128k | [§1](docs/00_PROBLEM_LANDSCAPE.md#1-le-verrou-du-tokenizer) |
 | 2 | **Mémoire à état borné plutôt qu'à croissance linéaire** — pile hybride récurrent/attention | [§2](docs/00_PROBLEM_LANDSCAPE.md#2-le-coût-quadratique-de-lattention-et-le-mur-du-cache-kv) |
 | 3 | **Acheter la profondeur avec du calcul, pas avec des poids** — cœur récurrent bouclé, profondeur réglable à l'exécution | [§4](docs/00_PROBLEM_LANDSCAPE.md#4-le-raisonnement--profondeur-fixe-et-pensée-verbeuse) |
-| 4 | **Accumuler après le déploiement** — mémoire persistante + consolidation hors-ligne ([implémentée](docs/06_MEMORY.md)) | [§3](docs/00_PROBLEM_LANDSCAPE.md#3-le-cerveau-gelé--aucune-mémoire-persistante-aucun-apprentissage-continu) |
+| 4 | **Accumuler après le déploiement** — prototype de mémoire persistante + consolidation hors-ligne ([état et limites](docs/06_MEMORY.md)) | [§3](docs/00_PROBLEM_LANDSCAPE.md#3-le-cerveau-gelé--aucune-mémoire-persistante-aucun-apprentissage-continu) |
 | 5 | **Savoir ce qu'on ignore** — abstention calibrée plutôt que couverture factuelle (physiquement hors d'atteinte à 1.3B params) | [§9](docs/00_PROBLEM_LANDSCAPE.md#9-lhallucination-et-labsence-de-calibration) |
 
 La profondeur récurrente est le pari central : elle transforme la profondeur en un
@@ -54,7 +54,7 @@ donc un seul modèle qui couvre les trois cibles matérielles.
 | Mac Studio Ultra | 96–512 GB unifiée | ~0.8 TB/s | Prophet (complet, contexte long) |
 | iPhone 17 Pro | ~8 GB unifiée | ~0.06–0.12 TB/s | Prophet-mini (dense, profondeur réduite) |
 
-## Configurations retenues
+## Configurations candidates
 
 Produites par `python scripts/design_search.py`, qui énumère l'espace de conception et ne
 retient que ce qui satisfait **simultanément** la mémoire d'entraînement (un A100 80GB),
@@ -65,10 +65,127 @@ le budget de tokens, la mémoire de l'appareil cible et l'absence de mauvaise al
 | **Prophet-main** | 3.83B | 408M | 24 (k=4) | 16.1B | 5090 / Mac Studio |
 | **Prophet-mini** | 253M | 236M | 14 (k=2) | 52.1B | iPhone 17 Pro |
 
-Rapport de sparsité 9.4× : la capacité d'un modèle de 3.8B pour le coût par token d'un
-modèle de 408M.
+Rapport de sparsité 9.4× entre paramètres stockés et actifs. Ces configurations
+restent des candidates à valider ; ce rapport ne démontre pas leur qualité.
 
 ## État du projet
+
+**Reprise du 19 septembre 2026 :** les branches v0.3 et expériences CPU sont réunies,
+le chemin de corpus manquant est restauré et la comparaison R04 est corrigée (375M
+bouclés contre 921M non partagés, 20 blocs exécutés par token). Vérifications et travaux
+restants : [`docs/11_RECOVERY_2026_09.md`](docs/11_RECOVERY_2026_09.md).
+Les pertes par blocs réduisent la mémoire mesurée de 31 % (boucle) et 20 % (témoin)
+sur A100 40 Go, avec huit tests CUDA réussis :
+[`docs/12_LOSS_WORKSPACE.md`](docs/12_LOSS_WORKSPACE.md).
+Un [corpus pilote réel et son tokenizer](docs/13_REAL_TEXT_PILOT.md) sont préparés,
+avec 19 569 documents d'entraînement et 376 de validation séparée. Les comparaisons
+de qualité R04 sur plusieurs graines restent à entraîner. Le [premier point commun
+à 128 étapes](docs/14_R04_PILOT.md) favorise légèrement le témoin sans partage pour
+cette graine. À [1 024 étapes dans les deux bras](docs/17_R04_CONTINUATION.md),
+le témoin conserve l'avantage : 4.6821 contre 4.7085 nats/token sur la validation complète. Passer de
+quatre à huit boucles à l'inférence dégrade ce checkpoint entraîné à profondeur fixe.
+À 2 048 étapes, l'ordre s'inverse : 4,3574 nats/token pour le modèle partagé contre
+4,3676 pour le témoin. Cet avantage reste limité à ce palier et à cette graine ;
+à 4 096 étapes, le témoin reprend l'avantage : 3,8443 contre 3,8559 pour le modèle
+partagé. Ce dernier utilise 59,3 % de paramètres en moins, avec une perte légèrement
+supérieure sur cette graine. Les deux entraînements sont terminés et leurs sauvegardes
+vérifiées après remontage de Drive ; les deux autres graines restent à entraîner.
+Les [sources R04](docs/15_R04_SOURCE_AUDIT.md) et les [recoupements avec les benchmarks](docs/16_PILOT_BENCHMARK_OVERLAP.md)
+sont audités séparément. Une [première conversion de poids Qwen3-0.6B](docs/18_DONOR_CONVERSION_REHEARSAL.md)
+est auditée, mais la conversion dégrade fortement sa qualité. Un
+[pilote de récupération en FP32](docs/19_FP32_RECOVERY_PILOT.md) compare quatre
+variantes sur des poids réels. Le premier modèle GDN a terminé ses 2 048 mises à
+jour et 4,19 millions de tokens : sa perte passe de 11,3084 à **4,5711 nats/token**
+sur les 372 documents de développement ; le donneur reste meilleur, à 3,1578.
+Son checkpoint intermédiaire à 256 étapes réussit le contrôle numérique de
+décodage qui échouait sur l'extrait initial, avec les mêmes seuils. Le checkpoint
+final passe aussi les huit cas CPU FP32 sur quatre textes à 128 et 512 tokens ;
+ses poids sont vérifiés après remontage de Drive. Le témoin à attention termine
+le même budget à **4,5305 nats/token**, devant l'hybride, et passe les huit cas CPU.
+À 512 tokens, le cache hybride occupe 73,875 Mio contre 112 Mio pour le témoin ;
+à 128 tokens il coûte davantage (49,875 contre 28 Mio). Ces nombres excluent les
+poids et les espaces de travail. Le checkpoint attention est désormais aussi
+reconstruit et audité sur le PC local, hors de la session Colab. La variante hybride
+guidée par le donneur termine à **4,3326 nats/token** : elle améliore les 372 documents
+par rapport à l'hybride entraîné seulement sur texte et passe les huit cas de cache CPU.
+Ses poids sont également reconstruits et audités sur le PC local.
+Le quatrième bras, attention guidée, termine à **4,2968 nats/token**. La comparaison
+complète, reproduite sur le PC, favorise l'attention sous les deux objectifs ;
+la distillation améliore les deux architectures, qui restent derrière le donneur.
+Les quatre checkpoints passent chacun huit cas de cache CPU et huit cas GPU FP32.
+La génération locale du témoin attention fonctionne mais reste répétitive ; une
+amorce française produit une suite anglaise. Ces contrôles ne démontrent pas une
+capacité d'assistant.
+Le corpus de récupération
+exclut les neuf chevauchements connus et les quatre extraits du diagnostic initial.
+La reprise exacte CE/KL est testée sur CUDA. Le contrôle des gradients GDN échoue
+encore en BF16 ; les essais FP32 réussis constituent une politique expérimentale
+explicite. Les autres graines et les évaluations de capacités restent à terminer.
+L'[évaluation de capacités ARC-Easy](docs/20_RECOVERY_CAPABILITY_EVAL.md) est terminée
+sur les 2 376 questions de test, avec un protocole commun aux cinq modèles et un
+recalcul indépendant des scores exportés. Le donneur atteint **60,86 %**, contre
+32,53 % pour l'hybride CE, 34,13 % pour l'attention CE, 35,10 % pour l'hybride KL
+et 34,72 % pour l'attention KL. Les capacités du donneur ne sont donc pas récupérées.
+La petite différence entre les deux variantes KL ne suffit pas à choisir une architecture.
+Des [diagnostics de partage des poids](docs/21_DONOR_SHARING_SCOUT.md) sur des préfixes
+de développement montrent aussi que des corrections SVD propres à chaque profondeur
+ne suffisent pas sans entraînement ; retirer huit couches préserve mieux la prédiction
+que les partages cycliques testés. Aucune de ces variantes n'est adoptée.
+Une [calibration sur les activations d'entraînement](docs/22_ACTIVATION_WEIGHTED_SHARING.md)
+améliore ensuite le partage adjacent par moyenne, mais reste très loin du donneur
+sur les mêmes préfixes de développement : 11,2588 contre 3,1261 nats/token.
+Les 70 ajustements satisfont pourtant leur objectif local ; cela ne suffit pas
+à préserver les prédictions du réseau entier. Ce résultat n'est pas adopté.
+Le [contrôle de profondeur sur les poids R04 finaux](docs/23_R04_DEPTH_ADAPTATION.md)
+confirme aussi que huit boucles dégradent la prédiction : +16,16 % de BPB par
+rapport aux quatre boucles d'entraînement. La comparaison entre entraînement
+à profondeur fixe et variable est implémentée ; ses tests CUDA sur petit modèle
+et ses essais mémoire à taille réelle passent. Son premier segment a été arrêté
+proprement après 54 mises à jour : des écarts de gradients entre les préflights
+ont motivé une politique de calcul déterministe. Avec cette politique, trois mises
+à jour à taille réelle donnent des gradients et poids identiques dans deux processus
+séparés. Les deux variantes réussissent ensuite la reprise exacte à 375M paramètres :
+huit étapes continues et une étape suivie de sept dans un nouveau processus donnent
+les mêmes poids, états d'optimiseur, RNG, curseurs et évaluations par document.
+Les deux continuations de 512 étapes sont maintenant terminées et leurs résultats
+recalculés localement. L'entraînement entre deux et six boucles réduit fortement
+la sensibilité à la profondeur : à six boucles, il améliore le BPB de 12,52 %
+par rapport au témoin entraîné à quatre. Mais six boucles restent **0,43 % moins
+bonnes que ses propres quatre boucles** ; le critère principal échoue. À quatre
+boucles, il reste à +0,11 % du témoin. Cela démontre une meilleure robustesse sur
+cette graine, pas un gain de raisonnement ou l'utilité du calcul supplémentaire.
+Les [observations internes des deux modèles](docs/24_R04_RECURRENCE_OBSERVATION.md),
+sur seize documents, ne montrent pas de convergence de tous les états de tokens vers une même direction.
+L'amplitude des états augmente avec les boucles, sans que cela identifie à lui seul
+la cause de l'échec. Aucune nouvelle architecture n'est adoptée.
+L'[essai de réinjection apprise](docs/25_R04_LEARNED_REINJECTION.md)
+ajoute une correction initialement nulle au mélange entre entrée et état récurrent.
+Le composant reste désactivé par défaut. Les contrôles CUDA à taille réelle et
+les reprises exactes passent dans les deux variantes. La comparaison de 512
+mises à jour chacune est terminée et échoue aux quatre critères de qualité :
+la variante apprise est 1,3023 % moins bonne que le témoin à quatre boucles,
+et ses six boucles dégradent de 2,4477 % sa propre perte à quatre boucles.
+Les résultats et le verdict sont vérifiés localement ; le composant n'est pas adopté.
+L'[évaluation ARC-Easy native](docs/26_NATIVE_CAPABILITY_EVAL.md) est terminée sur
+les 2 376 questions, avec 28 tests CPU/GPU sans exclusion et une vérification
+locale complète des six rapports. À quatre boucles, le modèle initial obtient
+35,23 % de bonnes réponses, le témoin adapté 35,35 % et la réinjection apprise
+34,30 %. À six boucles : 32,15 %, 34,68 % et 33,71 %. Le témoin adapté ne gagne
+que trois réponses à quatre boucles, avec un intervalle d'incertitude qui traverse
+zéro. Aucun gain utile dû aux boucles supplémentaires n'est établi ; les faibles
+écarts de précision entre les deux adaptations restent incertains.
+La [préparation des nouvelles données](docs/27_FRESH_DATA.md) exclut les anciens
+documents d'entraînement et de validation ainsi que les recoupements lexicaux
+avec ARC. Elle fournit 19 600 nouveaux documents d'entraînement et 392 documents
+réservés. Aucun nouveau score de modèle ni gain architectural n'en découle encore.
+Un [prototype conservant le donneur](docs/28_RETAINED_RECURRENCE.md), distinct
+des essais R04, conserve les 24 couches de Qwen2.5-0.5B-Instruct et répète son
+cœur. Sur le contrôle CPU à taille réelle, ses 495,6M paramètres reproduisent
+exactement les logits initiaux à une boucle ; cette égalité subsiste après une
+mise à jour des seules projections de réentrée. Le cache passe à 1/2/4 boucles,
+mais sa mémoire croît avec la profondeur et le contexte. Le gain de qualité,
+l'entraînement CUDA et l'adoption de cette architecture restent non démontrés.
+Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
 > nombres, à 7M paramètres sur CPU.** Un poids entraîné sur du texte réel (bits/octet
@@ -108,13 +225,15 @@ modèle de 408M.
 | [`docs/05_ROADMAP.md`](docs/05_ROADMAP.md) | Plan sur 11 semaines et arbitrage du budget |
 | [`docs/06_MEMORY.md`](docs/06_MEMORY.md) | Mémoire persistante : conception, mesures, limites |
 | [`docs/07_WALLS.md`](docs/07_WALLS.md) | **Les murs** : mécanisme des verrous profonds, y compris ceux qu'on ne franchit pas |
+| [`docs/08_ARCHITECTURE_V03.md`](docs/08_ARCHITECTURE_V03.md) | **Continuum v0.3** : architecture multi-échelle, preuves, budget et critères de mort |
 | [`docs/08_AGENT.md`](docs/08_AGENT.md) | **Le pilier agentique** : la boucle, les têtes d'action, la vérification, ce qui est construit et ce qui ne l'est pas |
 | [`docs/09_FIRST_RUN.md`](docs/09_FIRST_RUN.md) | **Les premiers runs** : 7M paramètres sur CPU, chaque étage exercé, un nombre de langage, un nombre agentique, et les deux défauts qu'ils ont trouvés |
 | [`docs/10_NEXT_ARCHITECTURE.md`](docs/10_NEXT_ARCHITECTURE.md) | **L'architecture suivante** : contexte borné-infini, apprentissage continu, économie de tokens — chaque propriété comme une quantité, son mécanisme, et sa mesure |
 
 ## Outils
 
-Tout est sans dépendance lourde et exécutable immédiatement :
+Les outils de planification s'exécutent localement ; la validation A100 nécessite
+l'extra `gpu` (`pip install -e '.[dev,gpu]'` sur Linux).
 
 ```bash
 python -m prophet.scaling --sweep          # points de fonctionnement par budget
@@ -133,28 +252,36 @@ python scripts/gpu_check.py --config configs/prophet_mini.json   # sur A100 : no
 python scripts/colab_session.py --config configs/prophet_mini.json --work /content/drive/MyDrive/prophet \
     --session-minutes 600 -- --tokenizer tokenizer.json --data-root corpus/ --benchmarks benchmarks/
 python scripts/first_run_cpu.py --work /tmp/prophet-first-run --stage all   # 7M params sur CPU, ~50 min
-python -m pytest tests/ -q                 # ~460 tests (les tests GPU sont sautés sans CUDA)
+python -m pytest tests/ -q                 # les tests GPU sont sautés sans CUDA
 ```
+
+Le [notebook de validation A100](notebooks/validate_a100.ipynb) fixe une révision,
+vérifie le noyau puis mesure les deux configurations R04 avec l'optimiseur.
+Les mesures utilisent des tokens aléatoires et n'évaluent pas la qualité du modèle.
+Le [notebook du pilote sur texte réel](notebooks/r04_pilot.ipynb) utilise un corpus
+et une révision figés ; ses résultats et limites figurent dans les rapports R04.
 
 Ces outils ne sont pas décoratifs : ils ont corrigé deux erreurs de conception avant
 qu'elles ne coûtent quoi que ce soit — un budget de tokens surestimé d'un facteur 20, et
 805M de paramètres gaspillés dans des tables de hachage.
 
-## La voie retenue : deux modèles, deux origines
+## Deux pistes de modèles à valider
 
-Cinq analyses indépendantes concluent que **surpasser la concurrence par
-pré-entraînement depuis des poids aléatoires est arithmétiquement exclu** à ce budget.
-La réponse retenue n'est pas de choisir un camp, mais de faire les deux sur deux modèles :
+L'analyse du budget motive deux pistes : un petit modèle entraîné de zéro pour
+mesurer l'architecture, et la conversion d'un donneur pour étudier la conservation
+de capacités acquises. Les budgets ci-dessous sont des hypothèses du plan initial.
 
 | Modèle | Origine | Budget | Rôle |
 |---|---|---:|---|
-| **Prophet-mini** (253M) | Poids aléatoires | 85 h-A100 | Preuve honnête de l'architecture. Cible iPhone. |
-| **Prophet-main** (~970M) | Conversion d'un donneur Apache-2.0 | 30 h-A100 | Modèle compétitif. 89 % des paramètres hérités. |
+| **Prophet-mini** (gabarit initial 253M) | Poids aléatoires | 85 h-A100 estimées | Évaluer l'architecture et la cible iPhone. |
+| **Prophet-main** (taille à fixer) | Conversion d'un donneur Apache-2.0 | 30 h-A100 hypothétiques | Mesurer puis récupérer les capacités du donneur. |
 
-Le rapport de coût — 85 heures contre 30 — est le résultat central : la conversion coûte
-un tiers de l'entraînement de zéro pour un modèle quatre fois plus gros, parce qu'elle
-n'achète que l'architecture. Mesuré sur Qwen3-1.7B : 1.72B paramètres et 28 couches
-deviennent 1.02B paramètres et 12 blocs pour **la même profondeur effective de 28**.
+Le rapport 85/30 n'est pas un gain de coût mesuré : aucune récupération de donneur
+n'a encore été entraînée. Un plan de conversion compte des paramètres et des blocs,
+mais ne prédit ni la qualité retenue ni le budget nécessaire pour la retrouver.
+La répétition de blocs conserve une profondeur d'exécution, pas la fonction du donneur.
+Le premier essai réel Qwen3-0.6B produit une initialisation de 385,5M paramètres,
+avec 82,795 % copiés ou moyennés, dont la qualité et le décodage restent à corriger.
 
 ```bash
 python scripts/convert_donor.py --donor qwen3-1.7b --plan-only

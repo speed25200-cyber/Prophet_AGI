@@ -1,0 +1,513 @@
+"""Exercise the complete recovery command with local miniature donor artifacts.
+
+Only Qwen snapshot pins and tokenizer IDs are substituted for fixture artifacts.
+Loading, CE/KL training, checkpoint serialization/resume and evaluation are real.
+"""
+import json
+import sys
+
+import pytest
+import torch
+
+from prophet.data.donor_tokenizer import DonorByteTokenizer
+from prophet.modeling.model import ProphetModel
+from prophet.train.checkpoint import CheckpointManager
+from scripts import recover_qwen
+from tests.test_training import tiny_model_config
+
+
+@pytest.fixture
+def recovery_fixture(tmp_path, monkeypatch):
+    tokenizers = pytest.importorskip("tokenizers")
+    transformers = pytest.importorskip("transformers")
+    source = tmp_path / "source"
+    source.mkdir()
+    teacher_cfg = transformers.Qwen3Config(vocab_size=260, hidden_size=32, intermediate_size=64,
+                                           num_hidden_layers=1, num_attention_heads=2,
+                                           num_key_value_heads=1, head_dim=16)
+    torch.manual_seed(12)
+    transformers.Qwen3ForCausalLM(teacher_cfg).save_pretrained(source)
+    alphabet = sorted(tokenizers.pre_tokenizers.ByteLevel.alphabet())
+    backend = tokenizers.Tokenizer(tokenizers.models.BPE(vocab={c: i for i, c in enumerate(alphabet)}, merges=[]))
+    backend.pre_tokenizer = tokenizers.pre_tokenizers.ByteLevel(add_prefix_space=False)
+    backend.decoder = tokenizers.decoders.ByteLevel()
+    backend.save(str(source / "tokenizer.json"))
+    weights_sha = recover_qwen.digest(source / "model.safetensors")
+    monkeypatch.setattr(recover_qwen, "WEIGHTS_SHA256", weights_sha)
+    monkeypatch.setattr(recover_qwen, "TOKENIZER_SHA256", recover_qwen.digest(source / "tokenizer.json"))
+    monkeypatch.setattr(recover_qwen, "compare", lambda donor, config: {})
+    monkeypatch.setattr(recover_qwen, "DonorByteTokenizer", lambda path, **kw:
+                        DonorByteTokenizer(path, eos_id=257, pad_id=256, vocab_size=260))
+    cfg = tiny_model_config()
+    cfg.frontend.vocab_size = 260
+    initialization = tmp_path / "initial.pt"
+    payload = {"model": ProphetModel(cfg).state_dict(), "config": cfg.to_dict(),
+               "donor_revision": recover_qwen.REVISION, "donor_weights_sha256": weights_sha}
+    torch.save(payload, initialization)
+    audit = tmp_path / "audit.json"
+    audit.write_text(json.dumps({"complete": True, "all_parameters_finite": True,
+                                 "serialization_exact": True, "config": cfg.to_dict(),
+                                 "donor_revision": recover_qwen.REVISION,
+                                 "donor_weights_sha256": weights_sha,
+                                 "checkpoint_sha256": recover_qwen.digest(initialization)}))
+    train, validation = tmp_path / "train.jsonl", tmp_path / "validation.jsonl"
+    train.write_text(json.dumps({"text": "abc def " * 100}) + "\n", encoding="utf-8")
+    validation.write_text(json.dumps({"text": "unique test"}) + "\n", encoding="utf-8")
+
+    def run(out, objective, session_steps=2, precision="bfloat16", device="cpu", eval_batch_size=1):
+        args = ["recover_qwen.py", "--source", str(source), "--initialization", str(initialization),
+                "--audit", str(audit), "--train", str(train), "--validation", str(validation),
+                "--out", str(out), "--objective", objective, "--steps", "4", "--loop-k", "2",
+                "--seq-len", "8", "--batch-size", "1", "--checkpoint-every", "2",
+                "--muon-lr", "0.01", "--adamw-lr", "0.001", "--device", device,
+                "--chunk-tokens", "3", "--max-session-steps", str(session_steps),
+                "--precision", precision, "--eval-batch-size", str(eval_batch_size)]
+        monkeypatch.setattr(sys, "argv", args)
+        recover_qwen.main()
+    return run
+
+
+@pytest.mark.parametrize("objective", ["ce", "kl"])
+def test_recovery_command_resume_and_evaluate(recovery_fixture, tmp_path, objective):
+    run = tmp_path / "run"
+    reference = tmp_path / "reference"
+    recovery_fixture(run, objective)
+    first = json.loads((run / "evaluation-step-000002.json").read_text())
+    assert first["step"] == 2 and first["skipped_nonfinite"] == 0
+    recovery_fixture(run, objective)
+    result = json.loads((run / "evaluation-step-000004.json").read_text())
+    assert result["step"] == 4
+    recovery_fixture(reference, objective, 4)
+    expected = json.loads((reference / "evaluation-step-000004.json").read_text())
+    assert result["evaluation"] == expected["evaluation"]
+    resumed, _ = CheckpointManager(run).load_latest()
+    uninterrupted, _ = CheckpointManager(reference).load_latest()
+    for key, value in resumed["model"].items():
+        assert torch.equal(value, uninterrupted["model"][key]), key
+    # A repeated completed invocation does not overwrite reports or checkpoints.
+    report_before = (run / "evaluation-step-000004.json").read_bytes()
+    recovery_fixture(run, objective)
+    assert report_before == (run / "evaluation-step-000004.json").read_bytes()
+    # A session killed after the final checkpoint can still publish evaluation.
+    (run / "evaluation-step-000004.json").unlink()
+    recovery_fixture(run, objective)
+    recovered = json.loads((run / "evaluation-step-000004.json").read_text())
+    assert recovered["evaluation"] == result["evaluation"]
+
+
+def test_recovery_config_freezes_depth_without_changing_initial_config():
+    original = tiny_model_config().to_dict()
+    config = recover_qwen.recovery_config(original, 3, 32)
+    assert config.recurrent.train_loop_min == config.recurrent.train_loop_max == 3
+    assert config.recurrent.default_loop_k == config.recurrent.truncated_backprop_steps == 3
+    assert original == tiny_model_config().to_dict()
+
+
+def test_recovery_evaluation_batch_is_explicit_and_bound_to_resume(recovery_fixture, tmp_path):
+    run = tmp_path / "run"
+    recovery_fixture(run, "ce", eval_batch_size=3)
+    report = json.loads((run / "evaluation-step-000002.json").read_bytes())
+    assert report["evaluation"]["batch_size"] == report["identity"]["evaluation_batch_size"] == 3
+    assert report["tokens_seen"] == 2 * 8  # Training still uses batch one.
+    with pytest.raises(ValueError, match="another recovery experiment"):
+        recovery_fixture(run, "ce", eval_batch_size=1)
+
+
+@pytest.mark.parametrize("objective", ["ce", "kl"])
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA recovery restart"))])
+def test_fp32_recovery_resumes_exactly_and_rejects_precision_switch(recovery_fixture, tmp_path, objective, device):
+    old = torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
+    try:
+        run, reference = tmp_path / "fp32", tmp_path / "reference"
+        recovery_fixture(run, objective, precision="float32", device=device)
+        with pytest.raises(ValueError, match="another recovery experiment"):
+            recovery_fixture(run, objective, precision="bfloat16", device=device)
+        recovery_fixture(run, objective, precision="float32", device=device)
+        recovery_fixture(reference, objective, 4, precision="float32", device=device)
+        result = json.loads((run / "evaluation-step-000004.json").read_bytes())
+        expected = json.loads((reference / "evaluation-step-000004.json").read_bytes())
+        assert result["evaluation"] == expected["evaluation"]
+        assert result["evaluation"]["precision"] == "fp32"
+        assert result["identity"]["teacher_dtype"] == result["identity"]["precision"] == "float32"
+        resumed, _ = CheckpointManager(run).load_latest()
+        full, _ = CheckpointManager(reference).load_latest()
+        for key, value in resumed["model"].items():
+            assert torch.equal(value, full["model"][key]), key
+    finally:
+        torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32 = old
+
+
+@pytest.mark.parametrize("mixer,corrupt,oracle,trained", [
+    ("gdn", False, None, False), ("full_attn", False, None, False), ("full_attn", True, None, False),
+    ("full_attn", False, "attention", False), ("full_attn", True, "attention", False),
+    ("gdn", False, "hybrid", False), ("gdn", True, "hybrid", False),
+    ("gdn", False, None, True), ("gdn", True, None, True),
+])
+def test_cache_audit_identifies_core_and_preserves_numerical_failure(
+    recovery_fixture, tmp_path, monkeypatch, mixer, corrupt, oracle, trained
+):
+    import hashlib
+
+    from transformers import AutoTokenizer, PreTrainedTokenizerFast
+
+    from scripts import audit_qwen_cache
+
+    tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(tmp_path / "source/tokenizer.json"))
+    monkeypatch.setattr(AutoTokenizer, "from_pretrained", lambda *a, **kw: tokenizer)
+    text = "abc def " * 32
+    validation = tmp_path / "prefixes"
+    validation.mkdir()
+    (validation / "data.jsonl").write_text(json.dumps({"text": text}), encoding="utf-8")
+    ids = torch.tensor([tokenizer.encode(text, add_special_tokens=False)[:129]])
+    reference = tmp_path / "prefix-reference.json"
+    reference.write_text(json.dumps({"arms": {"donor": {"documents": [{
+        "document_sha256": hashlib.sha256(text.encode()).hexdigest(),
+        "target_ids_sha256": hashlib.sha256(ids.numpy().tobytes()).hexdigest(),
+    }]}}}))
+    cfg = tiny_model_config()
+    cfg.frontend.vocab_size = 260
+    cfg.max_seq_len = 256
+    cfg.recurrent.core_pattern = [mixer]
+    checkpoint = tmp_path / "cache-initial.pt"
+    torch.save({"model": ProphetModel(cfg).state_dict(), "config": cfg.to_dict()}, checkpoint)
+    audit = tmp_path / "cache-initial.json"
+    audit.write_text(json.dumps({
+        "checkpoint_sha256": audit_qwen_cache.digest(checkpoint),
+        "donor_weights_sha256": audit_qwen_cache.digest(tmp_path / "source/model.safetensors"),
+    }))
+    out = tmp_path / "cache-audit.json"
+    args = ["audit_qwen_cache.py", "--source", str(tmp_path / "source"),
+            "--reference", str(reference),
+            "--validation", str(validation), "--out", str(out), "--loop-k", "2", "--trace-blocks"]
+    if trained:
+        initial = tmp_path / "initial.pt"
+        payload = torch.load(initial, weights_only=True)
+        payload["config"]["max_seq_len"] = 256
+        torch.save(payload, initial)
+        conversion_path = tmp_path / "audit.json"
+        conversion = json.loads(conversion_path.read_bytes())
+        conversion["config"] = payload["config"]
+        conversion["checkpoint_sha256"] = recover_qwen.digest(initial)
+        conversion_path.write_text(json.dumps(conversion))
+        run = tmp_path / "trained-run"
+        recovery_fixture(run, "ce", precision="float32")
+        args += ["--recovery-run", str(run), "--step", "2"]
+    else:
+        args += ["--checkpoint", str(checkpoint), "--audit", str(audit)]
+    if oracle:
+        args.append(f"--{oracle}-fp64-oracle")
+    monkeypatch.setattr(sys, "argv", args)
+    if corrupt:
+        forward = ProphetModel.forward
+
+        def wrong_cached(self, *args, **kwargs):
+            result = forward(self, *args, **kwargs)
+            if kwargs.get("cache") is not None:
+                result.logits = result.logits + 0.01
+            return result
+
+        monkeypatch.setattr(ProphetModel, "forward", wrong_cached)
+        with pytest.raises(SystemExit, match="numerical tolerance failed"):
+            audit_qwen_cache.main()
+    else:
+        audit_qwen_cache.main()
+    result = json.loads(out.read_text())
+    assert result["core_pattern"] == [mixer] and result["loop_k"] == 2
+    assert result["passed"] is (not corrupt)
+    assert result["model"] == ("recovered_checkpoint" if trained else "converted_initialization")
+    if trained:
+        assert result["recovery_checkpoint_audit"]["step"] == 2
+        assert result["recovery_checkpoint_audit"]["complete"]
+    assert result["attention_fp64_oracle"] is (oracle == "attention")
+    assert result["hybrid_fp64_oracle"] is (oracle == "hybrid")
+    assert result["atol"] == result["rtol"] == (1e-8 if oracle else 1e-4)
+    assert result["gdn_scan"] == ("fp64_sequential_oracle" if oracle == "hybrid" else
+                                  "chunk64" if mixer == "gdn" else None)
+    for path in result["paths"].values():
+        assert path["all_logits_finite"] and path["positions"] == 128
+        assert "core/0/iteration-1" in path["block_errors"]
+    with pytest.raises(FileExistsError):
+        audit_qwen_cache.main()
+
+
+@pytest.mark.parametrize("corruption", [None, "model_nan", "optimizer_nan", "tokens", "identity", "bytes"])
+def test_evaluated_recovery_checkpoint_audit_detects_corruption(recovery_fixture, tmp_path, corruption):
+    from scripts.audit_recovery_checkpoint import load_evaluated_checkpoint
+
+    run = tmp_path / "run"
+    recovery_fixture(run, "ce", precision="float32")
+    report_path = run / "evaluation-step-000002.json"
+    report = json.loads(report_path.read_bytes())
+    meta = report["checkpoint"]
+    checkpoint = run / f"ckpt_slot{meta['slot']}.pt"
+    if corruption == "identity":
+        report["identity"]["train_sha256"] = "wrong"
+        report_path.write_text(json.dumps(report))
+    elif corruption == "bytes":
+        with checkpoint.open("ab") as stream:
+            stream.write(b"corrupt")
+    elif corruption:
+        state = torch.load(checkpoint, weights_only=True)
+        if corruption == "model_nan":
+            next(iter(state["model"].values())).reshape(-1)[0] = float("nan")
+        elif corruption == "optimizer_nan":
+            tensors = [t for opt in state["optimizers"] for entry in opt["state"].values()
+                       for t in entry.values() if isinstance(t, torch.Tensor) and t.is_floating_point()]
+            assert tensors
+            tensors[0].reshape(-1)[0] = float("nan")
+        else:
+            state["tokens_seen"] += 1
+        torch.save(state, checkpoint)
+        meta.update(sha256=recover_qwen.digest(checkpoint), bytes=checkpoint.stat().st_size)
+        report_path.write_text(json.dumps(report))
+        (run / "manifest.json").write_text(json.dumps({"checkpoints": [meta]}))
+    if corruption:
+        with pytest.raises(ValueError):
+            load_evaluated_checkpoint(run, 2)
+    else:
+        state, audit = load_evaluated_checkpoint(run, 2)
+        assert audit["complete"] and audit["step"] == state["step"] == 2
+        assert audit["tokens_seen"] == 16 and all(audit["finite_tensor_counts"].values())
+        recovery_fixture(run, "ce", precision="float32")
+        with pytest.raises(ValueError, match="rotated"):
+            load_evaluated_checkpoint(run, 2)
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA recovered cache suite"))])
+def test_recovery_cache_suite_checks_longer_prefix_and_retains_failure(recovery_fixture, tmp_path, monkeypatch, corrupt, device):
+    from scripts import audit_recovery_cache_suite
+
+    run = tmp_path / "suite-run"
+    recovery_fixture(run, "ce", precision="float32", device=device)
+    out = tmp_path / "suite.json"
+    argv = ["audit_recovery_cache_suite.py", "--run", str(run), "--step", "2",
+            "--source", str(tmp_path / "source"), "--validation", str(tmp_path / "validation.jsonl"),
+            "--out", str(out), "--documents", "1", "--lengths", "4", "8", "--device", device]
+    monkeypatch.setattr(sys, "argv", argv)
+    if corrupt:
+        forward = ProphetModel.forward
+
+        def wrong_late_cache(self, *args, **kwargs):
+            result = forward(self, *args, **kwargs)
+            cache = kwargs.get("cache")
+            if cache is not None and cache.position > 4:
+                result.logits = result.logits + 0.01
+            return result
+
+        monkeypatch.setattr(ProphetModel, "forward", wrong_late_cache)
+        with pytest.raises(SystemExit, match="all requested cases retained"):
+            audit_recovery_cache_suite.main()
+    else:
+        audit_recovery_cache_suite.main()
+    report = json.loads(out.read_bytes())
+    assert report["complete"] and report["passed"] is (not corrupt)
+    assert len(report["cases"]) == 2 and report["cases"][0]["passed"]
+    assert report["cases"][1]["passed"] is (not corrupt)
+    assert report["atol"] == report["rtol"] == 1e-4
+    assert report["recovery_checkpoint_audit"]["step"] == 2
+    assert report["device"] == device
+    assert report["gdn_scan"] == ("fla_chunk32" if device == "cuda" else "chunk64")
+    assert report["allow_tf32_matmul"] is report["allow_tf32_cudnn"] is False
+    if device == "cuda":
+        assert report["peak_cuda_allocated_bytes"] > 0 and report["device_name"]
+    with pytest.raises(FileExistsError):
+        audit_recovery_cache_suite.main()
+
+
+def test_cache_prefix_selection_is_distinct_fixed_and_rejects_short_input():
+    from scripts.audit_recovery_cache_suite import select_prefixes
+
+    class Tokenizer:
+        def encode(self, text, add_eos):
+            assert not add_eos
+            return list(text.encode())
+
+    docs = ["long enough alpha", "long enough beta", "tiny", "long enough alpha"]
+    selected = select_prefixes(docs, Tokenizer(), 2, [4, 8])
+    assert selected == select_prefixes(list(reversed(docs)), Tokenizer(), 2, [4, 8])
+    assert len({sha for sha, ids in selected}) == 2 and all(len(ids) == 8 for sha, ids in selected)
+    with pytest.raises(ValueError, match="not enough"):
+        select_prefixes(docs, Tokenizer(), 3, [8])
+
+
+def test_fp64_oracle_preserves_values_rotary_tables_and_rejects_gdn():
+    from prophet.modeling.layers import RMSNorm, RotaryEmbedding
+    from scripts.audit_qwen_cache import attention_fp64_oracle
+
+    cfg = tiny_model_config()
+    model = ProphetModel(cfg)
+    with pytest.raises(ValueError, match="attention-only"):
+        attention_fp64_oracle(model)
+    assert all(p.dtype == torch.float32 for p in model.parameters())
+    cfg.recurrent.core_pattern = ["full_attn"]
+    model = ProphetModel(cfg)
+    original = {name: value.detach().clone() for name, value in model.state_dict().items()}
+    attention_fp64_oracle(model)
+    for name, value in model.state_dict().items():
+        assert torch.equal(value, original[name].double())
+    assert model.embed.weight is model.lm_head.weight
+    for layer in model.modules():
+        if isinstance(layer, RotaryEmbedding):
+            assert layer.inv_freq.dtype == torch.float32
+        if isinstance(layer, RMSNorm):
+            x = torch.randn(2, 3, layer.weight.numel(), dtype=torch.float64)
+            expected = x / (x.square().mean(-1, keepdim=True) + layer.eps).sqrt() * layer.weight
+            torch.testing.assert_close(layer(x), expected, atol=1e-14, rtol=1e-14)
+
+
+def test_hybrid_fp64_oracle_matches_explicit_transition_with_nonempty_cache():
+    from torch.nn import functional as F
+
+    from prophet.modeling.layers import GatedDeltaNet, RecurrentState
+    from scripts.audit_qwen_cache import configure_fp64_oracle
+
+    model = ProphetModel(tiny_model_config()).eval()
+    configure_fp64_oracle(model, include_gdn=True)
+    layer = next(m for m in model.modules() if isinstance(m, GatedDeltaNet))
+    torch.manual_seed(93)
+    x = torch.randn(2, 7, model.cfg.d_model, dtype=torch.float64)
+    h, dk, dv = layer.n_heads, layer.head_k, layer.head_v
+    memory = torch.randn(2, h, dv, dk, dtype=torch.float64)
+    history = torch.randn(2, 2*h*dk+h*dv, layer.conv_kernel-1, dtype=torch.float64)
+    full_cache = RecurrentState(state=memory.clone(), conv_state=history.clone(), seen=11)
+    split_cache = RecurrentState(state=memory.clone(), conv_state=history.clone(), seen=11)
+    # Independent dense transition equation, rather than the oracle's rank-one update.
+    raw = torch.cat([layer.q_proj(x), layer.k_proj(x), layer.v_proj(x)], dim=-1)
+    convolved = F.conv1d(torch.cat([history, raw.transpose(1, 2)], dim=-1),
+                        layer.conv.weight, groups=raw.shape[-1]).transpose(1, 2)
+    q, k, v = F.silu(convolved).split([h*dk, h*dk, h*dv], dim=-1)
+    q, k, v = q.reshape(2, 7, h, dk), k.reshape(2, 7, h, dk), v.reshape(2, 7, h, dv)
+    k = k / k.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+    alpha, beta = layer.a_proj(x).sigmoid(), layer.beta_max * layer.b_proj(x).sigmoid()
+    outputs = []
+    for t in range(7):
+        key = k[:, t].unsqueeze(-1)
+        strength = beta[:, t, :, None, None]
+        transition = torch.eye(dk, dtype=torch.float64) - strength * (key @ key.transpose(-1, -2))
+        memory = alpha[:, t, :, None, None] * (memory @ transition) + strength * (
+            v[:, t].unsqueeze(-1) @ key.transpose(-1, -2))
+        outputs.append((memory @ q[:, t].unsqueeze(-1)).squeeze(-1))
+    expected = torch.stack(outputs, dim=1)
+    expected = expected / (expected.square().mean(-1, keepdim=True) + layer.o_norm.eps).sqrt()
+    expected = layer.o_proj((expected * layer.o_norm.weight).reshape(2, 7, h*dv))
+    actual = layer(x, state=full_cache)
+    split = torch.cat([layer(x[:, :2], state=split_cache), layer(x[:, 2:3], state=split_cache),
+                       layer(x[:, 3:], state=split_cache)], dim=1)
+    torch.testing.assert_close(actual, expected, rtol=1e-12, atol=1e-12)
+    torch.testing.assert_close(split, expected, rtol=1e-12, atol=1e-12)
+    for cache in [full_cache, split_cache]:
+        torch.testing.assert_close(cache.state, memory, rtol=1e-12, atol=1e-12)
+        assert cache.state.dtype == cache.conv_state.dtype == torch.float64
+        assert cache.seen == 18
+        torch.testing.assert_close(cache.conv_state, raw.transpose(1, 2)[:, :, -(layer.conv_kernel-1):])
+
+
+@pytest.mark.parametrize("arm", ["donor", "initialization"])
+def test_full_development_evaluation_matches_unpadded_manual_windows(
+    recovery_fixture, tmp_path, monkeypatch, arm
+):
+    import math
+
+    from scripts import eval_qwen_recovery
+
+    source = tmp_path / "source"
+    validation = tmp_path / "validation.jsonl"
+    texts = ["é🦊 abc def", "hello", "", "many windows " * 3]
+    validation.write_text("\n".join(json.dumps({"text": text}) for text in texts), encoding="utf-8")
+    data_audit = tmp_path / "data-audit.json"
+    data_audit.write_text(json.dumps({"complete": True, "splits": {"validation": {
+        "sha256": recover_qwen.digest(validation), "retained_documents": len(texts)}}}))
+    out = tmp_path / "evaluation.json"
+    args = ["eval_qwen_recovery.py", "--source", str(source), "--validation", str(validation),
+            "--data-audit", str(data_audit), "--out", str(out), "--arm", arm,
+            "--device", "cpu", "--seq-len", "8", "--batch-size", "3", "--loop-k", "2"]
+    if arm == "initialization":
+        args += ["--initialization", str(tmp_path / "initial.pt"), "--audit", str(tmp_path / "audit.json")]
+    monkeypatch.setattr(sys, "argv", args)
+    eval_qwen_recovery.main()
+    report = json.loads(out.read_bytes())
+    tokenizer = recover_qwen.DonorByteTokenizer(source / "tokenizer.json")
+    if arm == "donor":
+        from transformers import AutoModelForCausalLM
+        model = AutoModelForCausalLM.from_pretrained(source, dtype=torch.float32, attn_implementation="sdpa")
+        extra = {"use_cache": False}
+    else:
+        payload = torch.load(tmp_path / "initial.pt", weights_only=True)
+        model = ProphetModel(recover_qwen.recovery_config(payload["config"], 2, 8))
+        model.load_state_dict(payload["model"])
+        extra = {"loop_k": 2, "return_mtp": False}
+    model.eval()
+    expected_nats, expected_tokens, expected_bytes = 0.0, 0, 0
+    with torch.no_grad():
+        for text, measured in zip(texts, report["evaluation"]["documents"], strict=True):
+            ids = tokenizer.encode(text, add_eos=True)
+            doc_nats = 0.0
+            for start in range(0, len(ids) - 1, 7):
+                window = torch.tensor([ids[start:start + 8]])
+                logits = model(window, **extra).logits
+                doc_nats += torch.nn.functional.cross_entropy(
+                    logits[0, :-1], window[0, 1:], reduction="none").double().sum().item()
+            assert measured["total_nats"] == pytest.approx(doc_nats, abs=1e-5)
+            expected_nats += doc_nats
+            expected_tokens += len(ids) - 1
+            expected_bytes += tokenizer.byte_length(ids[1:])
+    assert report["complete"] and report["trained_steps"] == 0
+    assert report["evaluation"]["scored_tokens"] == expected_tokens
+    assert report["evaluation"]["scored_bytes"] == expected_bytes
+    assert report["evaluation"]["bits_per_byte"] == pytest.approx(expected_nats / expected_bytes / math.log(2))
+    assert (report["initialization_sha256"] is None) == (arm == "donor")
+    with pytest.raises(FileExistsError, match="preserve"):
+        eval_qwen_recovery.main()
+    out.unlink()
+    validation.write_text('{"text":"changed"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="validation differs"):
+        eval_qwen_recovery.main()
+
+
+def test_recovery_artifact_preflight_rejects_tampering(recovery_fixture, tmp_path):
+    source = tmp_path / "source"
+    with (source / "tokenizer.json").open("a") as stream:
+        stream.write(" ")
+    with pytest.raises(ValueError, match="source differs"):
+        recover_qwen.load_source(source)
+    audit = tmp_path / "audit.json"
+    record = json.loads(audit.read_bytes())
+    record["config"]["d_model"] = 123
+    audit.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="metadata mismatch"):
+        recover_qwen.load_initialization(tmp_path / "initial.pt", audit)
+
+
+def test_initialization_identity_ignores_archive_container(recovery_fixture, tmp_path, monkeypatch):
+    from prophet.train.distillation import state_sha256
+    from scripts import audit_initialization_identity
+
+    original = tmp_path / "initial.pt"
+    payload = torch.load(original, weights_only=True)
+    other = tmp_path / "different_archive_name.pt"
+    torch.save(payload, other)
+    assert recover_qwen.digest(other) != recover_qwen.digest(original)
+    reports = []
+    for index, artifact in enumerate((original, other)):
+        audit = json.loads((tmp_path / "audit.json").read_bytes())
+        audit["checkpoint_sha256"] = recover_qwen.digest(artifact)
+        audit_path = tmp_path / f"audit-{index}.json"
+        audit_path.write_text(json.dumps(audit))
+        out = tmp_path / f"identity-{index}.json"
+        monkeypatch.setattr(sys, "argv", ["identity", "--initialization", str(artifact),
+                                         "--audit", str(audit_path), "--out", str(out)])
+        audit_initialization_identity.main()
+        reports.append(json.loads(out.read_bytes()))
+    assert reports[0]["checkpoint_sha256"] != reports[1]["checkpoint_sha256"]
+    assert reports[0]["state_sha256"] == reports[1]["state_sha256"]
+    assert reports[0]["config_sha256"] == reports[1]["config_sha256"]
+    model = ProphetModel(recover_qwen.recovery_config(payload["config"], 2, 8))
+    model.load_state_dict(payload["model"])
+    assert state_sha256(model) == reports[0]["state_sha256"]
+    reordered = dict(reversed(list(payload["model"].items())))
+    assert state_sha256(reordered) == reports[0]["state_sha256"]
+    payload["model"]["embed.weight"][0, 0] += 1
+    assert state_sha256(payload["model"]) != reports[0]["state_sha256"]

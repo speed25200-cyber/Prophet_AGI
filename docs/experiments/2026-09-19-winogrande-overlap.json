@@ -1,0 +1,76 @@
+{
+  "complete": true,
+  "sources": [
+    {
+      "name": "winogrande",
+      "hf_id": "allenai/winogrande",
+      "revision": "01e74176c63542e6b0bcb004dcdea22d94fb67b5",
+      "gated": false,
+      "license": [
+        "cc-by-2.0"
+      ],
+      "config": "winogrande_xl",
+      "split": "validation",
+      "fields": [
+        "sentence",
+        "option1",
+        "option2"
+      ],
+      "hub_card_license": null,
+      "license_evidence": {
+        "upstream_repository": "https://github.com/allenai/winogrande",
+        "upstream_revision": "727e837f77521ef38bcc56df3b275c8da43f45af",
+        "upstream_download_script_sha256": "4019f8cec0ff9fc12ff186b39498567a9489341e4c1774ed663e37d5a9323695",
+        "archive_url": "https://storage.googleapis.com/ai2-mosaic/public/winogrande/winogrande_1.1.zip",
+        "archive_sha256": "3619ab104d8be2977b25c90ff420cb42d491707dcc75362a1e5d22bc082b7318",
+        "readme_path": "winogrande_1.1/README.md",
+        "readme_sha256": "04d299cbf5022a8ecd68d95a9a384ff037b6c53452376ab52ef6d0475231e79a",
+        "dataset_license": "CC BY 2.0",
+        "license_url": "https://creativecommons.org/licenses/by/2.0/",
+        "dev_sha256": "1aeac79cf46a3dcbe59a71ca7e5372a1490cde2b4ae2387dc56f00378104d2e8",
+        "attribution": "WinoGrande v1.1 \u2014 Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, Yejin Choi; An Adversarial Winograd Schema Challenge at Scale (2019)",
+        "purpose": "benchmark exclusion screen only; not training or redistribution of examples",
+        "transformations": "sentence and both options joined, then existing normalized 13-word overlap policy"
+      },
+      "rows": 1267,
+      "sha256": "d82254f9fd2cc289e5770a26653c5806237820c800446ab5ea40aa8052013751",
+      "short_rows_untested": 0,
+      "status": "indexed"
+    }
+  ],
+  "splits": {
+    "train": {
+      "documents": 19569,
+      "matching_documents": 0,
+      "per_benchmark": {
+        "winogrande": 0
+      },
+      "matches": [],
+      "files": [
+        {
+          "path": "train/fineweb-edu/part-00000.jsonl",
+          "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e"
+        }
+      ]
+    },
+    "validation": {
+      "documents": 376,
+      "matching_documents": 0,
+      "per_benchmark": {
+        "winogrande": 0
+      },
+      "matches": [],
+      "files": [
+        {
+          "path": "validation/fineweb-edu/part-00000.jsonl",
+          "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939"
+        }
+      ]
+    }
+  },
+  "n": 13,
+  "policy": "any exact normalized 13-word overlap; rows shorter than 13 words untested",
+  "scope": "retrospective lexical screen; corpus unchanged; no semantic or benchmark-quality claim",
+  "unique_benchmark_ngrams": 9625,
+  "all_requested_sources_indexed": true
+}

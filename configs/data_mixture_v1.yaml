@@ -28,7 +28,7 @@ phases:
     license: ODC-By-1.0
     config: null
     filters:
-      edu_score_min: 3
+      int_score_min: 3
     notes: Kept for decorrelation from the Nemotron pipeline.
   - name: dclm-baseline
     hf_id: mlfoundations/dclm-baseline-1.0
@@ -107,7 +107,7 @@ phases:
     domain: reference
     weight: 0.03
     available_tokens: 55000000000.0
-    license: mixed (per-subset)
+    license: 'REVIEW: mixed (per-subset)'
     config: null
     filters: {}
     notes: ''
@@ -172,7 +172,7 @@ phases:
     license: ODC-By-1.0
     config: null
     filters:
-      edu_score_min: 4
+      int_score_min: 4
     notes: ''
   - name: nemotron-diverse-qa
     hf_id: nvidia/Nemotron-CC-v2
@@ -215,7 +215,7 @@ phases:
     domain: long_context
     weight: 0.05
     available_tokens: 55000000000.0
-    license: mixed (per-subset)
+    license: 'REVIEW: mixed (per-subset)'
     config: null
     filters:
       min_tokens: 16384
@@ -282,7 +282,7 @@ phases:
     license: ODC-By-1.0
     config: null
     filters:
-      edu_score_min: 4
+      int_score_min: 4
     notes: ''
   - name: nemotron-diverse-qa
     hf_id: nvidia/Nemotron-CC-v2
@@ -316,7 +316,7 @@ phases:
     domain: long_context
     weight: 0.04
     available_tokens: 55000000000.0
-    license: mixed (per-subset)
+    license: 'REVIEW: mixed (per-subset)'
     config: null
     filters:
       min_tokens: 32768

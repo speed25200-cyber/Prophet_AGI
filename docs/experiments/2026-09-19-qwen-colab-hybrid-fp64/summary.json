@@ -1,0 +1,20 @@
+{
+  "complete": true,
+  "script_revision": "3c141c9966541dead3f598efdbf39896f858b1cc",
+  "model_revision": "8ad19d3c60dafd85fc67caf759981f1d765c3405",
+  "results": {
+    "hybrid-k5": {
+      "exit_code": 0,
+      "passed": true,
+      "seconds": 244.52361049599858,
+      "sha256": "20b4e1f2a337dc2bc8a4937b12af1f60608a0d72fd90267d13fca10af19f6d19"
+    },
+    "hybrid-k1": {
+      "exit_code": 0,
+      "passed": true,
+      "seconds": 78.1082362049965,
+      "sha256": "7c1f723e7f184d7620a7fec3c5468d3a34149c81a15411de10bcd8de409d2916"
+    }
+  },
+  "scope": "FP64 sequential GDN oracle, production FP32 rotary values, actual Colab initialization and original 128-token prefix; not a production FP32 acceptance gate"
+}

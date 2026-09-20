@@ -1,0 +1,45 @@
+{
+  "revision": "0d9ac7436e79efd745c909421f4dd9d93d8000c3",
+  "reference_tf32": false,
+  "sequence_length": 256,
+  "batch_size": 2,
+  "tolerance": 0.002,
+  "results": [
+    {
+      "variant": "loop",
+      "loop_k": 4,
+      "seed": 0,
+      "max_absolute_error": 0.00002703070640563965
+    },
+    {
+      "variant": "loop",
+      "loop_k": 4,
+      "seed": 1,
+      "max_absolute_error": 0.00002625584602355957
+    },
+    {
+      "variant": "loop",
+      "loop_k": 4,
+      "seed": 2,
+      "max_absolute_error": 0.000042498111724853516
+    },
+    {
+      "variant": "plain",
+      "loop_k": 1,
+      "seed": 0,
+      "max_absolute_error": 0.0004344917833805084
+    },
+    {
+      "variant": "plain",
+      "loop_k": 1,
+      "seed": 1,
+      "max_absolute_error": 0.00020068883895874023
+    },
+    {
+      "variant": "plain",
+      "loop_k": 1,
+      "seed": 2,
+      "max_absolute_error": 0.0002446472644805908
+    }
+  ]
+}

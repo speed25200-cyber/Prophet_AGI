@@ -1,0 +1,22 @@
+
+## Prophet-main: 23 feasible configurations at 300 A100-hours
+
+| Config | Total | Active | Eff. depth | Tokens | Tok/active | Train GB | Device GB |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| prophet-main-d1536-p4c6x4o4-e128 | 4.46B | 476.60M | 32 | 19.84B | 20 | 45.0 | 2.86 |
+| prophet-main-d2048-p4c4x4o4-e64 | 3.97B | 528.41M | 24 | 19.93B | 20 | 40.3 | 2.75 |
+| prophet-main-d1536-p4c4x4o4-e128 | 3.83B | 405.30M | 24 | 25.98B | 34 | 38.5 | 2.54 |
+| prophet-main-d2048-p3c4x4o3-e64 | 3.34B | 462.07M | 22 | 20.85B | 22 | 34.2 | 2.31 |
+| prophet-main-d1536-p3c4x4o3-e128 | 3.21B | 352.21M | 22 | 27.36B | 38 | 32.6 | 2.17 |
+| prophet-main-d1536-p4c6x4o4-e64 | 2.35B | 343.10M | 32 | 27.56B | 39 | 25.0 | 1.81 |
+
+## Prophet-mini: 6 feasible configurations at 300 A100-hours
+
+| Config | Total | Active | Eff. depth | Tokens | Tok/active | Train GB | Device GB |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| prophet-mini-d1280-p3c4x2o3-e0 | 252.70M | 235.82M | 14 | 53.53B | 146 | 3.7 | 0.66 |
+| prophet-mini-d1280-p3c4x4o3-e0 | 252.70M | 235.82M | 22 | 40.86B | 85 | 4.0 | 0.66 |
+| prophet-mini-d1280-p2c4x2o2-e0 | 218.94M | 202.06M | 12 | 57.34B | 167 | 3.2 | 0.64 |
+| prophet-mini-d1280-p2c4x4o2-e0 | 218.94M | 202.06M | 20 | 42.30B | 91 | 3.5 | 0.64 |
+| prophet-mini-d1024-p3c4x2o3-e0 | 170.55M | 159.54M | 14 | 79.12B | 318 | 2.7 | 0.62 |
+| prophet-mini-d1024-p3c4x4o3-e0 | 170.55M | 159.54M | 22 | 60.40B | 186 | 2.9 | 0.62 |

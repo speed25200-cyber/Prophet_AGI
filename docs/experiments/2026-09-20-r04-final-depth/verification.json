@@ -1,0 +1,67 @@
+{
+  "complete": true,
+  "scores": {
+    "4": {
+      "nats_per_token": 3.8559133592948087,
+      "bits_per_byte": 1.2489746322005624,
+      "bpb_change_percent_vs_k4": 0.0
+    },
+    "1": {
+      "nats_per_token": 4.8065363960919125,
+      "bits_per_byte": 1.556892354180235,
+      "bpb_change_percent_vs_k4": 24.65364099806846
+    },
+    "2": {
+      "nats_per_token": 4.229619707362146,
+      "bits_per_byte": 1.3700224113222852,
+      "bpb_change_percent_vs_k4": 9.691772434837143
+    },
+    "6": {
+      "nats_per_token": 4.424840339047717,
+      "bits_per_byte": 1.4332566165384624,
+      "bpb_change_percent_vs_k4": 14.75466191120427
+    },
+    "8": {
+      "nats_per_token": 4.479179773908644,
+      "bits_per_byte": 1.450857783718688,
+      "bpb_change_percent_vs_k4": 16.163911284765533
+    }
+  },
+  "contrasts": {
+    "k1_minus_k4": {
+      "nats_per_token": 0.9506230367971034,
+      "paired_document_unadjusted_95pct_interval": [
+        0.9262645742603647,
+        0.973896166408958
+      ]
+    },
+    "k2_minus_k4": {
+      "nats_per_token": 0.3737063480673373,
+      "paired_document_unadjusted_95pct_interval": [
+        0.36187563179228127,
+        0.3857018166201075
+      ]
+    },
+    "k6_minus_k4": {
+      "nats_per_token": 0.5689269797529078,
+      "paired_document_unadjusted_95pct_interval": [
+        0.5379262952598213,
+        0.6031231592000539
+      ]
+    },
+    "k8_minus_k4": {
+      "nats_per_token": 0.623266414613835,
+      "paired_document_unadjusted_95pct_interval": [
+        0.5912428743627056,
+        0.6583953444743923
+      ]
+    }
+  },
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 0,
+  "scope": "Source/checkpoint/runtime/document identities and recomputed aggregate losses; bootstrap conditions on this seed/checkpoint and is unadjusted. No repeated GPU forward or reasoning claim.",
+  "original_k4_per_document_scores_exact": true,
+  "source_zip_sha256": "24cfe9aa69413292f0934e7c08e3730cf608cca9498ffb4d0193a27b7ce58e38",
+  "gzip_bytes": 127405,
+  "gzip_sha256": "fc8a9fe48767ac2cb03569be0b329684368b99f221c502c9828bcebd77c445d8"
+}

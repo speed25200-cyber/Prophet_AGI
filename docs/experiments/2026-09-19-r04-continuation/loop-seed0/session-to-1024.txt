@@ -1,0 +1,29 @@
+step     176  loss  6.0261  lr 1.00e-02  plateau      2.88M tok    1.98s  train/grad_norm=0.75
+step     192  loss  6.0365  lr 1.00e-02  plateau      3.15M tok    1.96s  train/grad_norm=0.6774
+step     208  loss  6.0152  lr 1.00e-02  plateau      3.41M tok    1.97s  train/grad_norm=0.7122
+step     224  loss  5.8331  lr 1.00e-02  plateau      3.67M tok    1.97s  train/grad_norm=0.5655
+step     240  loss  5.7307  lr 1.00e-02  plateau      3.93M tok    2.01s  train/grad_norm=0.6672
+step     256  loss  5.4734  lr 1.00e-02  plateau      4.19M tok    1.97s  train/grad_norm=0.8701
+step     272  loss  5.6640  lr 1.00e-02  plateau      4.46M tok    1.97s  train/grad_norm=0.7412
+step     288  loss  5.5699  lr 1.00e-02  plateau      4.72M tok    1.97s  train/grad_norm=0.7531
+step     304  loss  5.7412  lr 1.00e-02  plateau      4.98M tok    1.97s  train/grad_norm=0.68
+step     320  loss  5.5408  lr 1.00e-02  plateau      5.24M tok    1.99s  train/grad_norm=0.7849
+step     336  loss  5.5823  lr 1.00e-02  plateau      5.51M tok    1.98s  train/grad_norm=0.6261
+step     352  loss  5.5475  lr 1.00e-02  plateau      5.77M tok    1.97s  train/grad_norm=0.6683
+step     368  loss  5.5117  lr 1.00e-02  plateau      6.03M tok    1.97s  train/grad_norm=0.5932
+step     384  loss  5.4832  lr 1.00e-02  plateau      6.29M tok    1.97s  train/grad_norm=0.5212
+step     400  loss  5.6918  lr 1.00e-02  plateau      6.55M tok    2.02s  train/grad_norm=0.6432
+step     416  loss  5.6454  lr 1.00e-02  plateau      6.82M tok    1.98s  train/grad_norm=0.6909
+step     432  loss  5.3831  lr 1.00e-02  plateau      7.08M tok    1.98s  train/grad_norm=0.9705
+step     448  loss  5.3455  lr 1.00e-02  plateau      7.34M tok    1.97s  train/grad_norm=0.6297
+step     464  loss  5.2130  lr 1.00e-02  plateau      7.60M tok    1.97s  train/grad_norm=0.6549
+step     480  loss  5.2981  lr 1.00e-02  plateau      7.86M tok    1.96s  train/grad_norm=0.9105
+step     496  loss  5.3867  lr 1.00e-02  plateau      8.13M tok    1.98s  train/grad_norm=0.5946
+step     512  loss  5.2050  lr 1.00e-02  plateau      8.39M tok    1.98s  train/grad_norm=0.5914
+step     528  loss  5.2485  lr 1.00e-02  plateau      8.65M tok    1.97s  train/grad_norm=0.6516
+step     544  loss  5.3212  lr 1.00e-02  plateau      8.91M tok    1.96s  train/grad_norm=0.6005
+step     560  loss  5.1323  lr 1.00e-02  plateau      9.18M tok    1.96s  train/grad_norm=0.5697
+step     576  loss  5.1185  lr 1.00e-02  plateau      9.44M tok    1.98s  train/grad_norm=0.6103
+CHECKPOINT {'step': 576, 'slot': 1, 'sha256': 'b5212049bad429968fede2f412ed6fd463e869c97c25536891e32be8f8e4876c', 'bytes': 3233901515, 'extra': {}}
+evaluation-step-000576 {'step': 576, 'nats_per_token': 5.199318780369142, 'bits_per_byte': 1.684119080567892, 'scored_tokens': 393040}
+SESSION_COMPLETE_RESUME_REQUIRED

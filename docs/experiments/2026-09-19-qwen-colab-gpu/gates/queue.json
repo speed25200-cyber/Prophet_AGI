@@ -1,0 +1,87 @@
+{
+  "status": "gates_complete_with_failures",
+  "revision": "4490d6640680455d9e3678017b6bd96db43f2542",
+  "results": {
+    "hybrid-ce": {
+      "exit_code": 1,
+      "passed": false,
+      "sha256": "5221febfe29ec8687547f1b1a1c7dbaef687015021376a8b74cf49a0a977e4b8"
+    },
+    "hybrid-kl": {
+      "skipped": true,
+      "reason": "same initialization failed CE gate; inspect before further updates"
+    },
+    "attention-ce": {
+      "exit_code": 0,
+      "passed": true,
+      "sha256": "230b9139e7f5ccad385f066ed2260004ee9cda93aa7e79e43eb33aaa725c70a5",
+      "updates": {
+        "mean_seconds_per_step": 0.36602574566495605,
+        "peak_cuda_allocated_bytes": 5911339520,
+        "tokens_seen": 2560,
+        "skipped_nonfinite": 0,
+        "teacher_unchanged_and_no_gradients": null
+      }
+    },
+    "attention-kl": {
+      "exit_code": 0,
+      "passed": true,
+      "sha256": "bcb3bea62c71296f2388e4d36ff45ff567e61492f10718d740f977fb4b77f6b7",
+      "updates": {
+        "mean_seconds_per_step": 0.42101789433218073,
+        "peak_cuda_allocated_bytes": 7103455744,
+        "tokens_seen": 2560,
+        "skipped_nonfinite": 0,
+        "teacher_unchanged_and_no_gradients": true
+      }
+    }
+  },
+  "protocol": {
+    "seq_len": 512,
+    "batch_size": 1,
+    "grad_accum": 1,
+    "loop_k": 5,
+    "chunk_tokens": 128,
+    "muon_lr": 0.001,
+    "adamw_lr": 3e-05,
+    "kl_alpha": 0.5,
+    "kl_temperature": 1.0,
+    "warmup_updates": 2,
+    "measured_updates": 3,
+    "weights_discarded": true,
+    "total_gate_wall_seconds_limit": 1200,
+    "scope": "diagnostic rates only; recovery budget and schedule not selected"
+  },
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "/content/prophet-recovery/gpu-repo/scripts/gate_qwen_recovery.py",
+    "--source",
+    "/content/prophet-recovery/source",
+    "--initialization",
+    "/content/prophet-recovery/initializations/attention.pt",
+    "--audit",
+    "/content/prophet-recovery/initializations/attention-conversion.json",
+    "--train",
+    "/content/prophet-recovery/data/train.jsonl",
+    "--data-audit",
+    "/content/prophet-recovery/gpu-repo/docs/experiments/2026-09-19-qwen-recovery-data.json",
+    "--out",
+    "/content/prophet-recovery/gpu-gates/attention-kl.json",
+    "--objective",
+    "kl",
+    "--seq-len",
+    "512",
+    "--batch-size",
+    "1",
+    "--grad-accum",
+    "1",
+    "--loop-k",
+    "5",
+    "--chunk-tokens",
+    "128",
+    "--muon-lr",
+    "0.001",
+    "--adamw-lr",
+    "0.00003"
+  ]
+}

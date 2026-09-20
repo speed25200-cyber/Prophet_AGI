@@ -1,0 +1,73 @@
+{
+  "revision": "2e4d25ecd521980ee71607b2d96d3ed13b224210",
+  "model_revision": "f5a7d71be1723324e36a7be2546c940a69de9fdf",
+  "processes": {
+    "fetch": {
+      "pid": 217969,
+      "returncode": 0
+    },
+    "worktree": {
+      "pid": 217981,
+      "returncode": 0
+    },
+    "tests": {
+      "pid": 217984,
+      "returncode": 0
+    },
+    "fixed4": {
+      "pid": 220509,
+      "returncode": 0
+    },
+    "uniform2to6": {
+      "pid": 220666,
+      "returncode": 0
+    }
+  },
+  "files": {
+    "executed-driver.py": {
+      "bytes": 7772,
+      "sha256": "1408ad4ba3d77bb2ccae33d7c24e0108ee5a3e63e39b6e6c707cbfda19c2dab0"
+    },
+    "fetch.txt": {
+      "bytes": 221,
+      "sha256": "4bff4e6127fdb5ab6b9b4eb45f34d7aeb55f6781a46d3aacdff5b4c37dca6cdb"
+    },
+    "fixed4.json": {
+      "bytes": 51773,
+      "sha256": "ea0615499a2d4fb10d3555291f2dcbb769500dc399f1d4cc98bc5631b39dca1d"
+    },
+    "fixed4.txt": {
+      "bytes": 50,
+      "sha256": "0d1be2815c5f0f0829b03a8aa3d304ddd3d880693d9e040f2bb273e31613f3b7"
+    },
+    "queue-source.py": {
+      "bytes": 6174,
+      "sha256": "143ea52050e628c18893607cda287f62fe7cbc3ab81ec96f4c844b754c337f5f"
+    },
+    "queue.json": {
+      "bytes": 1076,
+      "sha256": "1499e617601832b5a1da059500b745490598e0c1525100de92facc188487c077"
+    },
+    "tests.txt": {
+      "bytes": 179,
+      "sha256": "9c8f18e323151a98866586aebea78d735c4e3f60d1eed543c35f9b81dc9de3ae"
+    },
+    "tests.xml": {
+      "bytes": 1262,
+      "sha256": "f988f9cdf8b3e6b941bf5ac8f5aef39869d8dea8be0429c5539d0c78a5f608e4"
+    },
+    "uniform2to6.json": {
+      "bytes": 51793,
+      "sha256": "58597d95de2072d44d6e82e4adc4ab91e8dc2436000fd9cc35f63e694fedfa59"
+    },
+    "uniform2to6.txt": {
+      "bytes": 51,
+      "sha256": "c0bf8b8db8a7d749aa84fe32217602c8010320613fc1d91ab3b9c09d25dfdd3c"
+    },
+    "worktree.txt": {
+      "bytes": 132,
+      "sha256": "f3dc2be2c204be6525a7efb89b63415749e422685f8f1e62e7d406cf3fe04b25"
+    }
+  },
+  "scope": "Queue, source, test and scalar observation records only; no weights or activation arrays."
+}

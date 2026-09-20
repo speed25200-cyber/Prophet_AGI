@@ -1,6 +1,6 @@
 {
   "name": "prophet-r04-plain",
-  "d_model": 1280,
+  "d_model": 1792,
   "n_layers": 16,
   "norm_eps": 1e-05,
   "norm_kind": "rmsnorm",
@@ -31,7 +31,7 @@
       "swa",
       "full_attn"
     ],
-    "n_heads": 10,
+    "n_heads": 14,
     "n_kv_heads": 2,
     "head_dim": 128,
     "qk_norm": true,
@@ -45,7 +45,7 @@
     "global_ledger_heads": 1,
     "kv_compression": "none",
     "kv_lora_rank": 512,
-    "linear_heads": 10,
+    "linear_heads": 14,
     "linear_head_dim": 128,
     "linear_expand": 2.0,
     "conv_kernel": 4,
@@ -79,12 +79,13 @@
     "truncated_backprop_steps": 1,
     "halting": "none",
     "halting_loss_weight": 0.0,
-    "halting_target_steps": 1.0,
+    "halting_target_steps": 2.0,
     "token_depth": false,
     "ingest_depth": 1,
     "token_depth_random_spans": 0.25,
     "iteration_embedding": false,
-    "iteration_readout": false
+    "iteration_readout": false,
+    "iteration_requantize": "none"
   },
   "ffn": {
     "kind": "dense",
@@ -116,9 +117,9 @@
     "max_writes": 1000000
   },
   "heads": {
-    "n_multi_token_predict": 1,
+    "n_multi_token_predict": 0,
     "mtp_loss_weight": 0.3,
-    "confidence_head": true,
+    "confidence_head": false,
     "confidence_loss_weight": 0.1,
     "action_head": false,
     "action_dk": 128,

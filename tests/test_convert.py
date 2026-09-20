@@ -31,8 +31,13 @@ from prophet.modeling.model import ProphetModel, _swiglu_hidden
 def tiny_donor(**kw) -> DonorSpec:
     """A stand-in donor small enough to convert in a test."""
     base = dict(
-        n_layers=12, d_model=256, n_heads=4, n_kv_heads=2, head_dim=64,
-        ffn_hidden=512, vocab_size=1024,
+        n_layers=12,
+        d_model=256,
+        n_heads=4,
+        n_kv_heads=2,
+        head_dim=64,
+        ffn_hidden=512,
+        vocab_size=1024,
     )
     base.update(kw)
     return replace(get_donor("qwen3-0.6b"), **base)
@@ -96,8 +101,11 @@ def test_donor_specs_reproduce_their_advertised_sizes():
     """A cross-check we can run without the Hub: a spec whose parameter estimate does not
     match the size in its own name has a transcription error somewhere."""
     expected = {
-        "qwen3-0.6b": 0.6e9, "qwen3-1.7b": 1.7e9, "qwen3-4b": 4.0e9,
-        "smollm3-3b": 3.0e9, "llama-3.2-1b": 1.2e9,
+        "qwen3-0.6b": 0.6e9,
+        "qwen3-1.7b": 1.7e9,
+        "qwen3-4b": 4.0e9,
+        "smollm3-3b": 3.0e9,
+        "llama-3.2-1b": 1.2e9,
     }
     for key, target in expected.items():
         estimate = DONORS[key].params_estimate
@@ -110,6 +118,16 @@ def test_all_donors_are_marked_unverified():
     """They were written while the Hub was unreachable. Flipping this flag must be a
     deliberate act after running the verification script."""
     assert all(not d.verified for d in DONORS.values())
+
+
+def test_donor_verification_rejects_a_changed_rotary_base():
+    from scripts.verify_donors import FIELD_MAP, compare
+
+    donor = get_donor("qwen3-1.7b")
+    config = {key: getattr(donor, field) for field, key in FIELD_MAP.items()}
+    assert compare(donor, config) == []
+    config["rope_theta"] = 10000.0
+    assert any("rope_theta" in issue for issue in compare(donor, config))
 
 
 # --------------------------------------------------------------------------------------
@@ -126,6 +144,70 @@ def test_generated_config_matches_the_donor_shapes():
     assert cfg.head_dim == d.head_dim
     assert cfg.mixer.n_kv_heads == d.n_kv_heads
     assert cfg.frontend.vocab_size == d.vocab_size
+
+
+def test_unshared_donor_baseline_copies_each_trunk_layer():
+    donor = tiny_donor()
+    cfg = prophet_config_for_donor(donor)
+    cfg.recurrent.enabled = False
+    cfg.n_layers = donor.n_layers
+    cfg.mixer.pattern = ["full_attn"]
+    cfg.mixer.nope_layers = ()
+    cfg.heads.n_multi_token_predict = 0
+    cfg.heads.confidence_head = False
+    plan = plan_conversion(donor, cfg)
+    assert [block.donor_layers for block in plan.blocks] == [(i,) for i in range(donor.n_layers)]
+    model = ProphetModel(cfg)
+    source = synthetic_donor_state(donor)
+    result, report = convert_state_dict(source, plan, model.state_dict())
+    assert not report.fresh and not report.mismatched
+    for i in range(donor.n_layers):
+        torch.testing.assert_close(
+            result[f"sections.trunk.{i}.mixer.q_proj.weight"],
+            source[f"model.layers.{i}.self_attn.q_proj.weight"],
+            rtol=0,
+            atol=0,
+        )
+
+
+def test_converted_qwen_norms_preserve_the_donor_function():
+    """Same weights with Prophet's default epsilon do not compute Qwen's norm."""
+    cfg = prophet_config_for_donor(tiny_donor(), prelude_layers=1, core_layers=1, coda_layers=1)
+    model = ProphetModel(cfg)
+    norms = [
+        model.norm_out,
+        model.sections["prelude"][0].norm1,
+        model.sections["prelude"][0].norm2,
+        model.sections["prelude"][0].mixer.q_norm,
+        model.sections["prelude"][0].mixer.k_norm,
+    ]
+    for norm in norms:
+        x = torch.linspace(-1e-3, 1e-3, norm.weight.numel()).unsqueeze(0)
+        expected = x * torch.rsqrt(x.square().mean(-1, keepdim=True) + 1e-6)
+        torch.testing.assert_close(norm(x), expected, rtol=1e-6, atol=1e-7)
+
+
+def test_donor_verification_rejects_changed_norm_epsilon():
+    from scripts.verify_donors import FIELD_MAP, compare
+
+    donor = get_donor("qwen3-0.6b")
+    config = {key: getattr(donor, field) for field, key in FIELD_MAP.items()}
+    config["rms_norm_eps"] = 1e-3
+    assert any("norm_eps" in issue for issue in compare(donor, config))
+
+
+def test_gdn_seed_preserves_expanded_donor_query_heads():
+    """Qwen3-0.6B has n_heads * head_dim == 2 * d_model."""
+    donor = tiny_donor(d_model=128, n_heads=4, n_kv_heads=2, head_dim=64)
+    cfg = prophet_config_for_donor(donor, prelude_layers=1, core_layers=1, coda_layers=1)
+    model = ProphetModel(cfg)
+    converted, report = convert_state_dict(
+        synthetic_donor_state(donor), plan_conversion(donor, cfg), model.state_dict()
+    )
+    assert not report.mismatched
+    for projection in ("q_proj", "k_proj", "v_proj", "o_proj"):
+        assert f"sections.core.0.mixer.{projection}.weight" in report.seeded
+    assert converted["sections.core.0.mixer.q_proj.weight"].shape[0] == 256
 
 
 def test_generated_ffn_width_matches_the_donor_exactly():
@@ -316,9 +398,18 @@ def test_gated_delta_output_projection_starts_inert_in_its_widened_half(converte
 def test_nothing_important_is_left_at_fresh_initialisation(converted):
     """Everything fresh must be a component the donor genuinely lacks."""
     _, _, _, _, _, _, report = converted
-    allowed = ("mtp", "confidence", ".conv.", "a_proj", "b_proj", "o_norm", "lm_head")
+    allowed = ("mtp", "confidence", ".conv.", "a_proj", "b_proj", "o_norm")
     unexpected = [n for n in report.fresh if not any(a in n for a in allowed)]
     assert unexpected == [], f"unexpectedly uninitialised: {unexpected}"
+
+
+def test_tied_head_is_not_reported_copied_without_a_donor_embedding():
+    donor = tiny_donor()
+    cfg = prophet_config_for_donor(donor)
+    model = ProphetModel(cfg)
+    _, report = convert_state_dict({}, plan_conversion(donor, cfg), model.state_dict())
+    assert "lm_head.weight" not in report.copied
+    assert "lm_head.weight" in report.fresh
 
 
 def test_no_shape_mismatches_for_a_matched_donor(converted):

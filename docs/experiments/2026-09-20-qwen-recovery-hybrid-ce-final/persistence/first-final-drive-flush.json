@@ -1,0 +1,13 @@
+{
+  "status": "verified",
+  "destination": "/content/drive/MyDrive/Prophet_AGI/R04/donor-recovery/fp32-pilot-v1/hybrid-ce-seed0-step002048",
+  "checkpoint": {
+    "step": 2048,
+    "slot": 0,
+    "sha256": "9d511123800d71cac0ed4399546ab152e1d70f5b31b4655aa6661ec92da242f8",
+    "bytes": 3707786649,
+    "extra": {}
+  },
+  "remote_flush_verified": true,
+  "flush_seconds": 2.8527597270003753
+}

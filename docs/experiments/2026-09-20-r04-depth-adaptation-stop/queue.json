@@ -1,0 +1,48 @@
+{
+  "status": "stopped_requires_inspection",
+  "revision": "4f5c56613f3b9b99485931945438cb86a8f70c7a",
+  "maximum_seconds": 5400,
+  "results": {},
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/r04-depth-adaptation-code-4f5c566/scripts/adapt_r04_depth.py",
+    "--parent-run",
+    "/content/r04-final/loop-seed0",
+    "--corpus",
+    "/content/Prophet_AGI/data/fineweb-pilot-v1",
+    "--arm",
+    "fixed4",
+    "--out",
+    "/content/r04-depth-adaptation-v1/fixed4",
+    "--max-session-steps",
+    "64",
+    "--session-minutes",
+    "20"
+  ],
+  "pid": 190179,
+  "actual_cpu_cuda_tests_passed": 6,
+  "actual_cuda_restart_cases_passed": 2,
+  "preflights": {
+    "fixed4": {
+      "peak_allocated_bytes": 13444140032,
+      "capacity_bytes": 42405855232,
+      "step_seconds": [
+        3.061336043996562,
+        2.9092524770021555,
+        2.7364310350021697
+      ]
+    },
+    "uniform2to6": {
+      "peak_allocated_bytes": 13444140032,
+      "capacity_bytes": 42405855232,
+      "step_seconds": [
+        2.9773837000029744,
+        2.909924621002574,
+        2.7359404939998058
+      ]
+    }
+  },
+  "error": "FileNotFoundError(2, 'No such file or directory')",
+  "elapsed_seconds": 351.1556888510022
+}

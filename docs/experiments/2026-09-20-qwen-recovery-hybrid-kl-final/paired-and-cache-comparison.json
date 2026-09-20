@@ -1,0 +1,56 @@
+{
+  "protocol": "three-completed-arms-interim-analysis-v1",
+  "hybrid_kl_minus_hybrid_ce": {
+    "direction": "left minus right; negative favors left",
+    "ce_delta": -0.2384823910341586,
+    "bpb_delta": -0.07325598285692567,
+    "ce_document_bootstrap_95": [
+      -0.2439851127273368,
+      -0.23309813029862425
+    ],
+    "bpb_document_bootstrap_95": [
+      -0.07501027933460044,
+      -0.07152588226987423
+    ],
+    "document_win_fraction": 1,
+    "documents": 372,
+    "draws": 10000,
+    "bootstrap_seed": 0,
+    "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+  },
+  "hybrid_kl_minus_initialization": {
+    "direction": "left minus right; negative favors left",
+    "ce_delta": -6.975766072045683,
+    "bpb_delta": -2.142785459218696,
+    "ce_document_bootstrap_95": [
+      -7.046075257868652,
+      -6.908153659770299
+    ],
+    "bpb_document_bootstrap_95": [
+      -2.170791488330982,
+      -2.1153327262455814
+    ],
+    "document_win_fraction": 1,
+    "documents": 372,
+    "draws": 10000,
+    "bootstrap_seed": 0,
+    "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+  },
+  "hybrid_kl_fraction_initial_ce_gap_closed": 0.8558574202715901,
+  "student_tokens": 4194304,
+  "teacher_tokens": 4194304,
+  "median_logged_update_seconds_last_256": 1.3479422330856323,
+  "cpu_cache": {
+    "cases": 8,
+    "paths": 16,
+    "maximum_logit_error": 2.86102294921875e-05,
+    "maximum_tolerance_ratio": 0.1857631355524063,
+    "execution_seconds": 549.8904652609999
+  },
+  "archive": {
+    "bytes": 225462,
+    "sha256": "10df8cf98212574a4897b318e6f32c6f0b8cb211bb42fa1de6456d95de6da334",
+    "verification": "Downloaded archive size and SHA256 match the source notebook read in cell 268 after reconnection. Checkpoint-audit, evaluation and cache report hashes also match the live Colab queue."
+  },
+  "scope": "Single-seed within-hybrid comparison at equal student tokens. KL adds teacher compute. All three endpoint reports pass the strict comparator before its required refusal at the absent attention-KL report. Cross-arm normalized inputs/contracts also match independently. Conditional document intervals exclude seed uncertainty. No architecture adoption, new weight reload, GPU cache result or capability score. Hybrid-KL weights remain on Colab."
+}

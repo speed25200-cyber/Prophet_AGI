@@ -1,0 +1,17 @@
+initial {'step': 0, 'nats_per_token': 10.750803995416335, 'bits_per_byte': 3.4823089148691735, 'scored_tokens': 393040}
+step      16  loss  8.1625  lr 1.60e-03  warmup       0.26M tok    1.92s  train/grad_norm=11.59
+step      32  loss  7.2865  lr 3.20e-03  warmup       0.52M tok    1.92s  train/grad_norm=3.431
+step      48  loss  6.5469  lr 4.80e-03  warmup       0.79M tok    1.92s  train/grad_norm=1.325
+step      64  loss  6.8078  lr 6.40e-03  warmup       1.05M tok    1.95s  train/grad_norm=1.384
+step      80  loss  6.4641  lr 8.00e-03  warmup       1.31M tok    1.94s  train/grad_norm=0.912
+step      96  loss  6.4536  lr 9.60e-03  warmup       1.57M tok    1.93s  train/grad_norm=0.8582
+step     112  loss  6.6403  lr 1.00e-02  plateau      1.84M tok    1.93s  train/grad_norm=1.349
+step     128  loss  6.2533  lr 1.00e-02  plateau      2.10M tok    1.93s  train/grad_norm=0.6938
+CHECKPOINT {'step': 128, 'slot': 0, 'sha256': '6d319db308b902937e0d735ecb469d4b2483882a9e5f9bc7e81d79bb46c3f58b', 'bytes': 3233902603, 'extra': {}}
+evaluation-step-000128 {'step': 128, 'nats_per_token': 6.208639208108764, 'bits_per_byte': 2.011049561765, 'scored_tokens': 393040}
+SESSION_COMPLETE_RESUME_REQUIRED
+step     144  loss  6.3977  lr 1.00e-02  plateau      2.36M tok    1.98s  train/grad_norm=0.8658
+step     160  loss  6.0824  lr 1.00e-02  plateau      2.62M tok    1.96s  train/grad_norm=0.8028
+CHECKPOINT {'step': 160, 'slot': 1, 'sha256': '117c065f71a7594ee5ae69a997b6191383b6aae560bf73f68ab7448c7ad5f452', 'bytes': 3233901003, 'extra': {}}
+evaluation-step-000160 {'step': 160, 'nats_per_token': 6.080347559999916, 'bits_per_byte': 1.9694944231815814, 'scored_tokens': 393040}
+SESSION_COMPLETE_RESUME_REQUIRED

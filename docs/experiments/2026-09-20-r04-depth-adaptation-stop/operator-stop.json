@@ -1,0 +1,5 @@
+{
+  "reason": "Inspect real-shape k6 gradient reproducibility before long training",
+  "phase": "fixed4-to-64",
+  "pid": 190179
+}

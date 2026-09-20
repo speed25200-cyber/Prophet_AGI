@@ -1,0 +1,426 @@
+{
+  "complete": true,
+  "sources": [
+    {
+      "name": "lambada_openai",
+      "hf_id": "EleutherAI/lambada_openai",
+      "revision": "900124bf3b8235c6daf21033af9948b3f07346c4",
+      "gated": false,
+      "license": "mit",
+      "config": "default",
+      "split": "test",
+      "fields": [
+        "text"
+      ],
+      "rows": 5153,
+      "sha256": "0542f06e08fc85386db837feec0ba334c9729ba8df4f5d8c0a55ad836fad3f61",
+      "short_rows_untested": 0,
+      "status": "indexed"
+    },
+    {
+      "name": "sciq",
+      "hf_id": "allenai/sciq",
+      "revision": "2c94ad3e1aafab77146f384e23536f97a4849815",
+      "gated": false,
+      "license": [
+        "cc-by-nc-3.0"
+      ],
+      "config": null,
+      "split": "test",
+      "fields": [
+        "question",
+        "support",
+        "correct_answer",
+        "distractor1",
+        "distractor2",
+        "distractor3"
+      ],
+      "status": "not fetched: gated or outside this audit's metadata allowlist"
+    },
+    {
+      "name": "piqa",
+      "hf_id": "ybisk/piqa",
+      "revision": "2e8ac2dffd59bac8c3c6714948f4c551a0848bb0",
+      "gated": false,
+      "license": [
+        "unknown"
+      ],
+      "config": null,
+      "split": "validation",
+      "fields": [
+        "goal",
+        "sol1",
+        "sol2"
+      ],
+      "status": "not fetched: gated or outside this audit's metadata allowlist"
+    },
+    {
+      "name": "arc_easy",
+      "hf_id": "allenai/ai2_arc",
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "gated": false,
+      "license": [
+        "cc-by-sa-4.0"
+      ],
+      "config": "ARC-Easy",
+      "split": "test",
+      "fields": [
+        "question",
+        "choices"
+      ],
+      "rows": 2376,
+      "sha256": "45294faa8574fe1466eaa30972e4ec717405d2b570b955d0c2770cfb883decc8",
+      "short_rows_untested": 76,
+      "status": "indexed"
+    },
+    {
+      "name": "arc_challenge",
+      "hf_id": "allenai/ai2_arc",
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "gated": false,
+      "license": [
+        "cc-by-sa-4.0"
+      ],
+      "config": "ARC-Challenge",
+      "split": "test",
+      "fields": [
+        "question",
+        "choices"
+      ],
+      "rows": 1172,
+      "sha256": "773373ee3e4afd910f93bfac346e49be8c70dc7049843297dfe6999fe7b267cf",
+      "short_rows_untested": 16,
+      "status": "indexed"
+    },
+    {
+      "name": "hellaswag",
+      "hf_id": "Rowan/hellaswag",
+      "revision": "218ec52e09a7e7462a5400043bb9a69a41d06b76",
+      "gated": false,
+      "license": null,
+      "config": null,
+      "split": "validation",
+      "fields": [
+        "ctx",
+        "endings"
+      ],
+      "status": "not fetched: gated or outside this audit's metadata allowlist"
+    },
+    {
+      "name": "social_iqa",
+      "hf_id": "allenai/social_i_qa",
+      "revision": "8835ceb9141d7896d9d968634a9b21ae440e3ec5",
+      "gated": false,
+      "license": null,
+      "config": null,
+      "split": "validation",
+      "fields": [
+        "context",
+        "question",
+        "answerA",
+        "answerB",
+        "answerC"
+      ],
+      "status": "not fetched: gated or outside this audit's metadata allowlist"
+    },
+    {
+      "name": "openbookqa",
+      "hf_id": "allenai/openbookqa",
+      "revision": "388097ea7776314e93a529163e0fea805b8a6454",
+      "gated": false,
+      "license": [
+        "unknown"
+      ],
+      "config": "main",
+      "split": "test",
+      "fields": [
+        "question_stem",
+        "choices"
+      ],
+      "status": "not fetched: gated or outside this audit's metadata allowlist"
+    },
+    {
+      "name": "commonsense_qa",
+      "hf_id": "tau/commonsense_qa",
+      "revision": "94630fe30dad47192a8546eb75f094926d47e155",
+      "gated": false,
+      "license": [
+        "mit"
+      ],
+      "config": null,
+      "split": "validation",
+      "fields": [
+        "question",
+        "choices"
+      ],
+      "rows": 1221,
+      "sha256": "558c8b03fd8dd3ad9f88e273a97e0f07c1ede7c29c43a2895033f00e25e5543f",
+      "short_rows_untested": 28,
+      "status": "indexed"
+    },
+    {
+      "name": "winogrande",
+      "hf_id": "allenai/winogrande",
+      "revision": "01e74176c63542e6b0bcb004dcdea22d94fb67b5",
+      "gated": false,
+      "license": null,
+      "config": "winogrande_xl",
+      "split": "validation",
+      "fields": [
+        "sentence",
+        "option1",
+        "option2"
+      ],
+      "status": "not fetched: gated or outside this audit's metadata allowlist"
+    },
+    {
+      "name": "mmlu",
+      "hf_id": "cais/mmlu",
+      "revision": "c30699e8356da336a370243923dbaf21066bb9fe",
+      "gated": false,
+      "license": [
+        "mit"
+      ],
+      "config": "all",
+      "split": "test",
+      "fields": [
+        "question",
+        "choices"
+      ],
+      "rows": 14042,
+      "sha256": "58d84c18ecc249b7e1e43f8aa08f6f5f374cbf337c8481d09b41d9e3cf6f87db",
+      "short_rows_untested": 231,
+      "status": "indexed"
+    },
+    {
+      "name": "mmlu_pro",
+      "hf_id": "TIGER-Lab/MMLU-Pro",
+      "revision": "b189ec765aa7ed75c8acfea42df31fdae71f97be",
+      "gated": false,
+      "license": "mit",
+      "config": null,
+      "split": "test",
+      "fields": [
+        "question",
+        "options"
+      ],
+      "rows": 12032,
+      "sha256": "4099512a4f014ccf8dc1d79381c8fb915308705817a03d1f10f347df7533e118",
+      "short_rows_untested": 6,
+      "status": "indexed"
+    },
+    {
+      "name": "gsm8k",
+      "hf_id": "openai/gsm8k",
+      "revision": "740312add88f781978c0658806c59bc2815b9866",
+      "gated": false,
+      "license": [
+        "mit"
+      ],
+      "config": "main",
+      "split": "test",
+      "fields": [
+        "question",
+        "answer"
+      ],
+      "rows": 1319,
+      "sha256": "b585e26a7538462384ea04b5429cbef8c04f21b757de8dfd639a1bfd9ba72fa0",
+      "short_rows_untested": 0,
+      "status": "indexed"
+    },
+    {
+      "name": "humaneval",
+      "hf_id": "openai/openai_humaneval",
+      "revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+      "gated": false,
+      "license": [
+        "mit"
+      ],
+      "config": null,
+      "split": "test",
+      "fields": [
+        "prompt",
+        "canonical_solution",
+        "test"
+      ],
+      "rows": 164,
+      "sha256": "cd04c9eceb2c5d0ee04401fb7f8e36b472d918fab77195fa9e50b9f395dd16bf",
+      "short_rows_untested": 0,
+      "status": "indexed"
+    },
+    {
+      "name": "mbpp",
+      "hf_id": "google-research-datasets/mbpp",
+      "revision": "4bb6404fdc6cacfda99d4ac4205087b89d32030c",
+      "gated": false,
+      "license": [
+        "cc-by-4.0"
+      ],
+      "config": "full",
+      "split": "test",
+      "fields": [
+        "text",
+        "code"
+      ],
+      "rows": 500,
+      "sha256": "d7f9dc3e5b5588b5054cef1615146c30db2dca17d802343a7e2c0dd5c4fdb640",
+      "short_rows_untested": 0,
+      "status": "indexed"
+    },
+    {
+      "name": "ifeval",
+      "hf_id": "google/IFEval",
+      "revision": "966cd89545d6b6acfd7638bc708b98261ca58e84",
+      "gated": false,
+      "license": "apache-2.0",
+      "config": null,
+      "split": "train",
+      "fields": [
+        "prompt"
+      ],
+      "rows": 541,
+      "sha256": "2b30cb7104859b0f78980b7b4bd006e581b448623a4268c43d8694760de210d8",
+      "short_rows_untested": 2,
+      "status": "indexed"
+    },
+    {
+      "name": "gpqa_diamond",
+      "hf_id": "Idavidrein/gpqa",
+      "revision": "633f5ee89ab8ad4522a9f850766b73f62147ffdd",
+      "gated": "auto",
+      "license": "cc-by-4.0",
+      "config": "gpqa_diamond",
+      "split": "train",
+      "fields": [
+        "Question",
+        "Correct Answer",
+        "Incorrect Answer 1",
+        "Incorrect Answer 2",
+        "Incorrect Answer 3"
+      ],
+      "status": "not fetched: gated or outside this audit's metadata allowlist"
+    }
+  ],
+  "splits": {
+    "train": {
+      "documents": 19569,
+      "matching_documents": 9,
+      "per_benchmark": {
+        "lambada_openai": 0,
+        "arc_easy": 0,
+        "arc_challenge": 0,
+        "commonsense_qa": 0,
+        "mmlu": 6,
+        "mmlu_pro": 6,
+        "gsm8k": 0,
+        "humaneval": 2,
+        "mbpp": 0,
+        "ifeval": 0
+      },
+      "matches": [
+        {
+          "document_index": 721,
+          "sha256": "b38c7720f989548510f98610ab25662ab9d263f71e82011bb1ca67ee7ae61160",
+          "benchmarks": [
+            "mmlu"
+          ]
+        },
+        {
+          "document_index": 3970,
+          "sha256": "da4468fa8fd60a8393aab26e5ab607f98eccaff38f43e6bb7a5f4335f016c47a",
+          "benchmarks": [
+            "mmlu"
+          ]
+        },
+        {
+          "document_index": 4958,
+          "sha256": "2372eb93825ba6d9d1ac7c2bddd3134bc386a3dcc056db9e98ee078c6e09320a",
+          "benchmarks": [
+            "mmlu",
+            "mmlu_pro"
+          ]
+        },
+        {
+          "document_index": 5286,
+          "sha256": "2caa7faf9b346931e736d88b7bfd7a358a398175dc956dcc342dfa8ba8249a52",
+          "benchmarks": [
+            "mmlu_pro",
+            "humaneval"
+          ]
+        },
+        {
+          "document_index": 6484,
+          "sha256": "22b326527deef810aed4c3d550fd4f3b4be2cbd5d56d3dcf7bbd90637eeaf025",
+          "benchmarks": [
+            "mmlu_pro"
+          ]
+        },
+        {
+          "document_index": 7227,
+          "sha256": "8a40c241c49d364db088f7f3c72cee594790628942544fc78f5a43dbe53cc857",
+          "benchmarks": [
+            "mmlu"
+          ]
+        },
+        {
+          "document_index": 13092,
+          "sha256": "9e61ee6f1cc3140f7068c6df19cdc39560ea28d60a6d251640ebe4d29790d4f4",
+          "benchmarks": [
+            "mmlu",
+            "mmlu_pro"
+          ]
+        },
+        {
+          "document_index": 14357,
+          "sha256": "f5eb30de14d8776070c02fcf493adfa12cdff913cafc03f35257673d2d240051",
+          "benchmarks": [
+            "mmlu_pro",
+            "humaneval"
+          ]
+        },
+        {
+          "document_index": 14804,
+          "sha256": "8fe124207d83924895339427d25932eaaacf6384750c507b6cb7934384f12e0f",
+          "benchmarks": [
+            "mmlu",
+            "mmlu_pro"
+          ]
+        }
+      ],
+      "files": [
+        {
+          "path": "train/fineweb-edu/part-00000.jsonl",
+          "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e"
+        }
+      ]
+    },
+    "validation": {
+      "documents": 376,
+      "matching_documents": 0,
+      "per_benchmark": {
+        "lambada_openai": 0,
+        "arc_easy": 0,
+        "arc_challenge": 0,
+        "commonsense_qa": 0,
+        "mmlu": 0,
+        "mmlu_pro": 0,
+        "gsm8k": 0,
+        "humaneval": 0,
+        "mbpp": 0,
+        "ifeval": 0
+      },
+      "matches": [],
+      "files": [
+        {
+          "path": "validation/fineweb-edu/part-00000.jsonl",
+          "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939"
+        }
+      ]
+    }
+  },
+  "n": 13,
+  "policy": "any exact normalized 13-word overlap; rows shorter than 13 words untested",
+  "scope": "retrospective lexical screen; corpus unchanged; no semantic or benchmark-quality claim",
+  "unique_benchmark_ngrams": 2122506,
+  "all_requested_sources_indexed": false
+}

@@ -1,0 +1,42 @@
+{
+  "fixed4-budget.txt": {
+    "bytes": 1913,
+    "sha256": "8ef25c6521916bf06bfc14079cea7e2682e69f0952c48630604535bee50c250f"
+  },
+  "fixed4.json": {
+    "bytes": 3387,
+    "sha256": "21ff82538157e4f58008121482c5472f8f5001db9e8823c5ab7bb75d19a627a9"
+  },
+  "plan.txt": {
+    "bytes": 4592,
+    "sha256": "3677b22a521f96281d225dd089a0273a0e5584345549d98e492e20716a2d8cfa"
+  },
+  "protocol.json": {
+    "bytes": 2531,
+    "sha256": "ba92d3450dce2b9317c739d2bd22c440532c1efa7c9cb23e076eef93e419d792"
+  },
+  "search.txt": {
+    "bytes": 252,
+    "sha256": "75924590cd68b7e6553051ac83595e9cce7368a068afb7a8698a2f5dd226c8d1"
+  },
+  "uniform2to6-budget.txt": {
+    "bytes": 1913,
+    "sha256": "8ef25c6521916bf06bfc14079cea7e2682e69f0952c48630604535bee50c250f"
+  },
+  "uniform2to6.json": {
+    "bytes": 3387,
+    "sha256": "070b67f8764884cc05a898a700d2b56b0832b02b80c08fe118a76f83948904a6"
+  },
+  "worst-k6-budget.txt": {
+    "bytes": 1914,
+    "sha256": "4ca5bfd9b17f6a949b248b742ab25447e3b296e79df8cdaf791b2aca97de4cd5"
+  },
+  "worst-k6-sizing-only.json": {
+    "bytes": 3387,
+    "sha256": "207c4db0d8adedeffe7c6e074b35fa598c6caf1f3bf939bb4b7bd4ea628b918b"
+  },
+  "executed-budget-source.py": {
+    "bytes": 4583,
+    "sha256": "d8785a633e9273254272b98230efd045c6545a3e2146f9f1f7ae09d1d4038b2b"
+  }
+}

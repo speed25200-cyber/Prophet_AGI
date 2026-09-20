@@ -1,0 +1,70 @@
+{
+  "status": "complete",
+  "revision": "25d24cc9f4f14e4a19733042a6b4321540378911",
+  "step": 256,
+  "results": {
+    "cache-chunk64": {
+      "pid": 110860,
+      "exit_code": 0,
+      "command": [
+        "/content/prophet-recovery/venv/bin/python",
+        "/content/prophet-recovery/checkpoint-analysis-25d24cc/scripts/audit_qwen_cache.py",
+        "--source",
+        "/content/prophet-recovery/source",
+        "--recovery-run",
+        "/content/prophet-recovery/recovered-cache-step256/input",
+        "--step",
+        "256",
+        "--reference",
+        "/content/prophet-recovery/checkpoint-analysis-25d24cc/docs/experiments/2026-09-19-qwen-conversion-smoke.json",
+        "--validation",
+        "/content/Prophet_AGI/data/fineweb-pilot-v1/validation",
+        "--out",
+        "/content/prophet-recovery/recovered-cache-step256/cache-chunk64.json",
+        "--loop-k",
+        "5",
+        "--trace-blocks"
+      ],
+      "passed": true,
+      "sha256": "db4c437313ac444bd4722cbe67fcbd034d9534dbbc2cf33be6107f87936d2193"
+    },
+    "cache-sequential": {
+      "pid": 111147,
+      "exit_code": 0,
+      "command": [
+        "/content/prophet-recovery/venv/bin/python",
+        "/content/prophet-recovery/checkpoint-analysis-25d24cc/scripts/audit_qwen_cache.py",
+        "--source",
+        "/content/prophet-recovery/source",
+        "--recovery-run",
+        "/content/prophet-recovery/recovered-cache-step256/input",
+        "--step",
+        "256",
+        "--reference",
+        "/content/prophet-recovery/checkpoint-analysis-25d24cc/docs/experiments/2026-09-19-qwen-conversion-smoke.json",
+        "--validation",
+        "/content/Prophet_AGI/data/fineweb-pilot-v1/validation",
+        "--out",
+        "/content/prophet-recovery/recovered-cache-step256/cache-sequential.json",
+        "--loop-k",
+        "5",
+        "--trace-blocks",
+        "--reference-scan"
+      ],
+      "passed": true,
+      "sha256": "321f38a6b9e04af4d15d33199063b55755b27aeeb1d6a2418401189b34732632"
+    }
+  },
+  "snapshot": {
+    "step": 256,
+    "checkpoint": {
+      "step": 256,
+      "slot": 0,
+      "sha256": "edd4632ae4482c72ccf69a19b999c78696eb570cb55fbffd0ea15ad46c2d588a",
+      "bytes": 3707786137,
+      "extra": {}
+    },
+    "source_run": "/content/prophet-recovery/recovery-fp32-v1/hybrid-ce-seed0",
+    "scope": "immutable local analysis copy; not a Drive snapshot"
+  }
+}

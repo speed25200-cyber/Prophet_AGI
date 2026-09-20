@@ -1,0 +1,11 @@
+{
+  "complete": true,
+  "scope": "exact ordered equality of sentence and option fields, pinned Hub validation against official WinoGrande v1.1 dev archive; no answers or benchmark text redistributed",
+  "rows": 1267,
+  "hub_revision": "01e74176c63542e6b0bcb004dcdea22d94fb67b5",
+  "upstream_archive_sha256": "3619ab104d8be2977b25c90ff420cb42d491707dcc75362a1e5d22bc082b7318",
+  "upstream_dev_sha256": "1aeac79cf46a3dcbe59a71ca7e5372a1490cde2b4ae2387dc56f00378104d2e8",
+  "normalized_export_sha256": "d82254f9fd2cc289e5770a26653c5806237820c800446ab5ea40aa8052013751",
+  "extracted_texts_equal": true,
+  "frozen_corpus_file_hashes_match_prior_audit": true
+}

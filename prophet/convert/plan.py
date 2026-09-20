@@ -74,9 +74,9 @@ class ConversionPlan:
     def coverage(self) -> dict[str, float]:
         """Share of Prophet's parameters that come from the donor rather than fresh init.
 
-        This is the number that predicts how much recovery training a conversion needs. A
-        conversion at 40% coverage is closer to pretraining than to conversion, and should
-        be recognised as such before the budget is committed rather than after.
+        This counts inherited parameters; it does not predict recovered quality.
+        A conversion at 40% coverage is budgeted as a warm start by the project,
+        while higher coverage still requires a measured recovery experiment.
 
         Counts are taken from the real per-component breakdown, not estimated: the FFN of
         every block transfers because its shape is unchanged, while a gated-delta mixer
@@ -91,7 +91,7 @@ class ConversionPlan:
 
         attn_params = _attention_params(self.target)
         ffn_resident, _ = _ffn_params(self.target, is_moe=False)
-        for i, block in enumerate(self.blocks):
+        for block in self.blocks:
             if block.donor_layers:
                 # The channel-mixing half is shape-identical, so it always transfers.
                 transferred += ffn_resident
@@ -150,14 +150,14 @@ def prophet_config_for_donor(
 ) -> ProphetConfig:
     """Build a Prophet config whose attention slots match the donor's shapes.
 
-    Matching ``head_dim``, ``n_kv_heads`` and ``d_model`` is what makes the attention
-    weights transfer by direct copy instead of by interpolation, and direct copy is the
-    difference between a conversion that recovers in a few billion tokens and one that
-    does not recover at all.
+    Matching ``head_dim``, ``n_kv_heads`` and ``d_model`` permits direct copying of
+    attention weights. Shape compatibility alone does not establish retained quality
+    or the amount of recovery training needed.
     """
     return ProphetConfig(
         name=name or f"prophet-from-{donor.hf_id.split('/')[-1].lower()}",
         d_model=donor.d_model,
+        norm_eps=donor.norm_eps,
         frontend=FrontendConfig(
             mode="bpe",
             vocab_size=donor.vocab_size if keep_donor_vocab else prophet_vocab_size,
@@ -171,7 +171,9 @@ def prophet_config_for_donor(
             qk_norm=True,
             sliding_window=2048,
             attention_sink_tokens=1,
-            linear_heads=max(donor.d_model // donor.head_dim, 1),
+            # Query width need not equal residual width (Qwen3-0.6B doubles it).
+            # Keep every donor query head so Q/K/V/O seeding uses compatible axes.
+            linear_heads=donor.n_heads,
             linear_head_dim=donor.head_dim,
             linear_expand=2.0,
             rope_theta=donor.rope_theta,
@@ -193,7 +195,9 @@ def prophet_config_for_donor(
             train_loop_max=max(2 * loop_k, 2),
             truncated_backprop_steps=3,
         ),
-        ffn=FeedForwardConfig(kind="dense", hidden_mult=3.0 * donor.ffn_hidden / (2 * donor.d_model)),
+        ffn=FeedForwardConfig(
+            kind="dense", hidden_mult=3.0 * donor.ffn_hidden / (2 * donor.d_model)
+        ),
         heads=HeadsConfig(n_multi_token_predict=1, confidence_head=True),
     )
 
@@ -212,10 +216,9 @@ def _group_middle_layers(
         step = max(len(layers) // n_groups, 1)
         return [(layers[min(i * step, len(layers) - 1)],) for i in range(n_groups)]
 
-    # "average": contiguous groups, each averaged. This is the recursive-transformer
-    # initialisation -- consecutive layers of a trained transformer compute similar
-    # updates, so their mean is a reasonable starting point for a block that will be
-    # applied repeatedly.
+    # "average": contiguous groups, each averaged. This is a candidate initialization,
+    # not a function-preserving transformation. Its quality and recovery cost must be
+    # measured; aligned shapes do not imply aligned features across donor layers.
     out: list[tuple[int, ...]] = []
     for i in range(n_groups):
         start = (i * len(layers)) // n_groups
@@ -234,7 +237,6 @@ def plan_conversion(
     """Decide which donor layer initialises which Prophet block."""
     target.validate()
     layout = target.section_layout()
-    r = target.recurrent
 
     n_prelude = sum(1 for s, _, _ in layout if s == "prelude")
     n_core = sum(1 for s, _, _ in layout if s == "core")
@@ -269,7 +271,7 @@ def plan_conversion(
     blocks: list[BlockSource] = []
     core_seen = 0
     for section, index, kind in layout:
-        if section == "prelude":
+        if section in ("prelude", "trunk"):
             src = (index,) if index < donor.n_layers else ()
             note = "direct copy" if src else "no donor layer available"
         elif section == "coda":

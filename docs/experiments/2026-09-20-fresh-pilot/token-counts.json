@@ -1,0 +1,30 @@
+{
+  "corpus_manifest_sha256": "f9f01a1a9797789d7d39d78a73388d085e5a5f3b61d9a64b76131b3b7383f2b3",
+  "tokenizer_sha256": "4d212345c25569add0ed6b2a397767062b9205f77b0fabc8f9a794107dffb1c2",
+  "eos_per_document": true,
+  "splits": {
+    "train": {
+      "documents": 19600,
+      "tokens": 19038456,
+      "fingerprint": {
+        "files": [
+          "41b7c3179322e87174a4e252028b261c857327def204a456163c08e733e87570"
+        ],
+        "text_field": "text"
+      },
+      "seconds": 40.97500369999034
+    },
+    "validation": {
+      "documents": 392,
+      "tokens": 383685,
+      "fingerprint": {
+        "files": [
+          "87763ac23b03060f375f21b1a132b10cfd232cd39e7bd9b13c2426ce2f5fc1a0"
+        ],
+        "text_field": "text"
+      },
+      "seconds": 0.9412386999902083
+    }
+  },
+  "scope": "Token counting only; no model inference or validation-loss scoring."
+}

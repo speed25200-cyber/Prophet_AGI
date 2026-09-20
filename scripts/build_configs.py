@@ -99,7 +99,7 @@ def build(
             truncated_backprop_steps=3 if loop else 1,
             halting="ponder" if loop else "none",  # input-dependent depth; a constant k buys no class
             halting_loss_weight=0.05 if loop else 0.0,
-            halting_target_steps=float(loop_k),
+            halting_target_steps=float(max(2, loop_k)),
         ),
         ffn=ffn,
         heads=HeadsConfig(n_multi_token_predict=1, confidence_head=True),
@@ -131,15 +131,15 @@ CONFIGS: dict[str, ProphetConfig] = {
     ),
     # --- the plan's first A100 runs, as matched pairs (prophet.plan) ------------------
     # R04 gate (24 h): looped depth against plain depth at equal FLOPs per token. Both
-    # arms run 20 blocks per token; the looped one carries 221M parameters, the plain
-    # one 498M. If the loop does not beat the plain stack here, the central bet is dead.
+    # arms run exactly 20 blocks per token, with the loop arm above the plan's 350M
+    # floor. Fixed depth, full backprop and no auxiliary probes isolate weight sharing.
     "prophet_r04_loop.json": build(
-        "prophet-r04-loop", d_model=1280, prelude=2, core=4, coda=2, loop_k=4,
-        n_heads=10, n_kv_heads=2,
+        "prophet-r04-loop", d_model=1792, prelude=2, core=4, coda=2, loop_k=4,
+        n_heads=14, n_kv_heads=2,
     ),
     "prophet_r04_plain.json": build(
-        "prophet-r04-plain", d_model=1280, prelude=2, core=16, coda=2, loop_k=1,
-        n_heads=10, n_kv_heads=2, loop=False,
+        "prophet-r04-plain", d_model=1792, prelude=2, core=16, coda=2, loop_k=1,
+        n_heads=14, n_kv_heads=2, loop=False,
     ),
     # D3b (6 h): ledger attention against exact global attention on real text, ~86M,
     # identical but for the switch. Failure criterion: held-out BPB worse by 0.5% or
@@ -160,6 +160,15 @@ CONFIGS: dict[str, ProphetConfig] = {
         memory=dict(enabled=True, kind="product_key", mount="output"),
     ),
 }
+
+for _name, _k in (("prophet_r04_loop.json", 4), ("prophet_r04_plain.json", 1)):
+    _cfg = CONFIGS[_name]
+    _cfg.recurrent.train_loop_min = _cfg.recurrent.train_loop_max = _k
+    _cfg.recurrent.truncated_backprop_steps = _k
+    _cfg.recurrent.halting = "none"
+    _cfg.recurrent.halting_loss_weight = 0.0
+    _cfg.heads.n_multi_token_predict = 0
+    _cfg.heads.confidence_head = False
 
 
 def main() -> int:

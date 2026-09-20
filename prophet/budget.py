@@ -148,13 +148,15 @@ def _linear_mixer_params(cfg: ProphetConfig) -> int:
     d = cfg.d_model
     m = cfg.mixer
     inner = m.linear_heads * m.linear_head_dim
-    v_inner = int(inner * m.linear_expand)
+    # The live mixer rounds each value head before concatenating heads.
+    head_v = int(m.linear_head_dim * m.linear_expand)
+    v_inner = m.linear_heads * head_v
     qk = 2 * d * inner
     v = d * v_inner
-    gates = 2 * d * m.linear_heads  # decay + write strength, one scalar per head
+    gates = 2 * (d + 1) * m.linear_heads  # both gate projections include a bias
     conv = (2 * inner + v_inner) * m.conv_kernel
     out = v_inner * d
-    return qk + v + gates + conv + out
+    return qk + v + gates + conv + out + head_v  # shared per-head output RMSNorm
 
 
 def _ffn_params(cfg: ProphetConfig, is_moe: bool) -> tuple[int, int]:
@@ -268,7 +270,7 @@ def count_parameters(cfg: ProphetConfig, loop_k: int | None = None) -> ParamBrea
     if cfg.heads.n_multi_token_predict:
         # Each extra prediction head is one transformer block plus a shared output
         # projection; cheap to train, and it doubles as a speculative-decoding draft.
-        per_head = _attention_params(cfg) + 3 * d * _swiglu_hidden(d, cfg.ffn.hidden_mult)
+        per_head = _attention_params(cfg) + 3 * d * _swiglu_hidden(d, cfg.ffn.hidden_mult) + 2 * d
         heads += cfg.heads.n_multi_token_predict * per_head
     if cfg.heads.confidence_head:
         heads += 2 * d + 1  # RMSNorm gain + Linear(d, 1)
@@ -285,10 +287,13 @@ def count_parameters(cfg: ProphetConfig, loop_k: int | None = None) -> ParamBrea
     if cfg.frontend.mode == "bpe" and not cfg.frontend.tie_word_embeddings:
         pass  # already counted in the frontend
 
-    out.total = fe_resident + trunk_resident + heads + d
+    adapter = 2 * d * d if cfg.recurrent.input_adapter == "residual_linear" else 0
+    if adapter:
+        out.add("recurrent/input_adapter", adapter)
+    out.total = fe_resident + trunk_resident + heads + d + adapter
     # Aux heads are not run during ordinary decoding (MTP heads only matter when
     # speculating), so they are excluded from the per-token active count.
-    out.active_per_token = fe_active + trunk_active + d
+    out.active_per_token = fe_active + trunk_active + d + adapter
     out.non_embedding = out.total - out.embedding
     return out
 
@@ -378,6 +383,11 @@ def training_memory(
     # Attention scores are materialised only if a fused kernel is unavailable; assume
     # FlashAttention-style kernels, whose extra memory is O(seq) not O(seq^2).
     act += batch_tokens * cfg.d_model * 4 * 2.0
+    if cfg.recurrent.input_adapter == "residual_linear":
+        # The adapter sits outside block checkpointing: retain its concatenated
+        # BF16 input for each differentiated loop, plus a transient FP32 concat
+        # and BF16 output. This remains an estimate, requiring a real-shape gate.
+        act += batch_tokens * cfg.d_model * (4 * backprop_steps + 10)
 
     if cfg.ffn.kind == "moe":
         # Permutation buffers for grouped-GEMM expert dispatch.
@@ -497,13 +507,15 @@ def inference_profile(
     if cfg.recurrent.enabled:
         r = cfg.recurrent
         core_share = r.core_layers / max(r.prelude_layers + r.core_layers + r.coda_layers, 1)
-    active_read_b = p.active_per_token * BYTES_PER_PARAM[weight_dtype]
-    active_read_b *= (1 - core_share) + core_share * k
+    adapter = p.by_component.get("recurrent/input_adapter", 0)
+    effective_active = (p.active_per_token - adapter) * ((1 - core_share) + core_share * k)
+    effective_active += adapter * k
+    active_read_b = effective_active * BYTES_PER_PARAM[weight_dtype]
     bytes_per_token = active_read_b + _kv_bytes_per_token(cfg, kv_dtype, context_len) * context_len
 
     decode_tok_s = dev.bandwidth_gb_s * 1e9 / max(bytes_per_token, 1.0)
 
-    flops_per_token = 2.0 * p.active_per_token * ((1 - core_share) + core_share * k)
+    flops_per_token = 2.0 * effective_active
     flops_per_token += 2.0 * 2 * cfg.d_model * context_len * _n_full_attn_layers(cfg)
     prefill_tok_s = dev.bf16_tflops * 1e12 * 0.4 / max(flops_per_token, 1.0)
 
@@ -601,7 +613,9 @@ def tokens_affordable(
     base_passes = block_passes_per_token(cfg, 1.0) if not cfg.recurrent.enabled else (
         cfg.recurrent.prelude_layers + cfg.recurrent.core_layers + cfg.recurrent.coda_layers
     )
-    effective_active = p.active_per_token * block_passes_per_token(cfg, k) / max(base_passes, 1)
+    adapter = p.by_component.get("recurrent/input_adapter", 0)
+    effective_active = (p.active_per_token - adapter) * block_passes_per_token(cfg, k) / max(base_passes, 1)
+    effective_active += adapter * k
 
     flops_per_token = 6.0 * effective_active
     total_flops = dev.bf16_tflops * 1e12 * mfu * a100_hours * 3600.0

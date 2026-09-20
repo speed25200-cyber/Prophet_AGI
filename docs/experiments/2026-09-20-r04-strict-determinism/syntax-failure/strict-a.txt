@@ -1,0 +1,4 @@
+  File "/content/r04-determinism-hashes-v1/probe.py", line 28
+    args.trace.write_text(json.dumps(trace, indent=2) + '
+                                                        ^
+SyntaxError: unterminated string literal (detected at line 28)

@@ -1,0 +1,13 @@
+{
+  "complete": true,
+  "proxy_parameters": 438740480,
+  "extra_native_depth_norm_parameters": 23040,
+  "native_candidate_parameters": 438763520,
+  "moment_storage_bytes": 2516582400,
+  "moment_storage_gib": 2.34375,
+  "maximum_gpu_wall_seconds": 1800,
+  "ridge_fraction": 0.01,
+  "training_calibration_prefixes": 64,
+  "prefix_length": 512,
+  "scope": "Sizing proxy only: global two-loop Prophet with tied norms has the same linear parameter count as local adjacent sharing. Native scout keeps 10 extra norm sets. No model/config adoption. Budget does not measure native activation/solver/allocator peaks. Half-hour bound is a diagnostic ceiling, not a from-scratch training plan."
+}

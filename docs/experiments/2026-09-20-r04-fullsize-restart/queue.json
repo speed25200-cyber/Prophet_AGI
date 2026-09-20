@@ -1,0 +1,61 @@
+{
+  "status": "both_real_shape_restart_gates_passed",
+  "revision": "f5a7d71be1723324e36a7be2546c940a69de9fdf",
+  "maximum_seconds": 1800,
+  "production_prefix": "continuous",
+  "long_training_queued": false,
+  "results": {
+    "fixed4": {
+      "exact_restart": true,
+      "depth_history": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4
+      ],
+      "state_comparison": {
+        "tensors": 315,
+        "tensor_elements": 867172946
+      },
+      "production_prefix": "/content/r04-depth-strict-gate-v1/fixed4-continuous"
+    },
+    "uniform2to6": {
+      "exact_restart": true,
+      "depth_history": [
+        6,
+        6,
+        5,
+        2,
+        5,
+        6,
+        4,
+        5
+      ],
+      "state_comparison": {
+        "tensors": 315,
+        "tensor_elements": 867172946
+      },
+      "production_prefix": "/content/r04-depth-strict-gate-v1/uniform2to6-continuous"
+    }
+  },
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/r04-depth-adaptation-code-f5a7d71/scripts/audit_r04_restart.py",
+    "--left",
+    "/content/r04-depth-strict-gate-v1/uniform2to6-continuous",
+    "--right",
+    "/content/r04-depth-strict-gate-v1/uniform2to6-interrupted",
+    "--expected-step",
+    "8",
+    "--out",
+    "/content/r04-depth-strict-gate-v1/uniform2to6-restart-audit.json"
+  ],
+  "pid": 206162,
+  "actual_cpu_cuda_tests_passed": 9,
+  "elapsed_seconds": 897.3237882410031
+}

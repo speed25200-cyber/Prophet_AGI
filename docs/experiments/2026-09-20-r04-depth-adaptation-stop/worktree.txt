@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD 4f5c566)
+HEAD is now at 4f5c566 Implement resumable matched R04 depth adaptation pilot

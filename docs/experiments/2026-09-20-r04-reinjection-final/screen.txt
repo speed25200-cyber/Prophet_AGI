@@ -1,0 +1,1 @@
+{"seed0_screen_passed": false, "checks": {"learned_mix_k6_improves_own_k4_by_at_least_half_percent": false, "paired_ce_interval_upper_below_zero": false, "learned_mix_k4_within_one_percent_of_control_k4": false, "learned_mix_k6_improves_control_k6": false}}

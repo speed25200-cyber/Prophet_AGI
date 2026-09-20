@@ -16,6 +16,7 @@ Design constraints that shape every module here:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import torch
@@ -36,6 +37,12 @@ __all__ = [
     "build_mixer",
     "HAS_FLA",
 ]
+
+# Triton's default FP32 dot uses TF32 on Ampere, independently of PyTorch's
+# matmul policy. The recurrent state and its gate gradients need FP32 accuracy.
+# Set before FLA import/compilation; an explicit operator choice is preserved,
+# but must pass the GPU gate before training.
+os.environ.setdefault("TRITON_F32_DEFAULT", "tf32x3")
 
 try:  # pragma: no cover - availability depends on the environment
     from fla.ops.gated_delta_rule import chunk_gated_delta_rule as _fla_gated_delta
@@ -772,7 +779,11 @@ class GatedDeltaNet(nn.Module):
         xt = x.transpose(1, 2)  # (b, c, s)
         pad = self.conv_kernel - 1
         if state is not None and state.conv_state is not None:
-            xt = torch.cat([state.conv_state, xt], dim=2)
+            # Session files are intentionally loaded on CPU. Migrate lazily to the
+            # activation device/dtype so restored state works on CUDA without making
+            # the persistence layer guess where the model will run.
+            restored_conv = state.conv_state.to(device=xt.device, dtype=xt.dtype)
+            xt = torch.cat([restored_conv, xt], dim=2)
         else:
             xt = F.pad(xt, (pad, 0))
         if state is not None:
@@ -797,7 +808,10 @@ class GatedDeltaNet(nn.Module):
 
         # L2-normalised keys keep the delta-rule update a well-conditioned projection;
         # without this the removal term can amplify rather than erase.
-        k = F.normalize(k, dim=-1, eps=1e-6)
+        # Autocast promotes normalize to fp32, but FLA requires q/k/v to share
+        # their dtype. Compute the norm accurately, then round keys once for all
+        # paths so the reference and fused kernels receive identical inputs.
+        k = F.normalize(k.float(), dim=-1, eps=1e-6).to(q.dtype)
         a_logits = self.a_proj(x).float()
         alpha = torch.sigmoid(a_logits)  # (b, s, h)
         # The chunked and fused paths work in log space. log(sigmoid(a)) is taken as
@@ -812,19 +826,28 @@ class GatedDeltaNet(nn.Module):
             # because getting it wrong transposes the state silently: inputs are
             # (batch, seq, heads, dim); its state is (batch, heads, K, V) while the
             # reference scan keeps (batch, heads, V, K). ``scale=1.0`` because the scan
-            # applies no query scaling. This path has not been executed in this
-            # repository -- no GPU, no ``fla`` -- and a GPU equivalence test against
-            # ``_scan`` (output *and* final state) is required before it carries a run.
-            init = None if state is None or state.state is None else state.state.transpose(-1, -2).contiguous()
+            # applies no query scaling. Keep recurrent arithmetic in fp32, just as
+            # in the reference: bf16 WY intermediates corrupted small gate gradients
+            # on the A100 even when the forward output looked close.
+            init = None if state is None or state.state is None else state.state.to(device=q.device).transpose(-1, -2).contiguous()
             out, fla_state = _fla_gated_delta(
-                q=q, k=k, v=v, g=log_alpha.to(q.dtype), beta=beta.to(q.dtype), scale=1.0,
+                q=q.float(), k=k.float(), v=v.float(), g=log_alpha, beta=beta, scale=1.0,
                 initial_state=init, output_final_state=state is not None,
+                # FLA 0.5.2 hard-codes TF32 in its fused 64-token triangular solve,
+                # ignoring TRITON_F32_DEFAULT. The public 32-token route uses the
+                # accurate generic solve and preserves the same recurrence.
+                chunk_size=32,
             )
+            out = out.to(q.dtype)
             new_state = None if fla_state is None else fla_state.transpose(-1, -2).contiguous()
-        elif self.chunk_size is not None and s > 1:
-            out, new_state = self._chunk_scan(q, k, v, log_alpha, beta, state, self.chunk_size)
         else:
-            out, new_state = self._scan(q, k, v, alpha, beta, state)
+            # .float() alone does not prevent autocast from rounding matmuls
+            # back to bf16. The reference recurrence must accumulate in fp32.
+            with torch.autocast(device_type=x.device.type, enabled=False):
+                if self.chunk_size is not None and s > 1:
+                    out, new_state = self._chunk_scan(q, k, v, log_alpha, beta, state, self.chunk_size)
+                else:
+                    out, new_state = self._scan(q, k, v, alpha, beta, state)
 
         if state is not None:
             state.state = new_state
@@ -848,7 +871,7 @@ class GatedDeltaNet(nn.Module):
         dtype = torch.float32  # the recurrence is where precision actually matters
 
         S = (
-            state.state.to(dtype)
+            state.state.to(device=q.device, dtype=dtype)
             if state is not None and state.state is not None
             else q.new_zeros(b, h, dv, dk, dtype=dtype)
         )

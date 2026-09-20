@@ -1,0 +1,30 @@
+{
+  "budget-fixed-sum.txt": {
+    "bytes": 1916,
+    "sha256": "c85f5e68f3ac5284aa9714ca6135c59a0deb0947cbf12c49ddf06e4ee16fd25a"
+  },
+  "budget-learned-mix.txt": {
+    "bytes": 1960,
+    "sha256": "8578c3bbd5cc4561cf6ec45bff718b9382cdcf98612bd7931249c8e1a4df80bd"
+  },
+  "compute-plan.txt": {
+    "bytes": 4394,
+    "sha256": "97965c95434cffd5fa234b1d454bf95e67aed1289c73d9661d11c05aff540579"
+  },
+  "design-search.txt": {
+    "bytes": 1432,
+    "sha256": "ee727c52e0cad306de121c7c562087eec44fc7c348db58454d9b64654920887f"
+  },
+  "fixed_sum.json": {
+    "bytes": 3279,
+    "sha256": "09454eb1da2f2f94ccc481724626379b5348bf2290f84a5e341a25b9c85f2933"
+  },
+  "learned_mix.json": {
+    "bytes": 3290,
+    "sha256": "167e4a64b035cd7a27f5f1a16f3136d0189a4ad15df40f774cce84bb2825220b"
+  },
+  "protocol.json": {
+    "bytes": 4025,
+    "sha256": "1bd62f90d8c38f2fe61cc1bd6911b5f35279aca598ce96395b1d4627ee11d114"
+  }
+}

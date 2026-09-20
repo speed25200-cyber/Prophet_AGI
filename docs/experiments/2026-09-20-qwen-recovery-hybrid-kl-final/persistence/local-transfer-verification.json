@@ -1,0 +1,75 @@
+{
+  "complete": true,
+  "protocol": "recovered-checkpoint-local-transfer-verification-v1",
+  "verified_at_utc": "2026-09-20T02:00:15.855647+00:00",
+  "checkpoint": {
+    "step": 2048,
+    "slot": 0,
+    "sha256": "d2b8cc68424da4e3d1ee030fed2ffec4a088e1a14ced9e377965092a7c95d118",
+    "bytes": 3707789145,
+    "extra": {}
+  },
+  "parts": [
+    {
+      "name": "prophet-hybrid-kl-step002048.pt.part00",
+      "bytes": 536870912,
+      "sha256": "cb57dc4d9d985838c0e8c2e064360fb17ab79cd86183baf04bc69833a1c6f9e3"
+    },
+    {
+      "name": "prophet-hybrid-kl-step002048.pt.part01",
+      "bytes": 536870912,
+      "sha256": "1ffb96ba2d12527785a11052e53303da347e6b74be49d11026aa828bcf997ecc"
+    },
+    {
+      "name": "prophet-hybrid-kl-step002048.pt.part02",
+      "bytes": 536870912,
+      "sha256": "754072f43b804aad4efe4d6468b75cd1a2a4a148b7bcacc9a4a3f8aada3bd0c8"
+    },
+    {
+      "name": "prophet-hybrid-kl-step002048.pt.part03",
+      "bytes": 536870912,
+      "sha256": "7230c632e04bf81c4bd0823be5f50f8152f8bd508baa608d9281a953c9ee4383"
+    },
+    {
+      "name": "prophet-hybrid-kl-step002048.pt.part04",
+      "bytes": 536870912,
+      "sha256": "4099a4878be4fd891d5b8cbb809dca857599bc4da8ddac53415f4fc02c0935cf"
+    },
+    {
+      "name": "prophet-hybrid-kl-step002048.pt.part05",
+      "bytes": 536870912,
+      "sha256": "06961a1d58b9123d2854a3a46e2535e82b1af16836128e29056a227d43dc9238"
+    },
+    {
+      "name": "prophet-hybrid-kl-step002048.pt.part06",
+      "bytes": 486563673,
+      "sha256": "659f9f6080dd4613dcaad5131e4b02f9dcf87cb68af6e38dd357eaaa145c8f0c"
+    }
+  ],
+  "captured_source_manifest_sha256": "24850603f988d92b1bbb0e3c543b48043812e8650c087a6c3f1a5d1126886ecd",
+  "source_record_method": "Transfer state read from Colab notebook output in executions 270 and 271; this JSON records the observed fields rather than original manifest file bytes.",
+  "metadata": {
+    "recovery.json": {
+      "bytes": 9344,
+      "sha256": "90d1ce6acf047282aabc4fb5a96faca3aa5438bdd7f8735fc719927fbe80e9bb"
+    },
+    "manifest.json": {
+      "bytes": 462,
+      "sha256": "c0156fc39075b974ef4bbe3ef048e46ef16b1f9583f379a396887b8c4705c39e"
+    },
+    "evaluation-step-002048.json": {
+      "bytes": 86868,
+      "sha256": "9d2e2563bb464d8580d02ebaaf97895d881d956c8720d55744b37f4213787a17"
+    },
+    "training.jsonl": {
+      "bytes": 567616,
+      "sha256": "c1be968cd724d61efd95749a4590c8dfa7e41c8f81978d29e8e2f03b8369d666"
+    }
+  },
+  "colab_audit_sha256": "70376ee369f770bdbb60250dd6f690c0d6b6012109afb246f7fa7980bc89aded",
+  "local_audit_sha256": "579d026b4514ce798ac331ea54d5dd5fb7a359f4ea854a4cb7ae20ba90524783",
+  "audit_matches_colab_except_torch_version": true,
+  "colab_torch": "2.11.0+cu128",
+  "local_torch": "2.14.0+cpu",
+  "scope": "Exact original checkpoint reconstructed and restricted-loaded on the local PC outside the Colab runtime. All seven parts, full checkpoint bytes, metadata, contract, config, saved RNG and tensor finiteness verified. No new inference, CUDA check, Drive persistence claim or performance comparison between runtimes."
+}

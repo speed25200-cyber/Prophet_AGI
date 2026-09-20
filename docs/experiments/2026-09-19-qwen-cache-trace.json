@@ -1,0 +1,272 @@
+{
+  "scope": "one fixed 128-token prefix, CPU float32; hybrid uses fixed k=5",
+  "model": "hybrid_initialization",
+  "checkpoint_sha256": "cfa8f33e3e588a13fb430a1427a5e9f842395d169822f9c55e7bd13a0ca41848",
+  "donor_weights_sha256": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b",
+  "gdn_scan": "chunk64",
+  "document_sha256": "7e7fd2f5cd43e4a09b5ba6278ca5dcc307c30a6987293fcaba4101ea972340e8",
+  "input_ids_sha256": "c04ea11e1e4b312c93bfd47cda1482293776c59530f43f6d5a115fe4eec5b49b",
+  "atol": 0.0001,
+  "rtol": 0.0001,
+  "paths": {
+    "chunked_prefill_then_decode": {
+      "all_logits_finite": true,
+      "max_absolute_error": 6.937980651855469e-05,
+      "max_tolerance_ratio": 0.5176414847373962,
+      "passed": true,
+      "argmax_matches": 128,
+      "positions": 128,
+      "cache": {
+        "slots": 28,
+        "position": 128,
+        "attention_bytes": 8388608,
+        "recurrent_bytes": 43909120,
+        "total_bytes": 52297728
+      },
+      "block_errors": {
+        "prelude/0/iteration-0": {
+          "max_absolute_error": 7.152557373046875e-07,
+          "max_relative_l2_error": 6.163959369587246e-07
+        },
+        "prelude/1/iteration-0": {
+          "max_absolute_error": 7.152557373046875e-07,
+          "max_relative_l2_error": 5.976493184789433e-07
+        },
+        "prelude/2/iteration-0": {
+          "max_absolute_error": 2.384185791015625e-06,
+          "max_relative_l2_error": 7.101752999005839e-07
+        },
+        "prelude/3/iteration-0": {
+          "max_absolute_error": 2.384185791015625e-06,
+          "max_relative_l2_error": 7.307373266485229e-07
+        },
+        "core/0/iteration-0": {
+          "max_absolute_error": 3.337860107421875e-06,
+          "max_relative_l2_error": 1.0734009947555023e-06
+        },
+        "core/1/iteration-0": {
+          "max_absolute_error": 4.306435585021973e-06,
+          "max_relative_l2_error": 1.5348706483564456e-06
+        },
+        "core/2/iteration-0": {
+          "max_absolute_error": 5.7220458984375e-06,
+          "max_relative_l2_error": 1.5673313100705855e-06
+        },
+        "core/3/iteration-0": {
+          "max_absolute_error": 7.450580596923828e-06,
+          "max_relative_l2_error": 1.8614127839100547e-06
+        },
+        "core/0/iteration-1": {
+          "max_absolute_error": 1.1444091796875e-05,
+          "max_relative_l2_error": 1.651697402849095e-06
+        },
+        "core/1/iteration-1": {
+          "max_absolute_error": 1.239776611328125e-05,
+          "max_relative_l2_error": 1.78269590378477e-06
+        },
+        "core/2/iteration-1": {
+          "max_absolute_error": 1.33514404296875e-05,
+          "max_relative_l2_error": 1.8636784488990088e-06
+        },
+        "core/3/iteration-1": {
+          "max_absolute_error": 1.5974044799804688e-05,
+          "max_relative_l2_error": 1.923645868373569e-06
+        },
+        "core/0/iteration-2": {
+          "max_absolute_error": 1.6450881958007812e-05,
+          "max_relative_l2_error": 1.7986828879656969e-06
+        },
+        "core/1/iteration-2": {
+          "max_absolute_error": 1.9073486328125e-05,
+          "max_relative_l2_error": 1.9270157736173132e-06
+        },
+        "core/2/iteration-2": {
+          "max_absolute_error": 2.008676528930664e-05,
+          "max_relative_l2_error": 1.98606176127214e-06
+        },
+        "core/3/iteration-2": {
+          "max_absolute_error": 2.1502375602722168e-05,
+          "max_relative_l2_error": 2.0186544134048745e-06
+        },
+        "core/0/iteration-3": {
+          "max_absolute_error": 2.2411346435546875e-05,
+          "max_relative_l2_error": 1.942241624419694e-06
+        },
+        "core/1/iteration-3": {
+          "max_absolute_error": 2.384185791015625e-05,
+          "max_relative_l2_error": 2.0355896594992373e-06
+        },
+        "core/2/iteration-3": {
+          "max_absolute_error": 2.5153160095214844e-05,
+          "max_relative_l2_error": 2.090652742481325e-06
+        },
+        "core/3/iteration-3": {
+          "max_absolute_error": 2.562999725341797e-05,
+          "max_relative_l2_error": 2.115892357323901e-06
+        },
+        "core/0/iteration-4": {
+          "max_absolute_error": 2.6702880859375e-05,
+          "max_relative_l2_error": 2.038502316281665e-06
+        },
+        "core/1/iteration-4": {
+          "max_absolute_error": 2.8371810913085938e-05,
+          "max_relative_l2_error": 2.0957952528988244e-06
+        },
+        "core/2/iteration-4": {
+          "max_absolute_error": 3.1948089599609375e-05,
+          "max_relative_l2_error": 2.162451892218087e-06
+        },
+        "core/3/iteration-4": {
+          "max_absolute_error": 3.62396240234375e-05,
+          "max_relative_l2_error": 2.203075609941152e-06
+        },
+        "coda/0/iteration-0": {
+          "max_absolute_error": 9.1552734375e-05,
+          "max_relative_l2_error": 2.872387312891078e-06
+        },
+        "coda/1/iteration-0": {
+          "max_absolute_error": 0.0001277923583984375,
+          "max_relative_l2_error": 2.918974359999993e-06
+        },
+        "coda/2/iteration-0": {
+          "max_absolute_error": 0.000194549560546875,
+          "max_relative_l2_error": 3.2212942642217968e-06
+        },
+        "coda/3/iteration-0": {
+          "max_absolute_error": 0.00019121170043945312,
+          "max_relative_l2_error": 3.562714937288547e-06
+        }
+      }
+    },
+    "tokenwise": {
+      "all_logits_finite": true,
+      "max_absolute_error": 0.0014647841453552246,
+      "max_tolerance_ratio": 10.30961799621582,
+      "passed": false,
+      "argmax_matches": 128,
+      "positions": 128,
+      "cache": {
+        "slots": 28,
+        "position": 128,
+        "attention_bytes": 8388608,
+        "recurrent_bytes": 43909120,
+        "total_bytes": 52297728
+      },
+      "block_errors": {
+        "prelude/0/iteration-0": {
+          "max_absolute_error": 3.814697265625e-06,
+          "max_relative_l2_error": 1.8874496845455724e-06
+        },
+        "prelude/1/iteration-0": {
+          "max_absolute_error": 3.814697265625e-06,
+          "max_relative_l2_error": 1.785971562640043e-06
+        },
+        "prelude/2/iteration-0": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 2.455946969348588e-06
+        },
+        "prelude/3/iteration-0": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 3.083676574533456e-06
+        },
+        "core/0/iteration-0": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 3.246575033699628e-06
+        },
+        "core/1/iteration-0": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 5.216565568844089e-06
+        },
+        "core/2/iteration-0": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 1.5877616533543915e-05
+        },
+        "core/3/iteration-0": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 1.6137280908878893e-05
+        },
+        "core/0/iteration-1": {
+          "max_absolute_error": 0.0009765625,
+          "max_relative_l2_error": 1.2778446944139432e-05
+        },
+        "core/1/iteration-1": {
+          "max_absolute_error": 0.0009765625,
+          "max_relative_l2_error": 1.3104637218930293e-05
+        },
+        "core/2/iteration-1": {
+          "max_absolute_error": 0.0009765625,
+          "max_relative_l2_error": 1.8222330254502594e-05
+        },
+        "core/3/iteration-1": {
+          "max_absolute_error": 0.0009765625,
+          "max_relative_l2_error": 1.756965139065869e-05
+        },
+        "core/0/iteration-2": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 1.536565468995832e-05
+        },
+        "core/1/iteration-2": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 1.6022853742470033e-05
+        },
+        "core/2/iteration-2": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 1.692417026788462e-05
+        },
+        "core/3/iteration-2": {
+          "max_absolute_error": 0.00048828125,
+          "max_relative_l2_error": 1.7319411199423485e-05
+        },
+        "core/0/iteration-3": {
+          "max_absolute_error": 0.0006103515625,
+          "max_relative_l2_error": 1.562499710416887e-05
+        },
+        "core/1/iteration-3": {
+          "max_absolute_error": 0.0006103515625,
+          "max_relative_l2_error": 1.6728345144656487e-05
+        },
+        "core/2/iteration-3": {
+          "max_absolute_error": 0.0006103515625,
+          "max_relative_l2_error": 1.708492163743358e-05
+        },
+        "core/3/iteration-3": {
+          "max_absolute_error": 0.0006103515625,
+          "max_relative_l2_error": 1.7423350072931498e-05
+        },
+        "core/0/iteration-4": {
+          "max_absolute_error": 0.000732421875,
+          "max_relative_l2_error": 1.737592538120225e-05
+        },
+        "core/1/iteration-4": {
+          "max_absolute_error": 0.000732421875,
+          "max_relative_l2_error": 1.828846325224731e-05
+        },
+        "core/2/iteration-4": {
+          "max_absolute_error": 0.000732421875,
+          "max_relative_l2_error": 1.933770727191586e-05
+        },
+        "core/3/iteration-4": {
+          "max_absolute_error": 0.000732421875,
+          "max_relative_l2_error": 1.9637833247543313e-05
+        },
+        "coda/0/iteration-0": {
+          "max_absolute_error": 0.0018825531005859375,
+          "max_relative_l2_error": 6.0037193179596215e-05
+        },
+        "coda/1/iteration-0": {
+          "max_absolute_error": 0.0029370784759521484,
+          "max_relative_l2_error": 6.464836042141542e-05
+        },
+        "coda/2/iteration-0": {
+          "max_absolute_error": 0.00365447998046875,
+          "max_relative_l2_error": 6.912411481607705e-05
+        },
+        "coda/3/iteration-0": {
+          "max_absolute_error": 0.03212928771972656,
+          "max_relative_l2_error": 0.00011632531095528975
+        }
+      }
+    }
+  },
+  "passed": false
+}

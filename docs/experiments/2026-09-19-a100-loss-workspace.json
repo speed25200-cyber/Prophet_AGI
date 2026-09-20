@@ -1,0 +1,66 @@
+{
+  "revision": "2340ea64529a4a8b23a2508524cfc4b156eaeb73",
+  "device": "NVIDIA A100-SXM4-40GB",
+  "device_memory_gib": 39.4935302734375,
+  "torch": "2.11.0+cu128",
+  "cuda": "12.8",
+  "python": "3.13.15",
+  "fla_core": "0.5.2",
+  "triton": "3.6.0",
+  "fused_chunk_size": 32,
+  "triton_f32_default": "tf32x3",
+  "batch_size": 8,
+  "seq_len": 2048,
+  "warmup_steps_excluded": 2,
+  "measured_steps": 5,
+  "optimizer_updates": true,
+  "data": "synthetic random tokens; not language-quality evidence",
+  "method": "four separate subprocesses on one runtime, in listed order; no throughput significance claim",
+  "gpu_tests": {"passed": 8, "seconds": 271.24},
+  "results": [
+    {
+      "config": "configs/prophet_r04_loop.json",
+      "loss_chunk_tokens": null,
+      "kernel_loop_k": 4,
+      "kernel_max_abs_error": 0.00002703070640563965,
+      "seconds_per_step": 1.9256940844000383,
+      "tokens_per_second": 8508.101121941461,
+      "peak_allocated_gib": 16.742992401123047,
+      "predicted_gib": 6.812577247619629,
+      "projected_100m_token_hours": 3.2648622036404724
+    },
+    {
+      "config": "configs/prophet_r04_loop.json",
+      "loss_chunk_tokens": 512,
+      "kernel_loop_k": 4,
+      "kernel_max_abs_error": 0.00002703070640563965,
+      "seconds_per_step": 1.9114792079999916,
+      "tokens_per_second": 8571.372333755498,
+      "peak_allocated_gib": 11.597368717193604,
+      "predicted_gib": 6.812577247619629,
+      "projected_100m_token_hours": 3.2407620035807154
+    },
+    {
+      "config": "configs/prophet_r04_plain.json",
+      "loss_chunk_tokens": null,
+      "kernel_loop_k": 1,
+      "kernel_max_abs_error": 0.0004344917833805084,
+      "seconds_per_step": 2.109361471200009,
+      "tokens_per_second": 7767.279446267308,
+      "peak_allocated_gib": 20.84237289428711,
+      "predicted_gib": 12.914612770080566,
+      "projected_100m_token_hours": 3.576255749511734
+    },
+    {
+      "config": "configs/prophet_r04_plain.json",
+      "loss_chunk_tokens": 512,
+      "kernel_loop_k": 1,
+      "kernel_max_abs_error": 0.0004344917833805084,
+      "seconds_per_step": 2.0990253249999116,
+      "tokens_per_second": 7805.527548840169,
+      "peak_allocated_gib": 16.6597580909729,
+      "predicted_gib": 12.914612770080566,
+      "projected_100m_token_hours": 3.5587316301132397
+    }
+  ]
+}

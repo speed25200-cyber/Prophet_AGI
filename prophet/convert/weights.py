@@ -8,26 +8,24 @@ very different confidence:
   the donor's ``head_dim`` and ``n_kv_heads`` precisely so this path applies as widely as
   possible.
 - **Averaged copy.** The weight-shared core is initialised from several donor middle
-  layers at once. Consecutive layers of a trained transformer compute similar updates, so
-  their mean is a defensible starting point for a block that will be applied repeatedly —
-  but it is an initialisation, not an equivalence.
+  layers at once. This is an initialization candidate, not an equivalence: feature
+  alignment and recovered quality must be measured on actual donor weights.
 - **Heuristic seed.** Gated-delta layers have no donor counterpart. Their query and key
   projections take the donor's attention projections (both map the residual stream into a
   space where a dot product means similarity, so the correspondence is real), the value
   path is widened by the expansion factor, and the output projection places the donor's
   weights in the first half with **zeros in the second**, so the widened capacity starts
-  inert and the layer's initial function is as close to the donor's attention as a
-  bounded-state mixer can be.
+  inert. This preserves projection shapes; it does not establish functional proximity
+  to the donor's attention or an advantage over random initialization.
 
-Nothing here claims the converted model works. It claims the conversion is a better
-starting point than random initialisation, which is what the recovery training then has
-to demonstrate.
+This records a donor-derived initialization. Whether it works or is a better starting
+point than random initialization must be measured through recovery experiments.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
 
 import torch
 from torch import Tensor
@@ -73,8 +71,8 @@ class TransferReport:
         lines = [
             "# Weight transfer report",
             "",
-            f"| Origin | Tensors |",
-            f"|---|---:|",
+            "| Origin | Tensors |",
+            "|---|---:|",
             f"| direct copy | {len(self.copied)} |",
             f"| averaged from several donor layers | {len(self.averaged)} |",
             f"| heuristically seeded from attention | {len(self.seeded)} |",
@@ -146,8 +144,7 @@ def _seed_gdn_from_attention(
             return False
         if current.shape != value.shape:
             report.mismatched.append(
-                f"{full}: target {tuple(current.shape)} against donor-derived "
-                f"{tuple(value.shape)}"
+                f"{full}: target {tuple(current.shape)} against donor-derived {tuple(value.shape)}"
             )
             return False
         target[full] = value.to(current.dtype)
@@ -214,8 +211,7 @@ def convert_state_dict(
             return
         if current.shape != value.shape:
             report.mismatched.append(
-                f"{target_name}: target {tuple(current.shape)} against donor "
-                f"{tuple(value.shape)}"
+                f"{target_name}: target {tuple(current.shape)} against donor {tuple(value.shape)}"
             )
             return
         target_state[target_name] = value.to(current.dtype).clone()
@@ -229,9 +225,9 @@ def convert_state_dict(
             # accident of reference semantics: copy or serialise the dict first and the
             # stale lm_head entry silently overwrites the donor embedding on load. The
             # model still runs, and is quietly ruined.
-            if "lm_head.weight" in target_state and "embed.weight" in target_state:
+            if "lm_head.weight" in target_state and "embed.weight" in report.copied:
                 target_state["lm_head.weight"] = target_state["embed.weight"]
-                report.copied.append("lm_head.weight (tied to embed)")
+                report.copied.append("lm_head.weight")
         else:
             copy_into("lm_head.weight", _get(donor_state, "lm_head"), report.copied)
     copy_into("norm_out.weight", _get(donor_state, "final_norm"), report.copied)
@@ -259,8 +255,13 @@ def convert_state_dict(
                 )
         else:
             _seed_gdn_from_attention(
-                target_state, prefix, donor_state, layers,
-                n_heads=donor.n_heads, n_kv_heads=donor.n_kv_heads, head_dim=donor.head_dim,
+                target_state,
+                prefix,
+                donor_state,
+                layers,
+                n_heads=donor.n_heads,
+                n_kv_heads=donor.n_kv_heads,
+                head_dim=donor.head_dim,
                 report=report,
             )
 

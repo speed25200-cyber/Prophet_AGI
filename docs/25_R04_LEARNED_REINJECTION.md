@@ -1,0 +1,200 @@
+# R04: controlled learned input reinjection
+
+Status: both 512-step runs are complete and independently verified. The seed-zero
+quality screen fails all four preregistered criteria. The experimental option
+remains disabled in all existing model configurations and is not adopted.
+
+## Why this experiment
+
+The [completed depth-policy comparison](23_R04_DEPTH_ADAPTATION.md) improves
+robustness to loop count but fails its primary criterion: six loops remain
+0.4312% worse than the variable-depth model's own four loops. The
+[internal observations](24_R04_RECURRENCE_OBSERVATION.md) do not show all token
+states collapsing into one direction and do not identify a causal defect.
+
+The next hypothesis is that a learned combination of the current state and
+original input can make later loops more useful than a fixed sum. It remains a
+hypothesis: changes in normalization, supervision or the mixer might matter more.
+
+The primary paper [Scaling by Thinking in Continuous Space, sections 3.2 and 4.3](https://arxiv.org/html/2502.05171v2)
+uses a learned projection of concatenated state and input, together with particular
+normalization and initialization choices. Its small-scale alternatives behave
+similarly, while its larger experiments favor concatenation. This motivates a
+controlled test here; it does not establish that reinjection causes our failure
+or that the paper's results transfer to our size, GDN core or data budget.
+
+## Exactly one optional component
+
+Let `h` be the previous recurrent state and `e` the prelude output:
+
+```text
+fixed_sum:   core_input = h + e
+learned_mix: core_input = h + e + W concat(h, e)
+```
+
+`W` is one shared, bias-free `2d -> d` matrix initialized to zero. The explicit
+original sum preserves the initial computation. Creating the adapter after the
+base model's initialization also preserves the base tensors under the same seed.
+Training resets the random seed after model construction and parent loading.
+No normalizer, cache layout, auxiliary head or mixer is changed.
+
+The switch is `recurrent.input_adapter = "residual_linear"`; its default is
+`"none"`. Validation requires recurrence and input injection. Old configurations
+that omit the field keep their topology. Historical depth-plan configurations are
+compared after resolving defaults, while checkpoint experiment identities remain
+strict and prevent resuming an old run under changed source code.
+
+At dimension 1,792, this adds 6,422,528 parameters: 374,689,648 versus 381,112,176.
+The experiment therefore tests the added component, not parameter-matched or
+FLOP-matched alternatives. The estimated forward FLOP increase at k4 is 2.66%.
+The estimated k6 training memory is 7.69 versus 8.69 GiB; actual prior baseline
+allocation was higher, so these estimates never replace the CUDA memory gate.
+
+## Frozen comparison and compute limit
+
+The [generated plan](experiments/2026-09-20-r04-reinjection-plan/protocol.json)
+binds the original step-4,096 checkpoint, configurations, recipe and decision.
+Its SHA256 is `1bd62f90d8c38f2fe61cc1bd6911b5f35279aca598ce96395b1d4627ee11d114`.
+Budget, design-search and compute-plan output accompany the plan and its manifest.
+
+Both arms start from that original checkpoint, not the completed depth adaptation.
+They use the same loader cursor, seed 0, new optimizers, schedule and 512 updates
+of 8 x 2,048 tokens. Both sample depths uniformly from two through six and propagate
+gradients through every visited loop. Their actual sampled histories must match.
+Each model sees 8,388,608 additional tokens, or 3.8877 cumulative corpus passes;
+the four-pass ceiling remains enforced.
+
+The incremental allowance is at most two A100-hours: 1,800 seconds for gates and
+5,400 seconds for the paired continuation. This is a bounded additional R04 test,
+not an allocation of the unfunded generic depth-ablation line or the whole
+illustrative 300-hour project plan. Resource availability must be checked before
+launch. There is no intermediate quality-based recipe selection or early stop.
+
+Before continuation, require all of:
+
+1. Exact initial hidden and full-logit equality at k4 and k6 on the next actual
+   8 x 2,048 training batch under CUDA BF16 autocast.
+2. Original full-validation k4 reproduced in both arms.
+3. Three finite full-size k6 optimizer updates, peak allocated memory below 90%
+   of actual device capacity.
+4. In both arms, eight continuous updates exactly equal one plus seven updates
+   in separate processes: every model/optimizer tensor, RNG, loader, contract,
+   depth history and per-document evaluation.
+
+The continuous prefixes are preselected for continuation. Training stops on any
+failed gate, changed provenance, nonfinite update or exceeded deadline. The driver
+uses the previously validated strict CUDA numerical policy and retains its identity
+in all reports and checkpoints. CPU tests cannot establish the CUDA gates.
+
+## Primary decision
+
+All 376 original development documents are scored at k1/2/4/6/8. A pass requires
+all four conditions:
+
+- Learned k6 BPB is at least 0.5% better than its own k4.
+- The paired 95% interval for learned CE(k6)-CE(k4) is entirely below zero.
+- Learned k4 BPB is within 1% of control k4.
+- Learned k6 BPB is better than control k6.
+
+The bootstrap uses 10,000 paired whole-document draws, PCG64 seed 0, linear
+quantiles and token-weighted CE. The program rejects different experiment
+identities, depth histories, document rows or aggregate scores. It reuses the
+audited statistical calculation without relabeling old depth-policy runs.
+
+Even a pass only justifies confirmation with new seeds, held-out data and actual
+capability tasks. Development data has already guided R&D and known benchmark
+overlaps remain. Neither this screen nor prediction loss demonstrates reasoning,
+an assistant, AGI or readiness for architectural adoption.
+
+## Final result: all four quality checks fail
+
+Both preselected continuous prefixes finish 512 updates and 8,388,608 additional
+input tokens, with matching depth histories and no nonfinite updates. The pair,
+final checkpoint audit and screen finish in 2,772.52 seconds under the 5,400-second
+ceiling. Every recorded terminal process exits zero. Numerical and restart
+correctness therefore do not explain away the negative quality outcome.
+
+All 376 documents contain 393,040 scored targets and 1,750,592 scored bytes:
+
+| Loops | Fixed-sum CE | Learned-mix CE | Fixed-sum BPB | Learned-mix BPB |
+|---:|---:|---:|---:|---:|
+| 1 | 4.083040002 | 4.202920224 | 1.322543561 | 1.361374142 |
+| 2 | 3.874768834 | 3.890272291 | 1.255082137 | 1.260103885 |
+| 4 | 3.846897464 | 3.896996378 | 1.246054280 | 1.262281894 |
+| 6 | 3.863485786 | 3.992384843 | 1.251427428 | 1.293179314 |
+| 8 | 3.980072203 | 4.340850329 | 1.289191108 | 1.406051287 |
+
+Learned k6 BPB is **2.4477% worse than its own k4**, not at least 0.5% better.
+The paired CE(k6)-CE(k4) is +0.09538847 nats/token, with 95% document interval
+**[0.09222346, 0.09869129]**, entirely above zero. Learned k4 is **1.3023% worse
+than control k4**, exceeding the 1% preservation allowance. Learned k6 is
+**3.3363% worse than control k6**. Thus all four primary conditions fail.
+
+The fixed-sum control exactly reproduces the earlier variable-depth arm's
+per-document results at every measured depth and its full sampled history.
+Both new arms use mean training depth 3.94140625, but the learned component still
+adds parameters and FLOPs. This result rejects this warm-start component/recipe
+at this scale; it neither identifies a universal cause nor disproves learned
+reinjection under other training conditions. It does not justify a success-
+conditioned seed extension or more passes over the same bounded pilot corpus.
+
+The separately preselected [native ARC evaluation](26_NATIVE_CAPABILITY_EVAL.md)
+continues regardless of this verdict and cannot reverse it. No improved reasoning
+or architectural adoption is established.
+
+## Execution and reproduction
+
+The full local suite passes **858 tests with 21 skips**. Component tests cover
+unchanged initial predictions/base gradients, an effective adapter update, learned
+full-versus-cached decoding, checkpointed backward, old-config compatibility,
+budget accounting and both miniature CLI interrupted restarts. The new screen
+rejects unequal paired depth histories and mislabeled old experiments. The local
+run skips CUDA; neither CPU restart equivalence nor these test counts establish
+full-size GPU determinism or scientific improvement.
+
+The actual A100 run at revision `dce35abc439fdeeb8f1482b1219dee3cc242c267`
+subsequently passes all **52 targeted CPU/CUDA tests without skips**. Initial
+hidden states and full logits match exactly at k4 and k6 for the real 8 x 2,048
+batch. Both arms reproduce every original k4 validation document before training.
+Their three k6 preflight updates remain finite, using 13,444,140,032 peak allocated
+bytes for the control and 14,214,843,392 for the adapter, below the 90% limit on
+the 42,405,855,232-byte device.
+
+Both full-size interrupted restart gates pass. Eight continuous updates exactly
+equal one plus seven in separate processes: 315 tensors / 867,172,946 elements
+for the control, and 317 tensors / 880,018,002 elements for the adapter, including
+optimizer state. All other checkpoint values and document evaluations agree.
+Both sampled histories are `[6, 6, 5, 2, 5, 6, 4, 5]`. The gate queue finishes in
+949.40 seconds under its 1,800-second limit; all fourteen process handles exit zero.
+
+The [48-source export](experiments/2026-09-20-r04-reinjection-gates/export-manifest.json)
+is downloaded and independently [verified locally](experiments/2026-09-20-r04-reinjection-gates/verification.json),
+including source identities, terminal PIDs, baseline rows, paired logs and
+evaluations. Its ZIP is 353,122 bytes with SHA256
+`b3a61f1e268994132b2f566fa10d2eb7f2fb6bb93848166efaab5c75f7a8c935`.
+Tensor equality was checked by the A100 auditor; the local verifier does not
+reload those weights. These are numerical/restart results, not quality results.
+
+Only after all gates passed, the preselected continuous prefixes started the
+paired 512-step continuation, with the unchanged `dce35ab` source and 5,400-second
+pair-wide ceiling. The [final evidence verifier](experiments/2026-09-20-r04-reinjection-final/verify.py)
+now reproduces the full screen and all decision bits. The [verification receipt](experiments/2026-09-20-r04-reinjection-final/verification.json)
+checks all twenty exported source files, continuity with the eight-step prefixes,
+all 512 training records per arm, published checkpoint metadata and complete
+per-document results. The Colab auditor inspected all checkpoint tensors for
+finiteness; the local verifier does not reload tensors or repeat inference.
+The final ZIP is 420,964 bytes, SHA256
+`1cd634622e1e0bc17558b3bd457ded11f7298819a14c0256700b6325017d331d`.
+
+```bash
+python scripts/gate_r04_input_adapter.py --parent-run PARENT --corpus CORPUS --out equality.json
+python scripts/adapt_r04_reinjection.py --parent-run PARENT --corpus CORPUS --out FRESH --arm learned_mix --mode preflight
+python scripts/adapt_r04_reinjection.py --parent-run PARENT --corpus CORPUS --out RUN --arm learned_mix --max-session-steps 8
+python scripts/audit_r04_restart.py --left CONTINUOUS --right RESUMED --expected-step 8 --out restart.json
+python scripts/summarize_reinjection.py --fixed-sum CONTROL_REPORT --learned-mix LEARNED_REPORT --out screen.json
+```
+
+Repeat preflight and restart gates for `fixed_sum`. CUDA processes must start with
+`CUBLAS_WORKSPACE_CONFIG=:4096:8` and `TRITON_F32_DEFAULT=tf32x3`, in a clean pinned
+checkout with the original runtime. The launch queue must enforce both deadlines;
+these individual commands do not themselves enforce the pair-wide time limit.

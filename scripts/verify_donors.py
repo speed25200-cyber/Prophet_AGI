@@ -40,6 +40,8 @@ FIELD_MAP: dict[str, str] = {
     "ffn_hidden": "intermediate_size",
     "vocab_size": "vocab_size",
     "tie_word_embeddings": "tie_word_embeddings",
+    "rope_theta": "rope_theta",
+    "norm_eps": "rms_norm_eps",
 }
 
 
@@ -114,10 +116,7 @@ def main() -> int:
         print(f"SKIPPED   {key}: could not fetch config.json")
 
     if verified and not failures:
-        print(
-            "\nAll checked donors match. Set verified=True on them in "
-            "prophet/convert/donors.py."
-        )
+        print("\nAll checked donors match. Set verified=True on them in prophet/convert/donors.py.")
     return 1 if failures or unreachable else 0
 
 

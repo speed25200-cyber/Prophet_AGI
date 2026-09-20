@@ -1,0 +1,118 @@
+{
+  "input_report_sha256": "1ca9c67d5d14d48ee1c3d0b318ef4f2165b803eb76507411e4174ad1a2267df9",
+  "method": "independent exhaustive item-level intersections for all 14 reported document/benchmark pairs; 13-word normalization; short items excluded",
+  "results": [
+    {
+      "benchmark": "mmlu",
+      "document_index": 721,
+      "maximum_item_containment": 0.05714285714285714,
+      "items_at_or_above_half": 0,
+      "best_item_index": 683,
+      "maximum_shared_13grams": 2
+    },
+    {
+      "benchmark": "mmlu",
+      "document_index": 3970,
+      "maximum_item_containment": 0.07142857142857142,
+      "items_at_or_above_half": 0,
+      "best_item_index": 3828,
+      "maximum_shared_13grams": 2
+    },
+    {
+      "benchmark": "mmlu",
+      "document_index": 4958,
+      "maximum_item_containment": 0.07441860465116279,
+      "items_at_or_above_half": 0,
+      "best_item_index": 5711,
+      "maximum_shared_13grams": 16
+    },
+    {
+      "benchmark": "mmlu",
+      "document_index": 7227,
+      "maximum_item_containment": 0.12195121951219512,
+      "items_at_or_above_half": 0,
+      "best_item_index": 3111,
+      "maximum_shared_13grams": 5
+    },
+    {
+      "benchmark": "mmlu",
+      "document_index": 13092,
+      "maximum_item_containment": 0.4,
+      "items_at_or_above_half": 0,
+      "best_item_index": 1925,
+      "maximum_shared_13grams": 14
+    },
+    {
+      "benchmark": "mmlu",
+      "document_index": 14804,
+      "maximum_item_containment": 0.020942408376963352,
+      "items_at_or_above_half": 0,
+      "best_item_index": 5934,
+      "maximum_shared_13grams": 8
+    },
+    {
+      "benchmark": "mmlu_pro",
+      "document_index": 4958,
+      "maximum_item_containment": 0.0446927374301676,
+      "items_at_or_above_half": 0,
+      "best_item_index": 4799,
+      "maximum_shared_13grams": 16
+    },
+    {
+      "benchmark": "mmlu_pro",
+      "document_index": 5286,
+      "maximum_item_containment": 0.025423728813559324,
+      "items_at_or_above_half": 0,
+      "best_item_index": 8552,
+      "maximum_shared_13grams": 3
+    },
+    {
+      "benchmark": "mmlu_pro",
+      "document_index": 6484,
+      "maximum_item_containment": 0.0847457627118644,
+      "items_at_or_above_half": 0,
+      "best_item_index": 9902,
+      "maximum_shared_13grams": 10
+    },
+    {
+      "benchmark": "mmlu_pro",
+      "document_index": 13092,
+      "maximum_item_containment": 0.1728395061728395,
+      "items_at_or_above_half": 0,
+      "best_item_index": 11351,
+      "maximum_shared_13grams": 14
+    },
+    {
+      "benchmark": "mmlu_pro",
+      "document_index": 14357,
+      "maximum_item_containment": 0.05084745762711865,
+      "items_at_or_above_half": 0,
+      "best_item_index": 8552,
+      "maximum_shared_13grams": 6
+    },
+    {
+      "benchmark": "mmlu_pro",
+      "document_index": 14804,
+      "maximum_item_containment": 0.02030456852791878,
+      "items_at_or_above_half": 0,
+      "best_item_index": 4779,
+      "maximum_shared_13grams": 8
+    },
+    {
+      "benchmark": "humaneval",
+      "document_index": 5286,
+      "maximum_item_containment": 0.01532567049808429,
+      "items_at_or_above_half": 0,
+      "best_item_index": 78,
+      "maximum_shared_13grams": 4
+    },
+    {
+      "benchmark": "humaneval",
+      "document_index": 14357,
+      "maximum_item_containment": 0.00684931506849315,
+      "items_at_or_above_half": 0,
+      "best_item_index": 129,
+      "maximum_shared_13grams": 4
+    }
+  ]
+}

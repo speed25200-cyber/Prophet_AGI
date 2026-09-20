@@ -1,0 +1,17 @@
+
+==================================== ERRORS ====================================
+_________________ ERROR collecting tests/test_recovery_cli.py __________________
+ImportError while importing test module '/content/prophet-recovery/gpu-repo/tests/test_recovery_cli.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_recovery_cli.py:16: in <module>
+    from tests.test_training import tiny_model_config
+E   ModuleNotFoundError: No module named 'tests.test_training'
+- generated xml file: /content/prophet-recovery/gpu-fp32-pretrain-checks/cuda-restart.xml -
+=========================== short test summary info ============================
+ERROR tests/test_recovery_cli.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 4.65s

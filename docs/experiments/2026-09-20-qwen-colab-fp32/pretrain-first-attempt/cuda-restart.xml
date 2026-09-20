@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="4.653" timestamp="2026-09-19T22:21:27.427104+00:00" hostname="c0f1f9995d24"><testcase classname="" name="tests.test_recovery_cli" time="0.000"><error message="collection failure">ImportError while importing test module '/content/prophet-recovery/gpu-repo/tests/test_recovery_cli.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_recovery_cli.py:16: in &lt;module&gt;
+    from tests.test_training import tiny_model_config
+E   ModuleNotFoundError: No module named 'tests.test_training'</error></testcase></testsuite></testsuites>

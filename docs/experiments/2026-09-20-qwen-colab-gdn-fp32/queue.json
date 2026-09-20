@@ -1,0 +1,64 @@
+{
+  "status": "finished",
+  "revision": "e1480fe52bec76022fe608c72795c1050ccc533e",
+  "gdn_fp32_diagnostic": true,
+  "production_policy_changed": false,
+  "results": {
+    "hybrid-ce": {
+      "pid": 98616,
+      "exit_code": 1,
+      "passed": false,
+      "sha256": "b7aa44dae6e149d89fc8976dcdc499831f79f7356f2bc3933b2ad3bdcbb24e6e",
+      "numerical": {
+        "fp32": {
+          "passed": true,
+          "failed_tensors": 0
+        },
+        "bf16": {
+          "passed": false,
+          "failed_tensors": 118
+        }
+      },
+      "updates": null
+    },
+    "hybrid-kl": {
+      "skipped": true,
+      "reason": "CE numerical or update gate failed"
+    }
+  },
+  "wall_seconds_limit": 1200,
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "/content/prophet-recovery/gpu-repo/scripts/gate_qwen_recovery.py",
+    "--source",
+    "/content/prophet-recovery/source",
+    "--initialization",
+    "/content/prophet-recovery/initializations/hybrid.pt",
+    "--audit",
+    "/content/prophet-recovery/initializations/hybrid-conversion.json",
+    "--train",
+    "/content/prophet-recovery/data/train.jsonl",
+    "--data-audit",
+    "/content/prophet-recovery/gpu-repo/docs/experiments/2026-09-19-qwen-recovery-data.json",
+    "--out",
+    "/content/prophet-recovery/gpu-gdn-fp32-diagnostic/hybrid-ce.json",
+    "--objective",
+    "ce",
+    "--seq-len",
+    "512",
+    "--batch-size",
+    "1",
+    "--grad-accum",
+    "1",
+    "--loop-k",
+    "5",
+    "--chunk-tokens",
+    "128",
+    "--muon-lr",
+    "0.001",
+    "--adamw-lr",
+    "0.00003",
+    "--gdn-fp32-diagnostic"
+  ],
+  "elapsed_seconds": 30.445074702001875
+}

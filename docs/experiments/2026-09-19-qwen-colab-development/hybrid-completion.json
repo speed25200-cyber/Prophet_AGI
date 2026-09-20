@@ -1,0 +1,9 @@
+{
+  "state": {
+    "status": "all_three_full_cpu_baselines_complete",
+    "pid": 90701
+  },
+  "exit_code": 0,
+  "revision": "8ad19d3c60dafd85fc67caf759981f1d765c3405",
+  "report_sha256": "b417855f7aa6267b0e1ea865d0c088727d8fb66fb3e94ef217c7abc90ff50fb6"
+}

@@ -1,0 +1,64 @@
+{
+  "status": "paired_training_and_screen_complete",
+  "revision": "dce35abc439fdeeb8f1482b1219dee3cc242c267",
+  "maximum_seconds": 5400,
+  "outputs": {
+    "fixed_sum": "/content/r04-reinjection-gate-v1/fixed_sum-continuous",
+    "learned_mix": "/content/r04-reinjection-gate-v1/learned_mix-continuous"
+  },
+  "scope": "Continue only the preselected continuous-eight prefixes to 512 under the frozen protocol; no intermediate quality selection.",
+  "gate_export": {
+    "path": "/content/prophet-r04-reinjection-gates.zip",
+    "bytes": 353122,
+    "sha256": "b3a61f1e268994132b2f566fa10d2eb7f2fb6bb93848166efaab5c75f7a8c935",
+    "files": 48
+  },
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/r04-reinjection-code-dce35ab/scripts/summarize_reinjection.py",
+    "--fixed-sum",
+    "/content/r04-reinjection-gate-v1/fixed_sum-continuous/evaluation-step-000512.json",
+    "--learned-mix",
+    "/content/r04-reinjection-gate-v1/learned_mix-continuous/evaluation-step-000512.json",
+    "--out",
+    "/content/r04-reinjection-long-v1/summary.json"
+  ],
+  "pid": 248123,
+  "elapsed_seconds": 2772.521411204005,
+  "processes": {
+    "fixed_sum-to512": {
+      "pid": 236029,
+      "returncode": 0
+    },
+    "learned_mix-to512": {
+      "pid": 241987,
+      "returncode": 0
+    },
+    "final-state-audit": {
+      "pid": 247974,
+      "returncode": 0
+    },
+    "screen": {
+      "pid": 248123,
+      "returncode": 0
+    }
+  },
+  "results": {
+    "fixed_sum": {
+      "step": 512,
+      "report_sha256": "3c071ecbdac43b91a8b0ff7dbc15e56cdf694d5417e751be6ac3235f54a4d76a"
+    },
+    "learned_mix": {
+      "step": 512,
+      "report_sha256": "f93b05730811c493ee97f474b6c08c7e2516ee52117d4bab7d27abfe5c6274f0"
+    }
+  },
+  "seed0_screen_passed": false,
+  "checks": {
+    "learned_mix_k6_improves_own_k4_by_at_least_half_percent": false,
+    "paired_ce_interval_upper_below_zero": false,
+    "learned_mix_k4_within_one_percent_of_control_k4": false,
+    "learned_mix_k6_improves_control_k6": false
+  }
+}

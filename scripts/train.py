@@ -147,6 +147,8 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--seq-len", type=int, default=1024)
     ap.add_argument("--grad-accum", type=int, default=1)
+    ap.add_argument("--loss-chunk-tokens", type=int, default=None,
+                    help="bound CE/z-loss workspaces by recomputing token chunks in backward")
     ap.add_argument("--muon-lr", type=float, default=0.02)
     ap.add_argument("--adamw-lr", type=float, default=3e-3)
     ap.add_argument("--checkpoint-dir", default="checkpoints")
@@ -189,6 +191,8 @@ def main() -> int:
                     help="run without flash-linear-attention, on the blockwise scan. "
                          "For CPU runs; a budgeted A100 run wants the fused kernel")
     args = ap.parse_args()
+    if args.loss_chunk_tokens is not None and args.loss_chunk_tokens < 1:
+        ap.error("--loss-chunk-tokens must be positive")
 
     cfg = ProphetConfig.from_json(args.config)
     cfg.validate()
@@ -253,6 +257,7 @@ def main() -> int:
         batch_size=args.batch_size,
         seq_len=args.seq_len,
         grad_accum_steps=args.grad_accum,
+        loss_chunk_tokens=args.loss_chunk_tokens,
         peak_lr_muon=args.muon_lr,
         peak_lr_adamw=args.adamw_lr,
         checkpoint_every=args.checkpoint_every,
