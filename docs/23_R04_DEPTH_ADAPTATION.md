@@ -3,8 +3,9 @@
 **Status: final frozen-model depth sweep completed; matched adaptation driver
 implemented, six CPU/CUDA tests and both real-shape memory gates passed. The first
 training segment was stopped at step 54 after real-shape preflights showed different
-gradients. Exact full-size reproducibility remains unresolved. No new architecture
-or training policy is adopted.**
+gradients. A strict deterministic numerical policy now reproduces three full-size
+k6 updates across separate processes exactly; interrupted-versus-continuous
+full-size training is the remaining gate. No new architecture is adopted.**
 
 ## Why this experiment
 
@@ -221,3 +222,65 @@ run cannot establish reproducibility. The subsequent instrumented two-process
 probe failed at launch before producing a comparison; its cause remains to inspect.
 Neither observation authorizes resuming the long experiment. Any arithmetic-policy
 change must be recorded as a new run contract with a fresh baseline and both arms.
+
+## Strict deterministic policy and separate-process result
+
+The instrumented probe's launch failure was a malformed newline in its generated
+source, before any GPU computation. The failed script/log are retained. The
+corrected source was syntax-checked before launching two separate processes;
+argument abbreviation was also disabled to keep the wrapper's `--model-repo`
+separate from the driver's `--mode`.
+
+The [new evidence archive](experiments/2026-09-20-r04-strict-determinism/export-manifest.json)
+contains the completed pair. Both processes start from the same 375M parent and
+perform three actual batch-8, sequence-2,048, k6 updates, using the original BF16
+autocast, FP32 weights, TF32 policy, model, data and optimizer. They enable
+`torch.use_deterministic_algorithms(True, warn_only=False)`, disable cuDNN
+benchmarking, enable cuDNN determinism and retain
+`CUBLAS_WORKSPACE_CONFIG=:4096:8`. PyTorch documents these controls separately
+from RNG seeding; custom external kernels still need empirical checks.
+[PyTorch 2.11 reproducibility](https://docs.pytorch.org/docs/2.11/notes/randomness.html).
+
+All **106 gradient tensor hashes match at every update**, and all **107 final
+state tensor hashes match**. Input hashes, CPU/CUDA RNG before forward and after
+backward, initial weights, losses and gradient norms match too. The first gradient
+norm is 5.208903789520264 in both processes. Peak allocated memory remains
+13,444,140,032 bytes. The pair completed in 178.28 seconds including verification,
+loading, evaluation and hashing. Its approximately eight-second instrumented
+updates include CPU copies/hashing and are not a training-throughput benchmark.
+The separate uninstrumented strict preflight measured roughly 3.03–3.44 seconds
+per update; this short test is not a sustained speed measurement.
+
+The downloaded 137,722-byte ZIP has SHA256
+`3746241e1fa9771e3d61326a035956fdfd7553ed986e699443c5dc4113cb16d1`.
+The [independent verifier](experiments/2026-09-20-r04-strict-determinism/verify.py)
+checks all 24 original file hashes, executed wrapper/driver identity, parent/data/
+runtime, unchanged full-validation baseline rows, and every reported tensor/RNG/
+input hash. It does not execute the GPU computations again or isolate a specific
+kernel as the cause of the legacy-policy discrepancy.
+
+The adaptation CLI now records **`r04-depth-adaptation-v2`** and the explicit
+strict numerical policy in its run identity and checkpoint contract. It requires
+the cuBLAS workspace setting before Python starts. Old v1 outputs are retained;
+they must not resume under changed arithmetic. Both v2 arms start afresh from the
+same original parent under the already-budgeted 512-step schedules. Policy,
+model/data/schedule and any selected backend flags cannot silently change on resume.
+The original plan artifacts remain immutable; this section records the numerical
+amendment and its evidence.
+
+Before any long v2 segment, run the updated miniature CPU/CUDA suite, both new
+memory preflights, and actual-size interruption tests for both arms: eight
+continuous updates versus one update plus a new process for the remaining seven.
+Compare all checkpoint tensors (model and optimizers), RNG, loader, depth history,
+contract and counters exactly, plus per-document evaluation. These short tests
+are diagnostic runs and cannot be used to select the depth recipe. The same
+published step-512 decision rule remains required afterward.
+
+`scripts/audit_r04_restart.py` verifies both published checkpoint byte hashes,
+restricted-loads their tensors, rejects nonfinite state, and compares the entire
+state recursively without numerical tolerance. Its report also requires identical
+per-document evaluations. It is exercised by both miniature CLI restart cases;
+a corruption test demonstrates rejection of changed optimizer momentum or RNG.
+The updated local targeted suite passes seven tests with two CUDA skips. Before
+adding this auditor, the full strict-policy suite passed 809 tests with 18 skips
+in 168.95 seconds; that result does not substitute for the actual A100 prefix gate.

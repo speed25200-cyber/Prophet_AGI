@@ -1,0 +1,24 @@
+{
+  "initial_equal": true,
+  "steps": [
+    {
+      "inputs_equal": true,
+      "rng_before_equal": true,
+      "rng_after_equal": true,
+      "different_gradients": []
+    },
+    {
+      "inputs_equal": true,
+      "rng_before_equal": true,
+      "rng_after_equal": true,
+      "different_gradients": []
+    },
+    {
+      "inputs_equal": true,
+      "rng_before_equal": true,
+      "rng_after_equal": true,
+      "different_gradients": []
+    }
+  ],
+  "final_different": []
+}

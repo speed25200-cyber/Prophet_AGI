@@ -1,0 +1,11 @@
+{
+  "verified_source_files": 24,
+  "independent_processes": 2,
+  "updates_per_process": 3,
+  "gradient_tensor_hashes_equal_each_step": 106,
+  "final_state_tensor_hashes_equal": 107,
+  "input_and_rng_hashes_equal_each_step": true,
+  "losses_and_gradient_norms_equal": true,
+  "peak_allocated_bytes_each": 13444140032,
+  "scope": "Repeated disposable full-size k6 preflights, not interrupted training. Hashes are reported by the instrumented GPU processes and checked here; no second local GPU execution or isolated-kernel cause is claimed. Instrumented times include CPU hashing and are not throughput measurements."
+}

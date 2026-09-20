@@ -20,7 +20,24 @@ from prophet.modeling.model import ProphetModel
 from prophet.train.checkpoint import CheckpointManager
 from prophet.train.loop import TrainConfig, Trainer
 from scripts import adapt_r04_depth as driver
+from scripts.audit_r04_restart import audit, compare_states
 from tests.test_training import tiny_model_config
+
+
+@pytest.fixture(autouse=True)
+def restore_numerical_flags():
+    enabled = torch.are_deterministic_algorithms_enabled()
+    warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    benchmark = torch.backends.cudnn.benchmark
+    deterministic = torch.backends.cudnn.deterministic
+    matmul_tf32 = torch.backends.cuda.matmul.allow_tf32
+    cudnn_tf32 = torch.backends.cudnn.allow_tf32
+    yield
+    torch.use_deterministic_algorithms(enabled, warn_only=warn_only)
+    torch.backends.cudnn.benchmark = benchmark
+    torch.backends.cudnn.deterministic = deterministic
+    torch.backends.cuda.matmul.allow_tf32 = matmul_tf32
+    torch.backends.cudnn.allow_tf32 = cudnn_tf32
 
 
 def assert_equal(left, right):
@@ -174,6 +191,10 @@ def test_cli_warm_start_resume_and_interrupted_final_evaluation(tmp_path, monkey
     assert_equal(initial["model"], {k: v.cpu() for k, v in parent["model"].items()})
     assert initial["loader"] == parent["loader"]
     assert all(not opt["state"] for opt in initial["optimizers"])
+    identity = initial["training_contract"]["run_identity"]
+    assert identity["protocol"] == "r04-depth-adaptation-v2"
+    assert identity["numerical_policy"]["deterministic_algorithms"] is True
+    assert identity["numerical_policy"]["warn_only"] is False
     other_arm = "fixed4" if arm == "uniform2to6" else "uniform2to6"
     with pytest.raises(ValueError, match="another adaptation experiment"):
         run(resumed, other_arm)
@@ -182,6 +203,8 @@ def test_cli_warm_start_resume_and_interrupted_final_evaluation(tmp_path, monkey
     resumed_state, _ = CheckpointManager(resumed / "checkpoints").load_latest()
     continuous_state, _ = CheckpointManager(continuous / "checkpoints").load_latest()
     assert_equal(resumed_state, continuous_state)
+    audit_report = audit(resumed, continuous, 4)
+    assert audit_report["passed"] and audit_report["state_comparison"]["tensors"] > 0
     assert len(resumed_state["adaptation_depth_history"]) == 4
     if arm == "uniform2to6":
         assert len(set(resumed_state["adaptation_depth_history"])) > 1
@@ -201,6 +224,39 @@ def test_cli_warm_start_resume_and_interrupted_final_evaluation(tmp_path, monkey
     assert recovered == report
     after, _ = CheckpointManager(resumed / "checkpoints").load_latest()
     assert_equal(after, resumed_state)
+
+
+def test_changed_numerical_policy_cannot_resume(tmp_path, monkeypatch):
+    run, _, _, _ = fixture(tmp_path, monkeypatch, "cpu")
+    output = tmp_path / "run"
+    run(output, "fixed4", 1)
+    manifest = output / "adaptation.json"
+    changed = json.loads(manifest.read_bytes())
+    changed["identity"]["numerical_policy"]["deterministic_algorithms"] = False
+    driver.write_json(manifest, changed)
+    with pytest.raises(ValueError, match="another adaptation experiment"):
+        run(output, "fixed4", 1)
+
+
+def test_cuda_policy_requires_workspace_before_start(monkeypatch):
+    monkeypatch.delenv("CUBLAS_WORKSPACE_CONFIG", raising=False)
+    with pytest.raises(ValueError, match="before starting Python"):
+        driver.configure_numerics("cuda")
+
+
+def test_restart_audit_detects_optimizer_and_rng_corruption():
+    saved = {
+        "optimizers": [{"state": {0: {"momentum": torch.ones(2)}}}],
+        "rng": torch.tensor([1, 2], dtype=torch.uint8),
+    }
+    for component in ("optimizers", "rng"):
+        changed = copy.deepcopy(saved)
+        if component == "optimizers":
+            changed[component][0]["state"][0]["momentum"][1] += 1e-5
+        else:
+            changed[component][0] = 0
+        with pytest.raises(ValueError, match=component):
+            compare_states(saved, changed)
 
 
 def test_depth_policy_does_not_change_topology_or_parent_config():

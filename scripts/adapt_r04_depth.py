@@ -45,6 +45,47 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def configure_numerics(device):
+    """Bind the deterministic warm start to an explicit numerical policy.
+
+    This is a new experiment contract. The historical R04 checkpoints are used
+    only as warm-start weights; previous adaptation outputs cannot be resumed
+    under changed arithmetic. External CUDA kernels still need real-shape gates.
+    """
+    cuda = torch.device(device).type == "cuda"
+    if cuda:
+        require(
+            os.environ.get("CUBLAS_WORKSPACE_CONFIG") == ":4096:8",
+            "set CUBLAS_WORKSPACE_CONFIG=:4096:8 before starting Python",
+        )
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    if cuda:
+        # Keep the original R04 precision choices; select deterministic kernels.
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    return {
+        "name": "r04-strict-determinism-v1",
+        "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+        "warn_only": torch.is_deterministic_algorithms_warn_only_enabled(),
+        "cudnn_benchmark": torch.backends.cudnn.benchmark,
+        "cudnn_deterministic": torch.backends.cudnn.deterministic,
+        "cublas_workspace_config": os.environ.get("CUBLAS_WORKSPACE_CONFIG") if cuda else None,
+        "matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32 if cuda else None,
+        "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32 if cuda else None,
+        "cudnn_version": torch.backends.cudnn.version() if cuda else None,
+        "sdpa_backends": {
+            "flash": torch.backends.cuda.flash_sdp_enabled(),
+            "memory_efficient": torch.backends.cuda.mem_efficient_sdp_enabled(),
+            "math": torch.backends.cuda.math_sdp_enabled(),
+            "cudnn": torch.backends.cuda.cudnn_sdp_enabled(),
+        }
+        if cuda
+        else None,
+    }
+
+
 def runtime_for(device):
     cuda = torch.device(device).type == "cuda"
     if cuda:
@@ -198,7 +239,7 @@ def profile_max_depth(trainer, *, steps=3):
             opt.step()
         torch.cuda.synchronize()
         durations.append(time.perf_counter() - start)
-        losses.append({"loss": float(terms.total), "gradient_norm": float(norm)})
+        losses.append({"loss": float(terms.total.detach()), "gradient_norm": float(norm)})
     peak = torch.cuda.max_memory_allocated()
     capacity = torch.cuda.get_device_properties(0).total_memory
     require(
@@ -243,6 +284,7 @@ def main():
         and args.session_minutes > 0,
         "positive session limits required",
     )
+    numerical_policy = configure_numerics(args.device)
     plan = json.loads((PLAN_DIR / "protocol.json").read_bytes())
     source_identity = code_identity()
     state, parent, original = load_parent(args.parent_run, plan)
@@ -285,7 +327,8 @@ def main():
     )
     del state
     identity = {
-        "protocol": "r04-depth-adaptation-v1",
+        "protocol": "r04-depth-adaptation-v2",
+        "numerical_policy": numerical_policy,
         "plan_sha256": sha256(PLAN_DIR / "protocol.json"),
         "parent_checkpoint": plan["parent_checkpoint"],
         "parent_loader_sha256": parent_loader_sha,

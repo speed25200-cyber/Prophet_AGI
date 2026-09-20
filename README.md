@@ -142,7 +142,9 @@ rapport aux quatre boucles d'entraînement. La comparaison entre entraînement
 à profondeur fixe et variable est implémentée ; ses tests CUDA sur petit modèle
 et ses essais mémoire à taille réelle passent. Son premier segment a été arrêté
 proprement après 54 mises à jour : des écarts de gradients entre les préflights
-exigent de vérifier la reproductibilité à taille réelle avant de poursuivre.
+ont motivé une politique de calcul déterministe. Avec cette politique, trois mises
+à jour à taille réelle donnent des gradients et poids identiques dans deux processus
+séparés ; la reprise après interruption à cette taille reste à vérifier.
 La comparaison des deux politiques d'entraînement reste inachevée.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 

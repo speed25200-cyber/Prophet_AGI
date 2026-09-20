@@ -1,0 +1,50 @@
+{
+  "status": "complete",
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/r04-determinism-hashes-v2/probe.py",
+    "--model-repo",
+    "/content/r04-depth-adaptation-code-4f5c566",
+    "--policy",
+    "strict",
+    "--trace",
+    "/content/r04-determinism-hashes-v2/strict-b.json",
+    "--parent-run",
+    "/content/r04-final/loop-seed0",
+    "--corpus",
+    "/content/Prophet_AGI/data/fineweb-pilot-v1",
+    "--arm",
+    "fixed4",
+    "--mode",
+    "preflight",
+    "--out",
+    "/content/r04-determinism-hashes-v2/strict-b"
+  ],
+  "pid": 197354,
+  "comparison": {
+    "initial_equal": true,
+    "steps": [
+      {
+        "inputs_equal": true,
+        "rng_before_equal": true,
+        "rng_after_equal": true,
+        "different_gradients": []
+      },
+      {
+        "inputs_equal": true,
+        "rng_before_equal": true,
+        "rng_after_equal": true,
+        "different_gradients": []
+      },
+      {
+        "inputs_equal": true,
+        "rng_before_equal": true,
+        "rng_after_equal": true,
+        "different_gradients": []
+      }
+    ],
+    "final_different": []
+  },
+  "elapsed_seconds": 178.2846333310008
+}
