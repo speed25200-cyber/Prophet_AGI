@@ -1,0 +1,17 @@
+{
+  "step": 2048,
+  "tokens_seen": 4194304,
+  "checkpoint": {
+    "step": 2048,
+    "slot": 0,
+    "sha256": "d2b8cc68424da4e3d1ee030fed2ffec4a088e1a14ced9e377965092a7c95d118",
+    "bytes": 3707789145,
+    "extra": {}
+  },
+  "nats_per_token": 4.332629850977074,
+  "bits_per_byte": 1.3308783793731758,
+  "audit_sha256": "70376ee369f770bdbb60250dd6f690c0d6b6012109afb246f7fa7980bc89aded",
+  "evaluation_sha256": "9d2e2563bb464d8580d02ebaaf97895d881d956c8720d55744b37f4213787a17",
+  "training_rows": 2048,
+  "remote_flush_verified": false
+}

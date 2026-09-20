@@ -319,8 +319,80 @@ come from a 171,906-byte, twelve-file ZIP, SHA256
 It includes the exact executed notebook sources for the remaining CPU cache and
 four-arm analysis queue, and the post-training GPU cache queue. Attention weights
 remain on the Colab runtime; this export contains reports, not a durable weight copy.
-The GDN KL process is confirmed live after both CE training/audit processes exit
-successfully. Attention KL follows it under the frozen pilot protocol.
+The GDN KL process was confirmed live after both CE training/audit processes exited
+successfully. Its completed endpoint is recorded below; attention KL follows it
+under the frozen pilot protocol.
+
+### Attention checkpoint verified outside Colab
+
+The exact attention CE checkpoint has subsequently been downloaded to the local
+PC in seven parts and reconstructed without reserialization. All seven sizes and
+SHA256 values match the source transfer manifest; the full file reproduces the
+3,503,292,889-byte size and checkpoint SHA256 above. The four metadata files are
+byte-identical to the archived Colab reports. Weights remain ignored under
+`data/recovered-models/attention-ce-seed0/ckpt_slot1.pt`.
+
+A fresh restricted CPU load checks all 149 model and 253 optimizer tensors,
+configuration, complete training contract, exact step/token budget, saved CUDA
+RNG and evaluation identities. After JSON normalization, its audit matches the
+Colab audit in every field except the reported PyTorch version: local 2.14.0+cpu
+versus Colab 2.11.0+cu128. This verifies local persistence outside the ephemeral
+runtime; it is not a new inference test, CUDA check or Drive durability claim.
+[Transfer proof and local audit](experiments/2026-09-20-qwen-recovery-attention-ce-final/persistence/local-transfer-verification.json).
+
+## Third final endpoint: GDN CE+KL, step 2,048
+
+The hybrid guided by the frozen Qwen donor completes **2,048 updates and
+4,194,304 student tokens**, plus the same number of teacher input tokens.
+Its full development CE is **4.332629851 nats/token**, BPB **1.330878379**, on the
+same 372 documents, 366,762 targets and 1,722,551 bytes. Zero nonfinite updates
+are skipped. The first bounded session finishes at step 1,678 and a second session
+resumes to step 2,048; both process exit codes and the final audit exit code are zero.
+
+Within the hybrid architecture, **CE+KL minus CE is -0.238482391 nats/token**,
+with paired document-bootstrap 95% interval [-0.243985113, -0.233098130]. Every
+development document improves. The model closes 85.59% of its initial CE gap to
+the donor, which still has lower CE, 3.157778885. This is not a percentage of
+recovered capabilities. Equal student tokens do not imply equal compute: KL also
+runs the frozen teacher. The median of the last 256 logged hybrid-KL updates is
+1.34794 seconds, excluding setup, checkpointing and evaluation.
+
+The exact evaluated checkpoint is 3,707,789,145 bytes, SHA256
+`d2b8cc68424da4e3d1ee030fed2ffec4a088e1a14ced9e377965092a7c95d118`.
+Its separate Colab CPU audit passes with saved CUDA RNG and 165 model plus 301
+optimizer tensors. The downloaded audit/evaluation/cache hashes match the live
+queue, respectively:
+
+- `70376ee369f770bdbb60250dd6f690c0d6b6012109afb246f7fa7980bc89aded`
+- `9d2e2563bb464d8580d02ebaaf97895d881d956c8720d55744b37f4213787a17`
+- `6cb07e1281a463bb82611f6c166a26fe1f8fdec46d842c9c9c8f89221e19da6f`
+
+Independent local analysis validates all three completed endpoint reports against
+the strict comparator, which correctly refuses the absent fourth endpoint. It also
+checks normalized input/runtime identities and training contracts across the three,
+the identical hybrid initialization/configuration, the frozen KL teacher settings,
+all 2,048 training rows and finite auxiliary metrics. The document intervals
+condition on these models and do not cover training-seed uncertainty.
+
+The hybrid-KL CPU cache suite passes eight prefixes / sixteen execution paths in
+549.89 seconds, with maximum logit error 2.86102e-5 and tolerance ratio 0.185764.
+All argmax positions agree under the unchanged 1e-4 tolerances. Prefix selection
+and token hashes are independently reproduced from the local corpus/tokenizer;
+cache storage is identical to hybrid CE at both measured lengths. This does not
+certify GPU decoding or contexts beyond the trained 512-token window.
+
+[Evidence and reproducible paired/cache analysis](experiments/2026-09-20-qwen-recovery-hybrid-kl-final/paired-and-cache-comparison.json)
+come from a twelve-file, 225,462-byte downloaded ZIP, local SHA256
+`10df8cf98212574a4897b318e6f32c6f0b8cb211bb42fa1de6456d95de6da334`.
+The archive checksum itself was not retrieved from Colab before browser access
+became unavailable; the three substantive report hashes above were independently
+matched to the source queue. This export contains reports, not a durable copy of
+the hybrid-KL weights. Those weights remain on the Colab runtime.
+
+At the last direct process poll, attention KL PID 141999 was live and its log
+reached step 512. The final four-arm comparison, CUDA cache suites and ARC-Easy
+evaluation remain queued. Subsequent loss of browser access is not evidence that
+training stopped and does not justify restarting that process.
 
 ## CUDA cache coverage and queued checks
 

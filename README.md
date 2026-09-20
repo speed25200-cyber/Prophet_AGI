@@ -104,8 +104,12 @@ ses poids sont vérifiés après remontage de Drive. Le témoin à attention ter
 le même budget à **4,5305 nats/token**, devant l'hybride, et passe les huit cas CPU.
 À 512 tokens, le cache hybride occupe 73,875 Mio contre 112 Mio pour le témoin ;
 à 128 tokens il coûte davantage (49,875 contre 28 Mio). Ces nombres excluent les
-poids et les espaces de travail. La variante hybride guidée par le donneur
-s'entraîne ; le quatrième bras reste programmé. Le corpus de récupération
+poids et les espaces de travail. Le checkpoint attention est désormais aussi
+reconstruit et audité sur le PC local, hors de la session Colab. La variante hybride
+guidée par le donneur termine à **4,3326 nats/token** : elle améliore les 372 documents
+par rapport à l'hybride entraîné seulement sur texte et passe les huit cas de cache CPU.
+Le quatrième bras, attention guidée, est confirmé en entraînement au dernier relevé.
+Le corpus de récupération
 exclut les neuf chevauchements connus et les quatre extraits du diagnostic initial.
 La reprise exacte CE/KL est testée sur CUDA. Le contrôle des gradients GDN échoue
 encore en BF16 ; les essais FP32 réussis constituent une politique expérimentale
