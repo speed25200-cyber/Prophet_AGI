@@ -42,8 +42,20 @@ def main():
     assert queue["status"] == "all_six_and_analysis_complete" and queue["revision"] == REVISION
     assert queue["elapsed_execution_seconds"] < queue["maximum_execution_seconds"] == 1800
     assert queue["tests_passed"] == 28
-    assert read("preceding-training-queue.json") == read("queue.json", TRAINING)
+    # The recorded training launcher saves once before its ZIP, then adds the
+    # export receipt and saves again. Native evaluation copies that second save.
+    preceding = read("preceding-training-queue.json")
+    exported_training = read("queue.json", TRAINING)
+    assert preceding.pop("export") == queue["preceding_export"]
+    preceding_elapsed = preceding.pop("elapsed_seconds")
+    exported_elapsed = exported_training.pop("elapsed_seconds")
+    assert exported_elapsed <= preceding_elapsed < exported_training["maximum_seconds"]
+    assert preceding == exported_training
     assert queue["preceding_export"]["sha256"] == read("archive-receipt.json", TRAINING)["sha256"]
+    assert queue["preceding_export"]["bytes"] == read("archive-receipt.json", TRAINING)["bytes"]
+    assert (
+        queue["preceding_export"]["files"] == read("archive-receipt.json", TRAINING)["source_files"]
+    )
     assert read("verification.json", TRAINING)["verified"]
     for name, meta in read("export-manifest.json", TRAINING)["files"].items():
         value = raw(name, TRAINING)
@@ -120,6 +132,7 @@ def main():
         "rows": len(items),
         "reports": len(reports),
         "queue_seconds": queue["elapsed_execution_seconds"],
+        "preceding_training_export_seconds": preceding_elapsed - exported_elapsed,
         "scope": "All original export hashes, process completion, source/inputs/numerical contracts and previously audited checkpoint identities verified locally. Per-choice scores, ties, aggregates and all frozen paired contrasts recomputed; GPU inference and checkpoint tensor loads are not repeated here. No cross-seed or architectural adoption claim.",
     }
     (HERE / "verification.json").write_text(

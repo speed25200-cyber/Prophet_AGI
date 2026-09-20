@@ -1,12 +1,11 @@
 # Native R04 capability evaluation
 
-Status: the bounded native inference queue is running. Its 28 targeted CPU/CUDA
-tests pass without skips and prepared inputs reproduce the frozen manifest.
-No complete six-model/depth comparison is available yet. The preceding learned-
-reinjection language-loss screen is complete and fails all four frozen criteria.
-This capability probe does not change that verdict or choose an intermediate
-checkpoint. Both CI runs at evaluator revision `4632101` pass; the PR suite
-reports 873 passed and 22 skipped tests.
+Status: all six evaluations and their paired analysis are complete and verified
+locally. No useful increase in accuracy from extra loops is established. The
+preceding learned-reinjection language-loss screen fails all four frozen criteria;
+this probe does not reverse that verdict. Its 28 targeted CPU/CUDA tests pass
+without skips and prepared inputs reproduce the frozen manifest. Both CI runs
+at evaluator revision `4632101` pass; the PR suite reports 873 passed and 22 skipped.
 
 ## Question and scope
 
@@ -100,7 +99,71 @@ instruction following, persistent memory or autonomous work. Even a positive
 result needs new seeds and genuinely held-out capability confirmation before
 architectural adoption.
 
-## Reproduction
+## Completed results
+
+All six runs score every question and pass their 32-candidate batch-versus-single
+oracle. The largest observed absolute oracle error is 0.000038147 nats, below the
+absolute tolerance even without the relative allowance. No raw or normalized
+choice ties occur. Uniform random choice has expected accuracy 25.0161% because
+the candidate count is not exactly four for every question.
+
+| Checkpoint | Loops | Correct / 2,376 | Raw accuracy | Character-normalized accuracy | Gold-answer BPB |
+|---|---:|---:|---:|---:|---:|
+| Original step 4,096 | 4 | 837 | 35.2273% | 33.5859% | 1.451176550 |
+| Original step 4,096 | 6 | 764 | 32.1549% | 31.3131% | 1.589064729 |
+| Fixed-sum adaptation | 4 | 840 | 35.3535% | 33.7542% | 1.454418138 |
+| Fixed-sum adaptation | 6 | 824 | 34.6801% | 33.8384% | 1.463486293 |
+| Learned-mix adaptation | 4 | 815 | 34.3013% | 33.6700% | 1.473074014 |
+| Learned-mix adaptation | 6 | 801 | 33.7121% | 33.4175% | 1.499022519 |
+
+Paired accuracy differences below are percentage points, left minus right.
+Intervals are the preselected, **unadjusted descriptive 95% question intervals**;
+they do not include training-seed variation or support architecture selection.
+
+| Contrast | Raw difference [95% interval] | Normalized difference [95% interval] |
+|---|---:|---:|
+| Original k6 − k4 | −3.0724 [−4.3771, −1.7677] | −2.2727 [−3.4933, −1.0522] |
+| Fixed sum k6 − k4 | −0.6734 [−1.3047, −0.0421] | +0.0842 [−0.4630, +0.6313] |
+| Learned mix k6 − k4 | −0.5892 [−1.5572, +0.4209] | −0.2525 [−1.0943, +0.5471] |
+| Learned − fixed, k4 | −1.0522 [−2.1475, +0.0842] | −0.0842 [−1.0522, +0.8838] |
+| Learned − fixed, k6 | −0.9680 [−2.2306, +0.3367] | −0.4209 [−1.4731, +0.6313] |
+| Fixed − original, k4 | +0.1263 [−0.9680, +1.2626] | +0.1684 [−0.7997, +1.1364] |
+| Fixed − original, k6 | +2.5253 [+1.1364, +3.9983] | +2.5253 [+1.2205, +3.8721] |
+| Learned − original, k4 | −0.9259 [−2.2306, +0.3788] | +0.0842 [−1.0522, +1.2205] |
+| Learned − original, k6 | +1.5572 [+0.0421, +3.1987] | +2.1044 [+0.6734, +3.5354] |
+
+The fixed-sum adaptation improves robustness at k6 relative to the original
+fixed-depth checkpoint, but does not make k6 better than its own k4. Its k4 raw
+advantage over the original is just three questions; the interval spans zero.
+Learned reinjection shows no raw or normalized accuracy improvement over the
+matched control, but the accuracy intervals also span zero: this task does not
+establish a definite accuracy regression between those two trained components.
+Its gold-answer loss is worse than the control at both depths; the paired BPB
+deltas are +0.018656 [0.016058, 0.021228] at k4 and +0.035536
+[0.032066, 0.039062] at k6.
+
+All nine contrasts, prediction disagreements, correctness discordances and CE/BPB
+intervals are retained in the [complete analysis](experiments/2026-09-20-arc-native-final/summary.json).
+These results support neither useful additional inference computation nor adopting
+the learned adapter. The language-loss failure remains binding. They also do not
+measure instruction following, persistent learning, tool use or an assistant.
+
+## Evidence and reproduction
+
+The queue finishes in **772.77 seconds** under its 1,800-second limit, with all
+eleven processes exiting zero. The [23-source export](experiments/2026-09-20-arc-native-final/export-manifest.json)
+is 4,466,543 bytes, SHA256
+`29babc8e07e4326c95d3858b8504c0331bf4f5d81bea7797ebb63b9d3f8c5816`.
+The [local verifier](experiments/2026-09-20-arc-native-final/verify.py) checks every
+original source hash, the fixed evaluation source, all question/token identities,
+checkpoint publication identities and numerical contracts, then reproduces all
+rankings, ties, aggregates and paired analyses. Its [receipt](experiments/2026-09-20-arc-native-final/verification.json)
+does not claim a second GPU inference or tensor reload.
+
+The training queue is saved before its ZIP and again after adding the export
+receipt. Native evaluation copies that second save. The verifier checks identical
+scientific fields and the exact export receipt, while separately validating the
+0.080197-second increase in the recorded elapsed time; neither source is edited.
 
 ```bash
 python scripts/prepare_arc_native_eval.py --items ORIGINAL_ARC --tokenizer PILOT/tokenizer.json --out FRESH_NATIVE_ARC

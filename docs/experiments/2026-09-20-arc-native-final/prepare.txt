@@ -1,0 +1,51 @@
+{
+  "complete": true,
+  "protocol": "arc-easy-native-r04-v1",
+  "source": {
+    "hf_id": "allenai/ai2_arc",
+    "revision": "210d026faf9955653af8916fad021475a3f00453",
+    "config": "ARC-Easy",
+    "split": "test",
+    "license": "cc-by-sa-4.0"
+  },
+  "original_items_sha256": "5011ec1abef00263b75101c484acdd4e8e2a1e51f8d6895059e87126ccdc6b3b",
+  "rows": 2376,
+  "items_sha256": "6692f86fc175fe21ffd341309f5c3788164328b45214b1288cfa94d1d1f57ee8",
+  "tokenizer_semantic_sha256": "7d8d36adb2b2bf9dac7a6060294641ea16c59ce20506e2294c556c7abd99537b",
+  "max_tokens": 2048,
+  "max_observed_tokens": 167,
+  "maximum_input_length": 256,
+  "buckets": [
+    {
+      "seq_len": 32,
+      "candidates": 6219,
+      "batches": 778
+    },
+    {
+      "seq_len": 64,
+      "candidates": 2878,
+      "batches": 360
+    },
+    {
+      "seq_len": 128,
+      "candidates": 392,
+      "batches": 49
+    },
+    {
+      "seq_len": 256,
+      "candidates": 12,
+      "batches": 2
+    }
+  ],
+  "padded_input_positions": 437760,
+  "batch_size": 8,
+  "total_candidate_tokens": 305468,
+  "candidates": 9501,
+  "prompt_template": "Question: {question}\nAnswer:",
+  "continuation_prefix": " ",
+  "fewshot": 0,
+  "precision": "fp32; no autocast or TF32 matmul",
+  "scoring": "continuation-only summed nats; character-normalized nats divide by original choice length",
+  "tie_policy": "first source choice; report ties",
+  "scope": "All original questions and choices in source order, retokenized only. Exploratory capability probe; no training, filtering, truncation or reserved benchmark. Original R04 overlap screen is incomplete and does not establish benchmark-clean training."
+}

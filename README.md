@@ -166,11 +166,14 @@ mises à jour chacune est terminée et échoue aux quatre critères de qualité 
 la variante apprise est 1,3023 % moins bonne que le témoin à quatre boucles,
 et ses six boucles dégradent de 2,4477 % sa propre perte à quatre boucles.
 Les résultats et le verdict sont vérifiés localement ; le composant n'est pas adopté.
-Une [évaluation ARC-Easy native](docs/26_NATIVE_CAPABILITY_EVAL.md) est en cours
-pour comparer les réponses du modèle initial et des deux variantes à quatre et
-six boucles. Les 2 376 questions sont figées, 28 tests CPU/GPU passent sans
-exclusion et les scores par lots sont contrôlés par un calcul individuel.
-La comparaison complète des six configurations n'est pas encore disponible.
+L'[évaluation ARC-Easy native](docs/26_NATIVE_CAPABILITY_EVAL.md) est terminée sur
+les 2 376 questions, avec 28 tests CPU/GPU sans exclusion et une vérification
+locale complète des six rapports. À quatre boucles, le modèle initial obtient
+35,23 % de bonnes réponses, le témoin adapté 35,35 % et la réinjection apprise
+34,30 %. À six boucles : 32,15 %, 34,68 % et 33,71 %. Le témoin adapté ne gagne
+que trois réponses à quatre boucles, avec un intervalle d'incertitude qui traverse
+zéro. Aucun gain utile dû aux boucles supplémentaires n'est établi ; les faibles
+écarts de précision entre les deux adaptations restent incertains.
 Les résultats historiques ci-dessous restent à reproduire avec cette version.
 
 > **Phase 0 — Recherche et conception terminées ; les mécanismes ont leurs premiers
