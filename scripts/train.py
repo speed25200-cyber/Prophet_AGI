@@ -136,6 +136,7 @@ def build_real_loader(args, cfg: ProphetConfig):
         mixture, tokenizer=tokenizer, seq_len=args.seq_len, batch_size=args.batch_size,
         seed=args.seed, decontaminator=decontaminator, local_root=args.data_root,
         allow_hub=args.hub, extra_sources=extra,
+        allow_pending_license_review=args.allow_pending_license_review,
     )
     return loader, max(1, loader.total_steps() // args.grad_accum)
 
@@ -187,6 +188,9 @@ def main() -> int:
     ap.add_argument("--session-minutes", type=float, default=None,
                     help="wall-clock budget for this session; the run checkpoints and "
                          "exits cleanly before Colab kills it, and resumes next time")
+    ap.add_argument("--allow-pending-license-review", action="store_true",
+                    help="train on a recipe whose sources are marked REVIEW: local smokes on text "
+                         "that is never released; a release recipe keeps the strict check")
     ap.add_argument("--allow-slow-scan", action="store_true",
                     help="run without flash-linear-attention, on the blockwise scan. "
                          "For CPU runs; a budgeted A100 run wants the fused kernel")

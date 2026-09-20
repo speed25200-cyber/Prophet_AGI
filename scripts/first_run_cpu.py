@@ -48,7 +48,8 @@ from prophet.train.checkpoint import CheckpointManager  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "configs" / "prophet_cpu_first_run.json"
-LICENSE = "local machine text, training only, never redistributed"
+# Marked REVIEW: text found on the machine, trained on locally, never released (rule 4).
+LICENSE = "REVIEW: local machine text, training only, never redistributed"
 
 
 # --------------------------------------------------------------------------------------
@@ -123,16 +124,18 @@ def build_corpus(work: Path, *, seed: int, max_prose: int, max_code: int, heldou
         name="cpu-first-run", total_tokens=1.0, description="local machine text, two phases",
         phases=[
             Phase("A-stable", 0.8, [
-                Source("prose", "local", "web", 0.5, available_tokens=tokens_estimate(prose), license=LICENSE),
-                Source("code", "local", "code", 0.5, available_tokens=tokens_estimate(code), license=LICENSE),
+                Source("prose", "local/prose", "web", 0.5, available_tokens=tokens_estimate(prose), license=LICENSE),
+                Source("code", "local/code", "code", 0.5, available_tokens=tokens_estimate(code), license=LICENSE),
             ], purpose="broad mix"),
             Phase("C-anneal", 0.2, [
-                Source("prose", "local", "web", 0.6, available_tokens=tokens_estimate(prose), license=LICENSE),
-                Source("code", "local", "code", 0.4, available_tokens=tokens_estimate(code), license=LICENSE),
+                Source("prose", "local/prose", "web", 0.6, available_tokens=tokens_estimate(prose), license=LICENSE),
+                Source("code", "local/code", "code", 0.4, available_tokens=tokens_estimate(code), license=LICENSE),
             ], purpose="prose-heavier anneal"),
         ],
     )
-    mixture.validate()
+    # A local smoke on machine text: the weights are never released, so the release
+    # allowlist does not apply; the source stays marked REVIEW in the recorded recipe.
+    mixture.validate(allow_pending_license_review=True)
     mixture.to_yaml(work / "mixture.yaml")
     stats = {
         "prose_docs": len(prose), "code_docs": len(code), "heldout_docs": len(heldout),
@@ -257,7 +260,8 @@ def main() -> int:
             "--benchmarks", work / "benchmarks", "--mixture", work / "mixture.yaml",
             "--tokens", args.tokens, "--batch-size", args.batch_size, "--seq-len", args.seq_len,
             "--checkpoint-dir", run_dir / "checkpoints", "--checkpoint-every", 100, "--log-every", 20,
-            "--device", "cpu", "--allow-slow-scan", "--seed", args.seed,
+            "--device", "cpu", "--allow-slow-scan", "--allow-pending-license-review",
+            "--seed", args.seed,
         ]
         _run(common + ["--session-minutes", args.minutes])
         # Prove the resume: a second launch continues the same run and the same stream.

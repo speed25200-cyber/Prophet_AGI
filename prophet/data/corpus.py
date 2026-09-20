@@ -322,8 +322,11 @@ def build_sources(phase, *, tokenizer, local_root=None, allow_hub=False,
 
 
 def build_loader(mixture, *, tokenizer, seq_len, batch_size=1, seed=0,
-                 extra_sources=(), extra_phases=None, **kwargs):
-    mixture.validate()
+                 extra_sources=(), extra_phases=None, allow_pending_license_review=False,
+                 **kwargs):
+    """``allow_pending_license_review`` is for local smokes on text that is never
+    released (the CPU first run); a release recipe keeps the strict check."""
+    mixture.validate(allow_pending_license_review=allow_pending_license_review)
     names = [p.name for p in mixture.phases]
     extra_phases = [names[-1]] if extra_phases is None else extra_phases
     if set(extra_phases) - set(names):
