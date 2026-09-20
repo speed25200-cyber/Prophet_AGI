@@ -177,6 +177,7 @@ def bench_family(model, tokenizer, family: str, *, n_tasks: int, seed: int) -> d
         "tokens_per_success": report.tokens_per_success,
         "copied_values": sum(e.copied for e in report.episodes),
         "seconds": time.time() - started,
+        "verified": [bool(e.verified) for e in report.episodes],
     }
 
 
