@@ -95,3 +95,5 @@ cette ablation.
 | Enregistrement de l'échantillonneur à la génération | `prophet/agent/loop.py` (`record_sampling`, `sample_actions`, `mc_draws`) |
 | Bras `closed-klpo` | `scripts/closed_loop.py` |
 | Tests | `tests/test_klpo.py`, `tests/test_closed_loop.py` |
+| Copie de référence du dépôt d'origine au commit `ecd92da` (perte, validation, budget, adaptateur et scripts Molt, exemple CPU, guides, rapport PDF, figure, licence), non modifiée, empreintes dans `VENDORED.md` ; 91 tests amont passés, 1 sauté | `third_party/klpo/` |
+| Notre perte confrontée à la référence, valeur et gradient | `tests/test_klpo_reference.py` |

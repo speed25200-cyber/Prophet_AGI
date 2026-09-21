@@ -60,6 +60,7 @@ prophet/
 configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
 scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
 tests/          ~512 tests ; les plus importants sont des tests d'équivalence
+third_party/    Copies de référence non modifiées (KLPO), empreintes et commit dans VENDORED.md
 ```
 
 ## Ce que ce dépôt a appris à ses dépens

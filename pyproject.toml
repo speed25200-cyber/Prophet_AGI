@@ -43,6 +43,7 @@ include = ["prophet*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = ["third_party"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
