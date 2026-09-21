@@ -10,9 +10,11 @@ OUT="${2:?output directory}"
 FAMILY="${FAMILY:-calc}"
 ROUNDS="${ROUNDS:-5}"
 SEEDS="${SEEDS:-0 1}"  # seeds whose amorce starts strictly between 0 and 1 (docs/31, amendment 2)
+LR_SCALE="${LR_SCALE:-1.0}"  # per-round peak-rate multiplier (docs/31, amendment 5; 1.0 = v1/v2 recipe)
 COMMON=(--work "$WORK" --family "$FAMILY" --tasks-per-round 30 --attempts 2
         --steps-per-round 60 --seed-episodes 100 --seed-steps 200 --replay-fraction 0.5
-        --bench-tasks 30 --bpb-docs 200 --seq-len 512 --batch-size 8 --minutes 600)
+        --bench-tasks 30 --bpb-docs 200 --seq-len 512 --batch-size 8 --minutes 600
+        --lr-scale "$LR_SCALE")
 mkdir -p "$OUT"
 for SEED in $SEEDS; do
   SEED_DIR="$OUT/oracle-seed$SEED/seed"
