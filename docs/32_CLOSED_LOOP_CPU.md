@@ -269,6 +269,67 @@ n'aboutissait pas en cinquante. Un seul run à la fois sur cette machine.
 quatre, rien d'autre pour `oracle`, `closed`, `frozen` ; `closed-klpo` à β = 1,0 et 20 pas
 (amendement 6). Graines 0, 2, 3, amorces réutilisées.
 
+## 8. Pilote v3 : le taux de pointe divisé par quatre
+
+Amendement 5 : `--lr-scale 0.25` pour les tours (Muon 0,0025, AdamW 5e-4), grammaire
+compacte, rien d'autre ; amorces réutilisées ; bras KLPO à β = 1,0 et 20 pas (amendement 6).
+
+| Bras | Graine | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | v2 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| closed | 0 | 0,733 | 0,633 | 0,917 | 0,917 | 0,950 | 0,967 | **+0,233** [+0,117, +0,367] | +0,183 |
+| closed | 2 | 0,567 | 0,017 | 0,533 | 0,533 | 0,650 | 0,683 | **+0,117** [-0,017, +0,250] | +0,033 |
+| closed | 3 | 0,700 | 0,600 | 0,933 | 0,950 | 0,933 | 0,967 | **+0,267** [+0,167, +0,383] | +0,150 |
+| oracle | 0 | 0,733 | 0,750 | 0,900 | 0,950 | 1,000 | 0,983 | +0,250 [+0,150, +0,367] | +0,267 |
+| oracle | 2 | 0,567 | 0,667 | 0,833 | 0,867 | 0,850 | 0,867 | +0,300 [+0,167, +0,433] | +0,400 |
+| oracle | 3 | 0,700 | 0,783 | 0,950 | 1,000 | 1,000 | 0,983 | +0,283 [+0,167, +0,400] | +0,300 |
+
+Part de sorties malformées au banc, bras `closed` :
+
+| Bras | Graine | t0 | t1 | t2 | t3 | t4 | t5 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| closed | 0 | 13 % | 19 % | 3 % | 1 % | 2 % | 0 % |
+| closed | 2 | 0 % | 11 % | 5 % | 2 % | 1 % | 0 % |
+| closed | 3 | 4 % | 11 % | 0 % | 1 % | 1 % | 0 % |
+
+Bits par octet tenus à l'écart :
+
+| Bras | Graine | BPB t0 | BPB t5 | Δ v3 | Δ v2 |
+|---|---:|---:|---:|---:|---:|
+| closed | 0 | 2,104 | 2,165 | +0,060 | +0,422 |
+| closed | 2 | 2,090 | 2,178 | +0,088 | +0,490 |
+| closed | 3 | 2,124 | 2,180 | +0,056 | +0,448 |
+| oracle | 0 | 2,104 | 2,164 | +0,060 | +0,442 |
+| oracle | 2 | 2,090 | 2,172 | +0,082 | +0,423 |
+| oracle | 3 | 2,124 | 2,180 | +0,056 | +0,395 |
+
+**Ce que v3 change.** L'oubli est divisé par sept (Δ BPB moyen du bras `closed` +0,068
+contre +0,454 en v2 ; l'oracle +0,066 contre +0,420), le gain du bras `closed` monte
+(+0,206 en moyenne contre +0,122) et son rendement contre l'oracle passe de 0,38 à
+**0,74**. Sur le banc cumulé, 44 tâches gagnées pour 7 perdues (v2 : 31 pour 9). Les creux
+des tours 2 à 4 ont disparu sur les trois graines, et la part malformée finit à 0 %
+partout. Le prix : un premier tour qui **recule** sur les trois graines (0,633, 0,017, 0,600
+contre 0,733, 0,567, 0,700), le plus fort sur la graine 2, où 14 trajectoires vérifiées
+mais bâclées (notes répétées) suffisent à faire boucler le modèle sur `note` sans jamais
+appeler `done` ; il s'en relève seul dès le tour 2 (0,533) et finit à 0,683.
+
+**Verdicts v3, trois bras.**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H1** | **échoue**, de peu | gain > 0 sur 3 graines sur 3 ; l'intervalle de la graine 2 contient encore zéro ([−0,017, +0,250]) |
+| **H2** | rapporté | gain(closed) / gain(oracle) = **0,74** (0,206 / 0,278) |
+| **H3** | **passe** | Δ BPB closed +0,068 contre oracle +0,066 |
+| **H4** | **passe** | gain par heure du dernier tour : +0,32, +0,64, +0,69 |
+| **H7** | **échoue** sur (i), passe (ii) et (iii) | (i) tour 1 sous succès(t0) − 0,10 sur les graines 2 et 3 ; (ii) +0,206 ≥ +0,122 ; (iii) +0,068 ≤ +0,227 |
+| **H5** | *à compléter* | bras `closed-klpo` v3 en cours |
+
+H7 échoue par sa condition de non-effondrement, et c'est la bonne lecture : la recette
+n'est pas la seule cause des creux. Le taux réduit supprime ceux qui venaient de
+l'entraînement lui-même (tours 2 à 4, oracle compris) mais pas celui du premier tour, qui
+vient des **données** : des trajectoires vérifiées par le résultat et bâclées dans le
+processus. D'où le bras `closed-clean` (amendement 7, H8), lancé ensuite sur les mêmes
+amorces et comparé à `closed` v3.
+
 Pour l'échelle A100 (docs/31 §3), trois choses sont acquises dès maintenant : la marge de
 départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la recette par
 tour doit être mesurée sur l'oubli avant tout (un planning neuf à taux plein par tour est
