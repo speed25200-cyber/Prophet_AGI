@@ -1,29 +1,31 @@
 # 32 — La boucle fermée à 7 M sur CPU : premiers chiffres
 
-**Statut : v1 terminée (trois bras, trois graines retenues), bras KLPO v1 en cours, pilote v2
-(grammaire compacte) à venir. Tout chiffre ici vient de `rounds.jsonl` ; rien n'a été
+**Statut : quatre pilotes terminés (v1 tolérant, v2 grammaire compacte, v3 taux ÷ 4, v4
+promotion canonique), trois graines retenues, bras KLPO à chaque fois. Tout chiffre ici vient de `rounds.jsonl` ; rien n'a été
 retouché après coup.** Pré-enregistrement et amendements : docs/31. **Date :** 2026-09-21.
 Base de code : `claude/codex-results-analysis-5jz95y`. Poids de départ : le 7 M de docs/09
 (`prophet-cpu-first-run`, pas 1163), CPU 4 cœurs.
 
 ## 0. Ce qu'on sait maintenant, en cinq lignes
 
-1. **La boucle tourne de bout en bout** : tâches inédites → boucle d'agent → vérificateur
-   exécutable → promotion → rendu → entraînement avec rejeu → banc, cinq tours par bras,
-   trois graines, comptabilité du compute, reprise déterministe (le tour 0 de chaque bras
-   redonne le chiffre de la calibration à la décimale près).
-2. **Le modèle apprend de ses propres épisodes vérifiés, mais pas de façon fiable** :
-   +0,18 et +0,15 de succès sur deux graines, 0,00 sur la troisième ; l'oracle au même
-   budget fait +0,27, +0,40, +0,28. H1 échoue, H2 vaut 0,35.
-3. **L'oubli ne dépend pas de la source des épisodes** : +0,44 bit/octet en cinq tours pour
-   `closed` comme pour `oracle`. H3 passe, mais la recette elle-même oublie beaucoup.
-4. **Deux modes d'échec, tous deux vus jeton par jeton** : (a) le span d'appel s'ouvre par
-   des espaces que la grammaire tolère et meurt deux jetons plus loin — un désaccord
-   entraînement / décodage, corrigé pour v2 ; (b) après un tour, le modèle appelle `done`
-   là où il faut `note`, bien formé et faux — une dérive de la recette d'entraînement, non
-   corrigée.
-5. **`calc` et deux graines sur cinq sont saturées à 100 % dès l'amorce** : la marge de
-   progression dépend de la famille et des 100 tâches tirées pour l'amorce.
+1. **La boucle tourne de bout en bout** et se rejoue au bit près : tâches inédites →
+   boucle d'agent → vérificateur exécutable → promotion → rendu → entraînement avec rejeu →
+   banc, cinq tours par bras, trois graines, comptabilité du compute, reprise déterministe.
+2. **Le modèle apprend de ses propres épisodes vérifiés**, et de mieux en mieux à mesure
+   que les défauts tombent : gain moyen du bras fermé +0,111 (v1), +0,122 (v2), +0,206
+   (v3), **+0,256** (v4, intervalles excluant zéro sur les trois graines) ; l'oracle au
+   même budget fait +0,278 : rendement 0,35 → 0,92.
+3. **L'oubli venait de la recette, pas de la source des épisodes** : +0,44 bit/octet en
+   cinq tours pour tous les bras à taux plein, +0,07 au taux divisé par quatre, sans perte
+   de gain.
+4. **Trois défauts, tous vus jeton par jeton** : (a) la grammaire de décodage admettait des
+   blancs que le rendu n'écrit jamais (0,233 → 0,550 à poids égaux) ; (b) un planning
+   neuf à taux plein par tour faisait basculer le choix d'action ; (d) deux trajectoires
+   vérifiées mais bâclées sur quatorze suffisaient à apprendre une boucle sans fin sur
+   `note` (0,017 → 0,550). Reste (c), le corps de `done` du modèle amorce.
+5. **`calc` et deux graines sur cinq saturent à 100 % dès l'amorce** ; la marge de
+   progression dépend de la famille et des 100 tâches tirées. **KLPO** n'a tenu cinq tours
+   dans aucune de ses deux configurations (dérive à β = 0,1, oscillation à β = 1,0).
 
 ## 1. Protocole tel qu'exécuté
 
@@ -349,6 +351,59 @@ l'entraînement lui-même (tours 2 à 4, oracle compris) mais pas celui du premi
 vient des **données** : des trajectoires vérifiées par le résultat et bâclées dans le
 processus. D'où le bras `closed-clean` (amendement 7, H8), lancé ensuite sur les mêmes
 amorces et comparé à `closed` v3.
+
+## 9. Pilote v4 : ne promouvoir que la forme canonique
+
+Amendement 7 : bras `closed-clean`, identique à `closed` v3 (taux ÷ 4, grammaire compacte,
+mêmes amorces, mêmes tours) sauf la promotion, réservée aux trajectoires sans pas malformé,
+sans `done` refusé, sans pas répété, et finissant par `done`. Comparé au bras `closed` v3
+du même répertoire.
+
+| Bras | Graine | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | Écartées / promues |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| closed-clean | 0 | 0,733 | 0,600 | 0,983 | 0,983 | 0,983 | 0,983 | **+0,250** [+0,133, +0,367] | +0,063 | 12 / 126 |
+| closed-clean | 2 | 0,567 | 0,550 | 0,567 | 0,633 | 0,633 | 0,833 | **+0,267** [+0,150, +0,383] | +0,083 | 3 / 96 |
+| closed-clean | 3 | 0,700 | 0,800 | 0,933 | 0,883 | 0,917 | 0,950 | **+0,250** [+0,133, +0,367] | +0,061 | 3 / 129 |
+| closed | 0 | 0,733 | 0,633 | 0,917 | 0,917 | 0,950 | 0,967 | +0,233 [+0,117, +0,367] | +0,060 | 0 / 125 |
+| closed | 2 | 0,567 | 0,017 | 0,533 | 0,533 | 0,650 | 0,683 | +0,117 [-0,017, +0,250] | +0,088 | 0 / 79 |
+| closed | 3 | 0,700 | 0,600 | 0,933 | 0,950 | 0,933 | 0,967 | +0,267 [+0,167, +0,383] | +0,056 | 0 / 123 |
+
+**Ce que le filtre change.** Il écarte peu : 12, 3 et 3 trajectoires sur cinq tours. Mais
+sur la graine 2, les **2 trajectoires sur 14** écartées au tour 1 (deux notes en double)
+sont exactement celles qui faisaient boucler le modèle sur `note` : 0,550 au lieu de
+0,017, puis une montée régulière jusqu'à 0,833 (`closed` v3 : 0,683 ; v2 : 0,600 ; v1 :
+0,567). Sur les trois graines, le gain est **+0,256** en moyenne contre +0,206, avec les
+trois intervalles qui excluent zéro ([+0,133, +0,367], [+0,150, +0,383], [+0,133,
++0,367]) ; banc cumulé : 49 tâches gagnées pour 3 perdues sur 180. L'oubli est
+inchangé (+0,069 contre +0,068). Le rendement contre l'oracle v3 monte à **0,92**
+(0,256 / 0,278) : à budget de tâches égal, la boucle qui n'apprend que de ses propres
+succès de forme canonique fait presque aussi bien que celle qui reçoit la trajectoire
+parfaite de chaque tâche.
+
+**Verdicts v4.**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H8** | **échoue** sur (i), passe (ii) et (iii) | (i) graine 0, tour 1 : 0,600 < 0,633 (mode c, corps de `done` : 23 % de malformées, 2 trajectoires écartées seulement) ; (ii) +0,256 ≥ +0,206 ; (iii) +0,069 ≤ +0,088 |
+| **H1**, appliquée à `closed-clean` | **passe** | gain > 0 sur 3 graines sur 3, intervalle excluant zéro sur chacune |
+| **H2**, `closed-clean` | rapporté | 0,92 |
+
+H8 échoue par la même condition que H7, et sur la même graine 0 au même tour : ce recul
+n'est ni la recette (v3) ni les données bâclées (v4), c'est le mode (c), le corps de
+`done` que le modèle amorce sait déjà mal écrire (13–17 % au tour 0) et que le premier
+tour d'entraînement dégrade avant que les tours suivants ne le réparent. Sa correction est
+ailleurs : dans l'amorce (plus d'exemples de `done` à arguments vides) ou dans le budget de
+pas. Le critère de non-effondrement à −0,10 était trop strict d'une tâche sur soixante ;
+il est gardé tel quel, et l'échec rapporté.
+
+**Ce que quatre pilotes ont établi, en trois lignes.** (1) Un désaccord entraînement /
+décodage (grammaire tolérante) et deux défauts de recette (taux plein par tour, promotion
+du processus bâclé) suffisaient à faire d'une boucle qui marche une boucle qui échoue ; les
+trois sont trouvés par le diagnostic jeton par jeton, jamais par le score seul. (2) Corrigés
+un par un, avec une variable par pilote, la boucle fermée passe de +0,111 à +0,256 de succès
+tenu à l'écart, de 0,35 à 0,92 de l'oracle, et de +0,44 à +0,07 bit/octet d'oubli.
+(3) KLPO, dans sa forme actuelle (enregistrements réutilisés, β fixe), n'a jamais tenu
+cinq tours ; la piste reste ouverte, à une variable par run.
 
 Pour l'échelle A100 (docs/31 §3), trois choses sont acquises dès maintenant : la marge de
 départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la recette par
