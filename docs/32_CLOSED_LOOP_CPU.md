@@ -199,6 +199,76 @@ banc diffère :
 décodage. Les 8 % restants sont le mode (c) (corps de `done`). À partir du tour 3 les deux
 pilotes divergent (la génération elle-même passe par la grammaire compacte).
 
+**Résultats v2, trois bras** (graine 3 : voir l'incident de reprise ci-dessous ; le chiffre
+retenu est celui de la reprise propre) :
+
+| Bras | Graine | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| closed | 0 | 0,733 | 0,883 | 0,600 | 0,683 | 0,967 | 0,917 | **+0,183** [+0,067, +0,300] |
+| closed | 2 | 0,567 | 0,500 | 0,550 | 0,400 | 0,517 | 0,600 | **+0,033** [-0,083, +0,150] |
+| closed | 3 | 0,700 | 0,767 | 0,900 | 0,983 | 0,700 | 0,850 | **+0,150** [+0,033, +0,267] |
+| oracle | 0 | 0,733 | 0,917 | 0,817 | 1,000 | 1,000 | 1,000 | +0,267 [+0,167, +0,383] |
+| oracle | 2 | 0,567 | 0,617 | 0,717 | 1,000 | 0,983 | 0,967 | +0,400 [+0,267, +0,533] |
+| oracle | 3 | 0,700 | 0,967 | 0,967 | 0,983 | 1,000 | 1,000 | +0,300 [+0,183, +0,417] |
+
+Part de sorties malformées au banc, bras `closed` :
+
+| Bras | Graine | t0 | t1 | t2 | t3 | t4 | t5 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| closed | 0 | 13 % | 4 % | 0 % | 12 % | 1 % | 1 % |
+| closed | 2 | 0 % | 2 % | 8 % | 19 % | 2 % | 2 % |
+| closed | 3 | 4 % | 0 % | 7 % | 0 % | 0 % | 0 % |
+
+Bits par octet tenus à l'écart :
+
+| Bras | Graine | BPB t0 | BPB t5 | Δ |
+|---|---:|---:|---:|---:|
+| closed | 0 | 2,104 | 2,527 | +0,422 |
+| closed | 2 | 2,090 | 2,580 | +0,490 |
+| closed | 3 | 2,124 | 2,573 | +0,448 |
+| oracle | 0 | 2,104 | 2,546 | +0,442 |
+| oracle | 2 | 2,090 | 2,514 | +0,423 |
+| oracle | 3 | 2,124 | 2,519 | +0,395 |
+
+Sur les graines 0 et 3, v2 égale v1 tour par tour (mêmes tokens générés, mêmes promus :
+116 et 128) : aucun blanc n'y a jamais été émis. La grammaire compacte n'a agi que sur la
+graine 2, et seulement au tour 2 (0,233 → 0,550) ; dès le tour 3, la boucle y retombe par
+le mode (b) (0,400, copies du mauvais champ) et finit à 0,600, soit +0,033 au lieu de 0,000.
+
+**Verdicts v2.**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H1** | **échoue** | gain > 0 sur 3 graines sur 3, mais l'intervalle de la graine 2 contient zéro ([−0,083, +0,150]) ; banc cumulé 180 tâches, 31 gagnées, 9 perdues |
+| **H2** | rapporté | gain(closed) / gain(oracle) = **0,38** (0,122 / 0,322), contre 0,35 en v1 |
+| **H3** | **passe** | Δ BPB closed +0,454 contre oracle +0,420, écart +0,033 ≤ 0,05 |
+| **H4** | **échoue** | gain par heure du dernier tour : −0,82, +1,15, +2,76 |
+| **H5** | **échoue** | `closed-klpo` 0,733 → **0,000 dès le tour 1** (malformées 58 %), arrêté ; amendement 6 |
+| **H6** | **échoue** | malformées ≤ 5 % à chaque tour : non, graine 2 tours 2 et 3 à 8 % puis 20 % (modes c et b) ; le mode (a), lui, a disparu |
+
+**Bras KLPO v2.** Même effondrement qu'en v1, plus rapide : 25 épisodes récompensés sur 42,
+60 pas KLPO, perte +1,0 → −10,3, log p − log q = −0,83 nat/token, 0,000 au banc. À β = 0,1
+sur des enregistrements réutilisés 60 fois, la KL ne retient rien ; v3 le rejoue à β = 1,0
+et 20 pas (amendement 6), la seule comparaison propre étant alors `closed-klpo` v3 contre
+`closed` v3.
+
+**Incident de reprise, graine 3.** Le conteneur a redémarré pendant le tour 5 du bras
+`closed` : le tour avait généré et mis en quarantaine ses 24 épisodes promus, sans écrire
+son enregistrement. La reprise a régénéré le tour (mêmes tâches, même graine : 24 épisodes
+identiques) et entraîné sur les deux copies : **0,750 avec 152 promus**. Une copie du run
+remise à l'état du tour 4 (entrées d'avant le tour 5 retirées, checkpoint du tour 4) et
+rejouée seule donne **0,850 avec 128 promus**, exactement v1. C'est ce chiffre qui figure
+ci-dessus. Le défaut est corrigé pour v3 (entrées étiquetées par tour, orphelins écartés à
+la reprise, test), et compté comme vingtième défaut silencieux dans CLAUDE.md.
+
+**Note d'exploitation.** Deux processus d'entraînement en parallèle sur les quatre cœurs
+(sur-souscription OpenMP) ont ralenti chacun d'un facteur dix ; un banc de trois minutes
+n'aboutissait pas en cinquante. Un seul run à la fois sur cette machine.
+
+**Suite : pilote v3** (docs/31 amendement 5, H7) : taux de pointe des tours divisés par
+quatre, rien d'autre pour `oracle`, `closed`, `frozen` ; `closed-klpo` à β = 1,0 et 20 pas
+(amendement 6). Graines 0, 2, 3, amorces réutilisées.
+
 Pour l'échelle A100 (docs/31 §3), trois choses sont acquises dès maintenant : la marge de
 départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la recette par
 tour doit être mesurée sur l'oubli avant tout (un planning neuf à taux plein par tour est
