@@ -321,7 +321,27 @@ appeler `done` ; il s'en relève seul dès le tour 2 (0,533) et finit à 0,683.
 | **H3** | **passe** | Δ BPB closed +0,068 contre oracle +0,066 |
 | **H4** | **passe** | gain par heure du dernier tour : +0,32, +0,64, +0,69 |
 | **H7** | **échoue** sur (i), passe (ii) et (iii) | (i) tour 1 sous succès(t0) − 0,10 sur les graines 2 et 3 ; (ii) +0,206 ≥ +0,122 ; (iii) +0,068 ≤ +0,227 |
-| **H5** | *à compléter* | bras `closed-klpo` v3 en cours |
+| **H5** | **échoue** | gain moyen `closed-klpo` −0,033 (−0,350 / −0,033 / +0,283) contre +0,206 pour `closed` ; Δ BPB +0,069 contre +0,068 |
+
+**Bras KLPO v3 (β = 1,0, 20 pas).** Il ne s'effondre plus d'un coup, il oscille :
+
+| Graine | t0 | t1 | t2 | t3 | t4 | t5 | Gain | Malformées (t1 … t5) | log p − log q (nat/token) |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 0 | 0,733 | **0,950** | 0,850 | **0,200** | 0,867 | 0,383 | −0,350 | 1 %, 9 %, 29 %, 9 %, 51 % | −0,25 → −0,65 |
+| 2 | 0,567 | 0,533 | 0,483 | 0,483 | 0,567 | 0,533 | −0,033 | ≤ 2 % | −0,23 → −0,50 |
+| 3 | 0,700 | 0,517 | 0,467 | 0,433 | 0,833 | **0,983** | +0,283 | 17 %, 17 %, 18 %, 12 %, 1 % | −0,13 → −0,61 |
+
+Le premier tour de la graine 0 est le meilleur de tous les pilotes (0,733 → 0,950 en un
+tour, contre 0,633 pour `closed` v3 et 0,750 pour l'oracle) : à β = 1,0, la politique reste à
+0,25 nat/token de son échantillonneur et apprend aussi des 17 épisodes non récompensés.
+Mais deux tours plus loin elle tombe à 0,200 avec 29 % de malformées, remonte, retombe.
+L'oubli, lui, reste faible (+0,07 bit/octet). La variance d'un tour à l'autre est le
+problème, pas la dérive de la langue ; la KL vers l'échantillonneur borne chaque tour, pas
+la trajectoire des tours. H5 échoue en v3 comme en v1 et v2, mais pour une raison
+différente à chaque fois (dérive à β = 0,1, oscillation à β = 1,0), et la piste n'est pas
+close : un β entre les deux, moins de pas encore, ou des tirages frais de l'échantillonneur
+à chaque pas (la variante sans biais du rapport) sont les trois candidats, à une variable
+par run.
 
 H7 échoue par sa condition de non-effondrement, et c'est la bonne lecture : la recette
 n'est pas la seule cause des creux. Le taux réduit supprime ceux qui venaient de
