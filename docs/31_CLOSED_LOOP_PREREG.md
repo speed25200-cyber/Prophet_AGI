@@ -184,3 +184,12 @@ changé** : mêmes amorces (réutilisées), mêmes tours, mêmes critères H1–
 | Hypothèse | Énoncé mesurable | Critère |
 |---|---|---|
 | **H6 grammaire** | Avec la grammaire compacte, le bras `closed` ne meurt plus par la forme. | Taux de sorties malformées du banc ≤ 5 % à **chaque** tour, sur chaque graine retenue ; et H1 réévaluée sous v2. |
+
+## Amendement 4 — 2026-09-21, bras KLPO v1 arrêté après la graine 0, tour 2
+
+Le bras `closed-klpo` v1 tombe à **0,000** de succès au tour 2 de la graine 0 (0,733 →
+0,517 → 0,000 ; malformées 13 % → 31 % → 52 %). Le critère H5 porte sur la moyenne des
+graines ; avec −0,733 sur la graine 0, il ne peut plus passer quels que soient les gains des
+graines 2 et 3 (au mieux +0,433 et +0,300, moyenne 0,000 < +0,111). Les graines 2 et 3 ne
+sont donc pas lancées en v1 ; le verdict v1 de H5 est **échec**, rapporté avec les chiffres
+dans docs/32 §6. Le bras KLPO tourne en v2 sur les trois graines, hyperparamètres inchangés.

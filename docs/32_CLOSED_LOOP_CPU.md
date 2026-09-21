@@ -137,9 +137,34 @@ Le mur d'amorçage de docs/31 §2 est réel et étroit : `calc` passe de 0 à 10
 intermédiaire, `lookup` dépend des 100 tâches tirées. La marge de la boucle (ce qu'elle a
 à apprendre) est une variable de l'expérience, pas une constante.
 
-## 6. Bras KLPO v1
+## 6. Bras KLPO v1 : effondrement en deux tours, arrêté
 
-*À compléter à la fin du run (H5).*
+Graine 0, mêmes amorce, tâches et bancs que `closed` ; à chaque tour, fine-tuning par
+rejet identique à `closed` **puis** 60 pas KLPO (β = 0,1, lr 5e-4, M = 8, génération à
+température 1,0) sur tous les épisodes du tour avec leur récompense 0/1 :
+
+| Tour | Succès | Malformées | BPB | Épisodes récompensés | Perte KLPO (premier → dernier pas) | log p − log q moyen |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0,733 | 17 % / 10 % | 2,104 | — | — | — |
+| 1 | 0,517 | 26 % / 37 % | 2,176 | 24 / 41 | −1,4 → −13,1 | −0,92 nat/token |
+| 2 | **0,000** | 53 % / 51 % | 2,283 | 11 / 51 | +5,6 → −0,2 | −1,40 nat/token |
+
+Le run a été arrêté après ce tour. **H5 échoue** par arithmétique : le gain de la graine 0
+est au plus −0,733 (le succès ne peut que remonter de 0 à 0,733 en trois tours au mieux) ;
+même avec les gains maximaux possibles sur les graines 2 et 3 (+0,433 et +0,300), la
+moyenne serait 0,000 < +0,111, le gain moyen de `closed`. Les graines 2 et 3 n'ont pas été
+lancées en v1 ; elles le sont en v2 (docs/31, amendement 4).
+
+Ce que les chiffres disent du mécanisme : en 60 pas sur les **mêmes** enregistrements, la
+politique s'éloigne de l'échantillonneur de 0,9 puis 1,4 nat par token en moyenne. Le
+rapport KLPO nomme cette réutilisation « substitut empirique » et demande des tirages
+frais de l'échantillonneur historique à chaque pas ; nous ne les avons pas (A5 §4). À
+β = 0,1, le terme de KL ne retient rien de cette dérive, et la part malformée double à
+chaque tour : le mode d'échec (a) de §4, amplifié par l'échantillonnage à température 1,0.
+La comparaison à budget égal n'est donc pas « KLPO contre rejet » mais « rejet + 60 pas de
+gradient de politique mal régularisé contre rejet seul ». Le bras v2 garde ces
+hyperparamètres (pré-enregistrés) et la grammaire compacte ; un bras à β plus grand et à
+moins de pas est la suite naturelle si v2 confirme l'effondrement.
 
 ## 7. Pilote v2 et suite
 
