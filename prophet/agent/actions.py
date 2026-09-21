@@ -234,10 +234,17 @@ class ActionGrammar:
     wasted token, not a malformed call.
     """
 
-    def __init__(self, registry: ToolRegistry) -> None:
+    def __init__(self, registry: ToolRegistry, *, compact: bool = True) -> None:
         self.registry = registry
         self.names = registry.names
         self._all_names = tuple(registry.names)
+        self.compact = compact
+        """Reject whitespace outside strings. Calls are rendered compact
+        (``separators=(",", ":")``), so a model trained on rendered episodes has never
+        seen a space in a call; admitting one at decode let a drifting model open the
+        span with indentation, wander off its training distribution and die before
+        ``{`` -- the failure of the first closed-loop pilot (docs/32). ``compact=False``
+        restores the tolerant JSON scanner."""
 
     def restrict(self, names: "set[str] | None") -> None:
         """Limit the tool names the grammar accepts -- what the selection head decided --
@@ -250,6 +257,15 @@ class ActionGrammar:
             self.names = tuple(n for n in self._all_names if n in keep)
 
     # -- public ------------------------------------------------------------------------
+
+    def _ws(self, s: str, i: int) -> int:
+        """Whitespace outside strings: skipped when tolerant, dead when compact."""
+        if not self.compact:
+            return _skip_ws(s, i)
+        if i < len(s) and s[i] in " \t\n\r":
+            raise _Dead("whitespace outside strings; calls are rendered compact")
+        return i
+
 
     def check(self, partial: str) -> PrefixState:
         try:
@@ -269,14 +285,14 @@ class ActionGrammar:
     # -- scanner -----------------------------------------------------------------------
 
     def _scan(self, s: str) -> PrefixState:
-        i = _skip_ws(s, 0)
+        i = self._ws(s, 0)
         if i == len(s):
             return PrefixState(True)
         i = _expect(s, i, "{")
         if i is None:
             return PrefixState(True)
         # "name"
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         key, i = _scan_string(s, i)
         if key is None:
             return PrefixState(True)
@@ -286,11 +302,11 @@ class ActionGrammar:
             if not "name".startswith(key.value):
                 raise _Dead("first key must be 'name'")
             return PrefixState(True)
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         i2 = _expect(s, i, ":")
         if i2 is None:
             return PrefixState(True)
-        i = _skip_ws(s, i2)
+        i = self._ws(s, i2)
         name, i = _scan_string(s, i)
         if name is None:
             return PrefixState(True)
@@ -302,7 +318,7 @@ class ActionGrammar:
             raise _Dead(f"unknown tool {name.value!r}")
         schema = self.registry.schema(name.value)
 
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         if i == len(s):
             return PrefixState(True)
         if s[i] == "}":
@@ -312,7 +328,7 @@ class ActionGrammar:
         i = _expect(s, i, ",")
         if i is None:
             return PrefixState(True)
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         key, i = _scan_string(s, i)
         if key is None:
             return PrefixState(True)
@@ -322,11 +338,11 @@ class ActionGrammar:
             return PrefixState(True)
         if key.value != "args":
             raise _Dead("second key must be 'args'")
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         i2 = _expect(s, i, ":")
         if i2 is None:
             return PrefixState(True)
-        i = _skip_ws(s, i2)
+        i = self._ws(s, i2)
         i2 = _expect(s, i, "{")
         if i2 is None:
             return PrefixState(True)
@@ -341,7 +357,7 @@ class ActionGrammar:
         missing = [r for r in schema.required if r not in seen]
         if missing:
             raise _Dead(f"{name.value}: missing required {missing}")
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         if i == len(s):
             return PrefixState(True)
         if s[i] != "}":
@@ -359,7 +375,7 @@ class ActionGrammar:
         props = schema.properties
         seen: set[str] = set()
         while True:
-            i = _skip_ws(s, i)
+            i = self._ws(s, i)
             if i == len(s):
                 return seen, i, False, None
             if s[i] == "}":
@@ -368,7 +384,7 @@ class ActionGrammar:
                 i2 = _expect(s, i, ",")
                 if i2 is None:
                     return seen, i, False, None
-                i = _skip_ws(s, i2)
+                i = self._ws(s, i2)
             key, i = _scan_string(s, i)
             if key is None:
                 return seen, i, False, None
@@ -380,11 +396,11 @@ class ActionGrammar:
                 raise _Dead(f"{schema.name} has no parameter {key.value!r}")
             if key.value in seen:
                 raise _Dead(f"duplicate parameter {key.value!r}")
-            i = _skip_ws(s, i)
+            i = self._ws(s, i)
             i2 = _expect(s, i, ":")
             if i2 is None:
                 return seen, i, False, None
-            i = _skip_ws(s, i2)
+            i = self._ws(s, i2)
             expected = props.get(key.value, {}).get("type")
             if i == len(s):
                 return seen, i, False, (key.value, expected)

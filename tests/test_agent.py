@@ -508,3 +508,49 @@ def test_episode_tokens_exclude_the_carried_prefix():
     first = loop.run("one")
     second = loop.run("two", session=first.session)
     assert 0 < second.tokens < 2 * first.tokens
+
+
+# --------------------------------------------------------------------------------------
+# Compact grammar: what the renderer writes is exactly what the decoder admits
+# --------------------------------------------------------------------------------------
+
+
+def test_grammar_rejects_whitespace_outside_strings_by_default():
+    g = ActionGrammar(registry())
+    assert not g.check(' {"name"').viable
+    assert not g.check('{"name": "read_file"').viable
+    assert not g.check('{"name":"note","args": {').viable
+    assert g.check('{"name":"note","args":{"text":"a b\tc"}}').complete  # inside strings: data
+    tolerant = ActionGrammar(registry(), compact=False)
+    assert tolerant.check(' {"name"').viable and tolerant.check('{"name": "read_file"').viable
+
+
+def test_constrained_decoder_cannot_open_a_call_with_whitespace():
+    """The first closed-loop pilot died here: a drifting model opened the span with
+    spaces, the tolerant grammar let it, and no candidate was viable two tokens later."""
+    g = ActionGrammar(registry())
+    dec = ConstrainedDecoder(g, lambda t: TOK.decode([t]), end_id=TOK.special_id("<|/call|>"))
+    space, newline, brace = TOK.encode(" ")[0], TOK.encode("\n")[0], TOK.encode("{")[0]
+    assert dec.allowed("", [space, newline, brace]) == [brace]
+    assert dec.allowed("  ", [space, newline, brace]) == []  # already dead, as the loop sees it
+
+
+def test_rendered_calls_are_exactly_what_the_compact_grammar_accepts():
+    """Train/decode agreement: every call the renderer writes into a training row is a
+    complete string for the grammar the loop decodes with, and contains no whitespace
+    the grammar would refuse."""
+    import re
+
+    from prophet.agent import tasks as task_families
+    from prophet.agent.render import render_episode
+
+    for family in ("lookup", "calc", "files"):
+        for task in task_families.make_tasks(2, family=family, seed=3):
+            tools = task_families.tools_for(task)
+            grammar = ActionGrammar(tools)
+            text = render_episode(task.goal, tools, task_families.perfect_trajectory(task))
+            bodies = re.findall(r"<\|call\|>(.*?)<\|/call\|>", text, flags=re.S)
+            assert bodies, family
+            for body in bodies:
+                assert grammar.check(body).complete, body
+                assert grammar.complete(body) is not None, body

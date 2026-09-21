@@ -153,3 +153,34 @@ moins deux ; la calibration s'arrête là (graines 2 et 3, sans regarder au-del�
 H1 devient « gain > 0 sur **toutes** les graines retenues », soit trois ici, avec l'intervalle
 qui exclut zéro sur le banc cumulé de chacune. Les poids d'amorce calibrés sont réutilisés
 tels quels par le pilote (entraînement d'amorce déterministe, même sortie).
+
+## Amendement 3 — 2026-09-21, après le bras `closed` de la graine 2, avant le pilote v2
+
+**Observation.** Le bras `closed` s'effondre par les sorties malformées : graine 2,
+banc 0,567 → 0,500 → 0,233 (malformées 0 % → 4 % → 45 %), puis remonte à 0,583 ; graine 0,
+0,883 → 0,600 au tour 2. Le diagnostic sur le checkpoint du tour 2 (graine 2, mêmes tâches
+que le banc) montre le mécanisme, jeton par jeton : le span d'appel s'ouvre par des espaces
+(`<|call|>`, ` `, ` `), la grammaire tolérante les admet (elle saute les blancs comme un
+lecteur JSON), et deux jetons plus loin aucun des 64 premiers candidats n'est viable : le
+span meurt, le pas est « malformé », et quatre pas de budget ne suffisent plus. Le modèle
+amorce, lui, ouvre chaque appel par `{"`. Le rendu (`render_episode`) écrit les appels en
+JSON compact, sans aucun blanc : la grammaire de décodage admettait donc ce que
+l'entraînement n'a jamais montré, et un modèle qui dérive (peu de lignes, rejeu 0,5 de
+prose et de code, 60 pas à taux plein) s'engouffre dans l'indentation. C'est le
+dix-neuvième défaut silencieux du dépôt : un désaccord entraînement / décodage.
+
+**Correctif, décodage seulement.** `ActionGrammar(compact=True)` par défaut : tout blanc
+hors chaîne rend le préfixe mort, donc le premier jeton d'un appel est `{`. `compact=False`
+rend l'ancien lecteur tolérant. Tests : la grammaire refuse les blancs hors chaîne et les
+accepte dans les chaînes ; le décodeur contraint ne peut pas ouvrir un appel par un blanc ;
+chaque appel rendu d'une trajectoire parfaite (`lookup`, `calc`, `files`) est une chaîne
+complète pour la grammaire compacte.
+
+**Décision.** Le pilote v1 (grammaire tolérante) va jusqu'au bout, bras KLPO compris, et
+ses chiffres sont rapportés tels quels dans docs/32. Puis un **pilote v2** rejoue les quatre
+bras sur les graines retenues (0, 2, 3) avec la grammaire compacte et **rien d'autre de
+changé** : mêmes amorces (réutilisées), mêmes tours, mêmes critères H1–H5.
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H6 grammaire** | Avec la grammaire compacte, le bras `closed` ne meurt plus par la forme. | Taux de sorties malformées du banc ≤ 5 % à **chaque** tour, sur chaque graine retenue ; et H1 réévaluée sous v2. |
