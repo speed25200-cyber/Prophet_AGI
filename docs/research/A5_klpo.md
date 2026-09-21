@@ -1,14 +1,15 @@
 # A5 — KLPO : l'amélioration de politique régularisée par la KL vers l'échantillonneur, sans critique
 
-**Track :** A5 · **Statut :** thèse importée, implémentée, ablation en cours · **Date :** 2026-09-21
+**Track :** A5 · **Statut :** thèse importée, implémentée, rapport lu en entier, ablation en cours · **Date :** 2026-09-21
 **Source :** Zhang et al., *KL-Regularized Policy Optimization for Critic-Free Agentic
 Reinforcement Learning*, rapport technique du 18 septembre 2026, révisé le 20 ;
-dépôt [yifanzhang-pro/KLPO](https://github.com/yifanzhang-pro/KLPO) (Apache-2.0).
-Lignée : RPG (Zhang et al., 2026), SPPO et GPO (Wu et al., 2024 ; Zhang et al., 2025),
-BPO, *Score Centering* (Marek et Ryabinin, 2026), FlashREINFORCE (même auteur).
+dépôt [yifanzhang-pro/KLPO](https://github.com/yifanzhang-pro/KLPO) (Apache-2.0), copié au
+commit `ecd92da` dans `third_party/klpo/` (rapport : `KLPO.pdf`, 56 pages).
+Lignée : RPG–URKL (Zhang et al., 2026), SPPO et GPO (Wu et al., 2024 ; Zhang et al., 2025),
+BPO (Song et al., 2026), *Score Centering* (Marek et Ryabinin, 2026), FlashREINFORCE (même auteur).
 
-Convention de confiance : `[V]` vérifié sur le code du dépôt ; `[S]` résumé de recherche,
-texte intégral du rapport non lu ; `[F]` chiffre de FlashREINFORCE, pas de KLPO.
+Convention de confiance : `[V]` vérifié sur le code du dépôt ou sur le texte intégral du rapport
+(lu le 2026-09-21) ; `[F]` chiffre de FlashREINFORCE, pas de KLPO.
 
 ## 1. La thèse en neuf pas
 
@@ -44,9 +45,9 @@ been validated ».
 
 | Affirmation | Preuve | Statut |
 |---|---|---|
-| Équivalence des gradients (régression, token, substitut) | dérivation du rapport, tests CPU du dépôt sur un arbre énuméré | `[V]` tests, `[S]` preuves |
+| Équivalence des gradients (régression, token, substitut) | rapport §3, figure 1, pas 1–9 (proposition B.6 pour la régression par token à récompense terminale) ; tests CPU du dépôt sur un arbre énuméré, 91 passés ici | `[V]` |
 | Stabilité à retard 8 contre GRPO à retard 1, Qwen3-30B-A3B avec outil Python, moyenne de trois bancs 66,4 | figure 3 du rapport **FlashREINFORCE** | `[F]` une graine, avg@4 |
-| Résultats de KLPO à l'échelle | aucun publié | absent |
+| Résultats de KLPO à l'échelle | le rapport ne contient **aucune expérience** : ni banc, ni modèle nommé, ni courbe d'entraînement ; le README dit l'entraînement GPU non validé | absent `[V]` |
 
 Les courbes de FlashREINFORCE disent : GRPO s'effondre deux fois (moyenne ≈ 15 % vers
 500 mises à jour, ≈ 35 % vers 700) puis récupère ; les trois variantes de FlashREINFORCE
@@ -69,11 +70,13 @@ fonctionnement par sessions de notre entraînement.
 | Point | Choix | Raison |
 |---|---|---|
 | Tokens de politique | ceux que la boucle a **tirés** (span de réflexion, span d'action quand `sample_actions` est actif) ; exclus : prompt, observations, ids de contrôle, valeurs copiées par le pointeur, tokens décodés en glouton | pour un échantillonneur en masse de Dirac, la correction est nulle : rien à apprendre |
-| Distribution de l'échantillonneur q | la distribution **réellement tirée** : logits masqués par la grammaire, divisés par la température, enregistrés à la génération avec M tirages auxiliaires | contrat du rapport : l'échantillonneur réel, pas une reconstruction |
+| Distribution de l'échantillonneur q | la distribution **réellement tirée** : logits masqués par la grammaire, divisés par la température, enregistrés à la génération avec M tirages auxiliaires | rapport, annexe G.1 : « the denominator uses the actual sampler probability, not a reconstructed trainer probability at the same weights » ; le masque est une perte de support que rien ne restaure, q y vaut zéro, la KL(q‖p) reste finie |
 | Distribution entraînée p | le modèle courant, sans masque, à température 1 | le masque n'est pas disponible à l'entraînement ; la KL tire alors la masse de p vers ce que la grammaire autorise, ce qui est le comportement voulu ; c'est une approximation déclarée |
 | Génération du bras KLPO | température 1,0 pour les deux spans | rapproche q de p hors masque |
 | Têtes d'action typées | inchangées par la perte KLPO ; entraînées par le fine-tuning sur épisodes vérifiés du même tour | KLPO ne couvre que les tokens de langage |
 | Bras `closed-klpo` | fine-tuning par rejet **puis** K pas KLPO sur tous les épisodes du tour | isole l'apport de KLPO à budget de tâches égal |
+| Réutilisation des enregistrements | les K pas d'un tour recalculent log p à chaque pas mais réutilisent les M tirages faits à la génération | le rapport (§3.9 et « Independence during reuse ») nomme cela le **substitut empirique** ; la variante sans biais conditionnel exige des tirages frais de l'échantillonneur historique à chaque pas, donc le masque de grammaire à l'entraînement — non disponible |
+| Budget de KL (pas 10 du rapport) | non implémenté ; gradient brut, écrêtage de norme à 1, AdamW neuf à chaque tour | optionnel dans le rapport ; à ajouter si la dérive (H3) l'exige |
 
 Le flux d'entraînement de KLPO est le flux exact que la boucle a nourri au modèle
 (`EpisodeResult.ids`), pas un rendu : la leçon de docs/09 (deux décalages
