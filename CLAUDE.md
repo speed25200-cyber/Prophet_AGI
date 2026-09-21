@@ -46,7 +46,8 @@ prophet/
                 profondeur récurrente avec halte apprise, têtes d'action typées
   data/         Tokenizer Prophet-Tok v1, mélanges, décontamination, streaming reprenable,
                 corpus réels (fichiers/Hub, phases, plafond d'époques au tirage)
-  train/        Muon + AdamW, planning WSD, checkpointing atomique, boucle, pertes
+  train/        Muon + AdamW, planning WSD, checkpointing atomique, boucle, pertes,
+                KLPO (régression par token régularisée par la KL vers l'échantillonneur, A5)
   eval/         Métriques (BPB), harnais à trois niveaux, benchmark agentique à vérificateurs
   memory/       Registre à clés-produit (écriture en forme close), état de session,
                 consolidation de contexte et de profondeur

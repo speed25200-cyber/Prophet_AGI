@@ -38,6 +38,7 @@ au même budget de tâches. C'est cette courbe que ce programme produit.
 | **H2 rendement** | Le gain du bras `closed` vaut une fraction stable de celui de l'oracle au même budget de tâches. | Rapport [gain closed] / [gain oracle] rapporté par tour ; pas de seuil, c'est la mesure. |
 | **H3 coût d'oubli** | L'entraînement sur ses propres épisodes avec rejeu ne dégrade pas la langue plus que l'oracle. | Δ BPB(tour R − tour 0) du bras `closed` ≤ celui de l'oracle + 0,05 bit/octet. |
 | **H4 compute** | La capacité gagnée par heure de compute (génération + vérification + entraînement) est décroissante mais positive. | Courbe rapportée ; critère : gain par heure du dernier tour > 0. |
+| **H5 KLPO** (ajouté le 2026-09-21, avant que le bras ne tourne) | Ajouter, au fine-tuning par rejet, des pas KLPO sur **tous** les épisodes du tour (docs/research/A5_klpo.md) rapporte au moins autant en succès et dérive moins en langue. | Gain(`closed-klpo`) ≥ gain(`closed`) sur la moyenne des graines, **et** Δ BPB(`closed-klpo`) ≤ Δ BPB(`closed`). Les deux, sinon échec. |
 
 Un échec de H1 est un résultat : il dit que le taux de succès de départ ne suffit pas
 pour que la boucle démarre, et à quel taux. Le programme ne se « répare » pas en
@@ -50,6 +51,7 @@ changeant un critère après coup.
 | `closed` | ceux que le modèle a produits **et** qu'un programme a vérifiés (tier 0) | oui, sur tous les promus, avec rejeu |
 | `oracle` | la trajectoire parfaite de chaque tâche du tour | identique |
 | `frozen` | aucun | aucun |
+| `closed-klpo` | comme `closed`, plus **tous** les épisodes du tour avec leur récompense 0/1 et les enregistrements de l'échantillonneur | fine-tuning par rejet identique à `closed`, puis K pas KLPO (β = 0,1, M = 8, température 1,0 à la génération) |
 
 L'amorce est commune : le poids de base affiné sur peu de trajectoires parfaites de la
 famille, juste assez pour que le succès de départ soit non nul. Un modèle à zéro ne
@@ -96,5 +98,6 @@ poids du programme docs/29 et n'est pas lancée avant.
 | Pièce | Fichier | Test |
 |---|---|---|
 | Pilote : tours, bras, comptabilité, reprise par tour, protocole figé | `scripts/closed_loop.py` | `tests/test_closed_loop.py` |
+| Perte KLPO, enregistrement de l'échantillonneur, bras `closed-klpo` | `prophet/train/klpo.py`, `prophet/agent/loop.py`, `scripts/closed_loop_cpu_pilot_klpo.sh` | `tests/test_klpo.py` |
 | Boucle d'agent, quarantaine, rendu, banc (existants) | `prophet/agent/`, `prophet/eval/agent_bench.py` | suite existante |
 | Poids de base 7 M | `scripts/first_run_cpu.py` | docs/09 |

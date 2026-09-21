@@ -42,7 +42,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import torch  # noqa: E402
 
 from prophet.agent import tasks as task_families  # noqa: E402
-from prophet.agent.loop import AgentConfig  # noqa: E402
+from prophet.agent.loop import (
+    AgentConfig,  # noqa: E402
+    AgentLoop,  # noqa: E402
+)
 from prophet.agent.quarantine import Entry, Provenance, Quarantine  # noqa: E402
 from prophet.agent.render import render_episode  # noqa: E402
 from prophet.agent.verify import Tier  # noqa: E402
@@ -52,6 +55,7 @@ from prophet.data.tokenizer import ProphetTokenizer  # noqa: E402
 from prophet.eval.agent_bench import run_bench  # noqa: E402
 from prophet.modeling.model import ProphetModel  # noqa: E402
 from prophet.train.checkpoint import CheckpointManager  # noqa: E402
+from prophet.train.klpo import klpo_update  # noqa: E402
 from prophet.train.loop import TrainConfig, Trainer  # noqa: E402
 from scripts.first_agent_run_cpu import (  # noqa: E402
     CONFIG,
@@ -61,7 +65,7 @@ from scripts.first_agent_run_cpu import (  # noqa: E402
     replay_source,
 )
 
-ARMS = ("closed", "oracle", "frozen")
+ARMS = ("closed", "oracle", "frozen", "closed-klpo")
 BENCH_SEEDS = (7, 11)
 SEED_TASK_BASE = 1_000
 ROUND_TASK_BASE = 10_000
@@ -241,6 +245,75 @@ def generate_round(
     }
 
 
+def generate_round_klpo(
+    model,
+    tokenizer,
+    family: str,
+    tasks,
+    quarantine: Quarantine,
+    *,
+    attempts: int,
+    temperature: float,
+    draws: int,
+) -> tuple[dict, list[dict]]:
+    """Like ``generate_round`` but every episode is kept with its terminal reward and
+    the sampler's records (docs/research/A5_klpo.md): the action span is sampled and
+    every drawn token carries the sampler's log-probability and auxiliary draws."""
+    cfg = generation_config(family, temperature=temperature)
+    cfg.sample_actions = True
+    cfg.record_sampling = True
+    cfg.mc_draws = draws
+    remaining = list(tasks)
+    started = time.time()
+    tokens = 0
+    episodes: list[dict] = []
+    solved: set[str] = set()
+    before = len(quarantine.promoted(family))
+    for _attempt in range(attempts):
+        if not remaining:
+            break
+        still = []
+        for task in remaining:
+            loop = AgentLoop(
+                model,
+                tokenizer,
+                task_families.tools_for(task),
+                cfg,
+                quarantine=quarantine,
+                verifier_tool=task_families.verifier_for(task),
+            )
+            result = loop.run(task.goal)
+            tokens += result.tokens
+            reward = 1 if result.verified_before_done else 0
+            episodes.append(
+                {
+                    "task": task.name,
+                    "reward": reward,
+                    "ids": result.ids,
+                    "sampled": result.sampled,
+                    "tokens": result.tokens,
+                    "policy_tokens": len(result.sampled or []),
+                }
+            )
+            if reward:
+                solved.add(task.name)
+            else:
+                still.append(task)
+        remaining = still
+    generation = {
+        "tasks": len(tasks),
+        "episodes": len(episodes),
+        "attempts": attempts,
+        "solved": len(solved),
+        "promoted_new": len(quarantine.promoted(family)) - before,
+        "tokens": tokens,
+        "policy_tokens": sum(e["policy_tokens"] for e in episodes),
+        "rewarded_episodes": sum(e["reward"] for e in episodes),
+        "seconds": time.time() - started,
+    }
+    return generation, episodes
+
+
 def oracle_round(family: str, tasks, quarantine: Quarantine) -> dict:
     before = len(quarantine.promoted(family))
     for task in tasks:
@@ -312,6 +385,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--minutes", type=float, default=120.0, help="wall budget for this launch; resume later"
     )
+    ap.add_argument(
+        "--klpo-steps",
+        type=int,
+        default=None,
+        help="KLPO updates per round (default: --steps-per-round)",
+    )
+    ap.add_argument("--klpo-beta", type=float, default=0.1)
+    ap.add_argument("--klpo-lr", type=float, default=5e-4)
+    ap.add_argument(
+        "--klpo-draws", type=int, default=8, help="auxiliary token draws per prefix (M)"
+    )
+    ap.add_argument(
+        "--klpo-temperature", type=float, default=1.0, help="sampling temperature of the KLPO arm"
+    )
     args = ap.parse_args(argv)
     if args.rounds < 0 or args.tasks_per_round < 1 or args.attempts < 1 or args.steps_per_round < 0:
         ap.error("rounds >= 0, tasks and attempts >= 1, steps >= 0")
@@ -344,6 +431,13 @@ def main(argv: list[str] | None = None) -> int:
         "task_seeds": {
             "seed": SEED_TASK_BASE + args.seed,
             "rounds": f"{ROUND_TASK_BASE} * (seed + 1) + round",
+        },
+        "klpo": {
+            "steps": args.klpo_steps if args.klpo_steps is not None else args.steps_per_round,
+            "beta": args.klpo_beta,
+            "lr": args.klpo_lr,
+            "draws": args.klpo_draws,
+            "temperature": args.klpo_temperature,
         },
     }
     protocol_path = args.out / "protocol.json"
@@ -473,6 +567,18 @@ def main(argv: list[str] | None = None) -> int:
                 attempts=args.attempts,
                 temperature=args.temperature,
             )
+        elif args.arm == "closed-klpo":
+            generation, klpo_episodes = generate_round_klpo(
+                model,
+                tokenizer,
+                args.family,
+                tasks,
+                quarantine,
+                attempts=args.attempts,
+                temperature=args.klpo_temperature,
+                draws=args.klpo_draws,
+            )
+            write_json(args.out / f"round-{r:03d}-episodes.json", klpo_episodes)
         elif args.arm == "oracle":
             generation = oracle_round(args.family, tasks, quarantine)
         else:
@@ -506,6 +612,20 @@ def main(argv: list[str] | None = None) -> int:
                     seed=args.seed * 1_000 + r,
                 ),
             }
+        klpo = None
+        if args.arm == "closed-klpo":
+            klpo_started = time.time()
+            klpo = klpo_update(
+                model,
+                klpo_episodes,
+                pad_id=tokenizer.pad_id,
+                steps=protocol["klpo"]["steps"],
+                beta=args.klpo_beta,
+                lr=args.klpo_lr,
+                batch_size=args.batch_size,
+                seed=args.seed * 1_000 + r,
+            )
+            klpo["seconds"] = time.time() - klpo_started
         started = time.time()
         measured = evaluate(
             model,
@@ -517,12 +637,14 @@ def main(argv: list[str] | None = None) -> int:
             seq_len=args.seq_len,
         )
         compute += generation["seconds"] + (train["seconds"] if train else 0.0)
+        compute += klpo["seconds"] if klpo else 0.0
         manager.save({"model": model.state_dict(), "step": r}, r)
         record(
             {
                 "round": r,
                 "generation": generation,
                 "train": train,
+                "klpo": klpo,
                 **measured,
                 "eval_seconds": time.time() - started,
                 "promoted_total": len(quarantine.promoted(args.family)),

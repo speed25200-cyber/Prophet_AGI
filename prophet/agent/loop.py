@@ -114,6 +114,15 @@ class AgentConfig:
     verifier: VerifierConfig = field(default_factory=VerifierConfig)
     verifier_version: str = "prior-0"
     family: str = "default"
+    sample_actions: bool = False
+    """Sample the action span at ``sample_temperature`` instead of decoding it greedily.
+    Off for benches; on when the episode is training data for a policy-gradient method
+    (docs/research/A5_klpo.md): a greedy sampler is a point mass and teaches nothing."""
+    record_sampling: bool = False
+    """Record, for every token the model draws, the sampler's log-probability as used
+    (grammar-masked, tempered) and ``mc_draws`` auxiliary draws with theirs, in
+    ``EpisodeResult.sampled``; the exact token stream goes to ``EpisodeResult.ids``."""
+    mc_draws: int = 8
 
 
 @dataclass
@@ -149,12 +158,25 @@ class EpisodeResult:
     tokens: int = 0
     """Every token the model processed in the episode: prompt, spans, observations and
     spliced values. The denominator of "tokens per success"."""
+    ids: list[int] | None = None
+    """With ``record_sampling``: the exact token stream the model was fed."""
+    sampled: list[dict[str, Any]] | None = None
+    """With ``record_sampling``: one record per token the sampler drew --
+    ``position`` in ``ids``, ``token``, ``logq``, ``mc_ids``, ``mc_logq``."""
 
 
 class AgentLoop:
-    def __init__(self, model, tokenizer: Tokenizer, tools: ToolRegistry, cfg: AgentConfig,
-                 *, scorer: SignalScorer | None = None, quarantine: Quarantine | None = None,
-                 verifier_tool: Callable[[AgentState], bool] | None = None) -> None:
+    def __init__(
+        self,
+        model,
+        tokenizer: Tokenizer,
+        tools: ToolRegistry,
+        cfg: AgentConfig,
+        *,
+        scorer: SignalScorer | None = None,
+        quarantine: Quarantine | None = None,
+        verifier_tool: Callable[[AgentState], bool] | None = None,
+    ) -> None:
         self.model = model
         self.tok = tokenizer
         self.tools = tools
@@ -166,7 +188,8 @@ class AgentLoop:
         is accepted only if it passes; when absent the confidence head decides."""
         self.grammar = ActionGrammar(tools)
         self.decoder = ConstrainedDecoder(
-            self.grammar, lambda tid: self.tok.decode([tid]),
+            self.grammar,
+            lambda tid: self.tok.decode([tid]),
             end_id=self._sid("<|/call|>"),
         )
         self._ids: list[int] = []
@@ -175,7 +198,9 @@ class AgentLoop:
         recurrent = getattr(getattr(model, "cfg", None), "recurrent", None)
         if cfg.depth_policy == "auto":
             # A model without a config (a scripted stand-in) ignores depth anyway.
-            self.variable_depth = recurrent is None or bool(getattr(recurrent, "token_depth", False))
+            self.variable_depth = recurrent is None or bool(
+                getattr(recurrent, "token_depth", False)
+            )
         else:
             self.variable_depth = cfg.depth_policy == "token"
         if self.variable_depth and recurrent is not None and not recurrent.token_depth:
@@ -183,8 +208,10 @@ class AgentLoop:
                 "depth_policy='token' on a model whose recurrent.token_depth is off: "
                 "varying the depth within one cache is undefined for it"
             )
-        self.k_think = cfg.k_think if cfg.k_think is not None else (
-            int(recurrent.default_loop_k) if recurrent is not None else cfg.k_decide
+        self.k_think = (
+            cfg.k_think
+            if cfg.k_think is not None
+            else (int(recurrent.default_loop_k) if recurrent is not None else cfg.k_decide)
         )
 
     # -- ids ---------------------------------------------------------------------------
@@ -198,9 +225,17 @@ class AgentLoop:
     # -- decoding ----------------------------------------------------------------------
 
     @torch.no_grad()
-    def _feed(self, ids: list[int], cache: ProphetCache, *, loop_k: int | None,
-              halt_threshold: float | None = None, modality: int | None = None,
-              positions: dict[str, list[int]] | None = None, observation: bool = False):
+    def _feed(
+        self,
+        ids: list[int],
+        cache: ProphetCache,
+        *,
+        loop_k: int | None,
+        halt_threshold: float | None = None,
+        modality: int | None = None,
+        positions: dict[str, list[int]] | None = None,
+        observation: bool = False,
+    ):
         if not ids:
             return None
         self._ids.extend(ids)  # absolute position == index; eviction never renumbers
@@ -218,9 +253,17 @@ class AgentLoop:
         return self.model(t, **kw)
 
     @torch.no_grad()
-    def _decode(self, cache: ProphetCache, *, budget: int, loop_k: int | None,
-                halt_threshold: float | None, greedy: bool, stop_ids: set[int],
-                constrained: bool = False) -> tuple[str, Any]:
+    def _decode(
+        self,
+        cache: ProphetCache,
+        *,
+        budget: int,
+        loop_k: int | None,
+        halt_threshold: float | None,
+        greedy: bool,
+        stop_ids: set[int],
+        constrained: bool = False,
+    ) -> tuple[str, Any]:
         """Generate up to ``budget`` tokens; return the text and the last output.
 
         In a constrained span with action heads, every fed token also scores the copy
@@ -235,8 +278,13 @@ class AgentLoop:
         self._copied = 0
         for _ in range(budget):
             if last_id is not None:
-                out = self._feed([last_id], cache, loop_k=loop_k, halt_threshold=halt_threshold,
-                                 positions=copy_kw)
+                out = self._feed(
+                    [last_id],
+                    cache,
+                    loop_k=loop_k,
+                    halt_threshold=halt_threshold,
+                    positions=copy_kw,
+                )
             elif out is None:
                 # First token of the span is produced from the cache's current logits;
                 # the caller has already fed the span opener.
@@ -267,6 +315,8 @@ class AgentLoop:
             else:
                 probs = torch.softmax(logits / self.cfg.sample_temperature, -1)
                 nxt = int(torch.multinomial(probs, 1).item())
+                if self.cfg.record_sampling:
+                    self._record_draw(logits, probs, nxt)
             if nxt in stop_ids:
                 last_id = nxt
                 break
@@ -279,6 +329,30 @@ class AgentLoop:
             # Fold the terminal token into the cache so the next span starts after it.
             self._last_output = self._feed([last_id], cache, loop_k=loop_k) or self._last_output
         return prefix, out
+
+    def _record_draw(self, logits: torch.Tensor, probs: torch.Tensor, token: int) -> None:
+        """The sampler as it was actually used at this position, plus auxiliary draws.
+
+        ``logits`` are already grammar-masked; the log-probabilities are those of the
+        tempered distribution the token was drawn from. The position is where the token
+        will land in ``self._ids``: it is fed next, nothing is fed in between.
+        """
+        log_probs = torch.log_softmax(logits / self.cfg.sample_temperature, -1)
+        draws = torch.multinomial(probs, max(int(self.cfg.mc_draws), 1), replacement=True)
+        self._sampled.append(
+            {
+                "position": len(self._ids),
+                "token": int(token),
+                "logq": float(log_probs[token]),
+                "mc_ids": draws.tolist(),
+                "mc_logq": log_probs[draws].tolist(),
+            }
+        )
+
+    def _record_kw(self) -> dict[str, Any]:
+        if not self.cfg.record_sampling:
+            return {}
+        return {"ids": list(self._ids), "sampled": list(self._sampled)}
 
     def _try_copy(self, prefix: str, out) -> str | None:
         """At a value start, ask the gate; if it says copy, read the span the pointers
@@ -325,8 +399,14 @@ class AgentLoop:
     # -- the episode -------------------------------------------------------------------
 
     @torch.no_grad()
-    def run(self, goal: str, *, notes: str = "", modality_tool: int | None = None,
-            session: Any | None = None) -> EpisodeResult:
+    def run(
+        self,
+        goal: str,
+        *,
+        notes: str = "",
+        modality_tool: int | None = None,
+        session: Any | None = None,
+    ) -> EpisodeResult:
         """Run one episode.
 
         ``session`` carries the recurrent core's bounded state from an earlier episode
@@ -337,7 +417,12 @@ class AgentLoop:
         self.model.eval()
         cache = ProphetCache()
         self._ids = []
-        fingerprint = model_fingerprint(self.model) if isinstance(self.model, torch.nn.Module) and hasattr(self.model, "cfg") else ""
+        self._sampled = []
+        fingerprint = (
+            model_fingerprint(self.model)
+            if isinstance(self.model, torch.nn.Module) and hasattr(self.model, "cfg")
+            else ""
+        )
         # An episode without a session starts from empty ledgers: they are buffers on
         # the model, not on the cache, and would otherwise leak from one episode into the
         # next through the weights.
@@ -359,7 +444,9 @@ class AgentLoop:
         anchors = [i for i, tid in enumerate(pinned_ids) if tid == anchor_id]
         tool_names = [s.name for s in self.tools.schemas()]  # the anchors' order
         self._last_output = self._feed(
-            pinned_ids, cache, loop_k=self.cfg.k_decide,
+            pinned_ids,
+            cache,
+            loop_k=self.cfg.k_decide,
             positions={"anchor_positions": anchors} if anchors else None,
         )
         k_think = self.k_think if self.variable_depth else None
@@ -378,11 +465,15 @@ class AgentLoop:
             # 1. think: free text, learned halting, budgeted.
             think = ""
             if think_open is not None:
-                self._last_output = self._feed([think_open], cache, loop_k=k_think,
-                                               halt_threshold=self.cfg.halt_threshold)
+                self._last_output = self._feed(
+                    [think_open], cache, loop_k=k_think, halt_threshold=self.cfg.halt_threshold
+                )
                 think, _ = self._decode(
-                    cache, budget=self.cfg.think_budget, loop_k=k_think,
-                    halt_threshold=self.cfg.halt_threshold, greedy=False,
+                    cache,
+                    budget=self.cfg.think_budget,
+                    loop_k=k_think,
+                    halt_threshold=self.cfg.halt_threshold,
+                    greedy=False,
                     stop_ids={think_close} if think_close is not None else set(),
                 )
 
@@ -390,26 +481,45 @@ class AgentLoop:
             # heads, the selection pointer decides the tool at <|call|> and the grammar
             # is narrowed to it; the LM fills arguments.
             self._last_output = self._feed(
-                [call_open], cache, loop_k=k_act, positions={"decision_positions": [0]},
+                [call_open],
+                cache,
+                loop_k=k_act,
+                positions={"decision_positions": [0]},
             )
             selected, sel_margin = self._selection(self._last_output, tool_names)
             if selected is not None and self.cfg.use_selection_head:
                 self.grammar.restrict(set() if selected == "none" else {selected})
             try:
                 text, out = self._decode(
-                    cache, budget=self.cfg.action_budget, loop_k=k_act,
-                    halt_threshold=None, greedy=True,
-                    stop_ids={call_close} if call_close is not None else set(), constrained=True,
+                    cache,
+                    budget=self.cfg.action_budget,
+                    loop_k=k_act,
+                    halt_threshold=None,
+                    greedy=not self.cfg.sample_actions,
+                    stop_ids={call_close} if call_close is not None else set(),
+                    constrained=True,
                 )
             finally:
                 self.grammar.restrict(None)
             action = self.grammar.complete(text)
             if action is None:
                 # The grammar guarantees viability, not completion within budget.
-                records.append(StepRecord(step, think, None, None, "", gated="malformed",
-                                          selected=selected, sel_margin=sel_margin,
-                                          copied=self._copied))
-                state.trajectory.append({"step": step, "think": think, "action": None, "gated": "malformed"})
+                records.append(
+                    StepRecord(
+                        step,
+                        think,
+                        None,
+                        None,
+                        "",
+                        gated="malformed",
+                        selected=selected,
+                        sel_margin=sel_margin,
+                        copied=self._copied,
+                    )
+                )
+                state.trajectory.append(
+                    {"step": step, "think": think, "action": None, "gated": "malformed"}
+                )
                 state.step += 1
                 continue
 
@@ -430,33 +540,74 @@ class AgentLoop:
                     gated = "refused_done"
                     action = Action("verify", {"what": f"confidence {p:.2f} below tau_done"})
                 if action.name == "done":
-                    records.append(StepRecord(step, think, action, verdict, "", gated,
-                                              selected=selected, sel_margin=sel_margin,
-                                              copied=self._copied))
+                    records.append(
+                        StepRecord(
+                            step,
+                            think,
+                            action,
+                            verdict,
+                            "",
+                            gated,
+                            selected=selected,
+                            sel_margin=sel_margin,
+                            copied=self._copied,
+                        )
+                    )
                     state.trajectory.append(self._traj(step, action, verdict, "", think))
                     self._close(state, passed=True, verified=verified_before_done)
-                    return EpisodeResult(True, "done", records, state.notes, verified_before_done,
-                                         session=self._session(cache, fingerprint), tokens=len(self._ids) - carried)
+                    return EpisodeResult(
+                        True,
+                        "done",
+                        records,
+                        state.notes,
+                        verified_before_done,
+                        session=self._session(cache, fingerprint),
+                        tokens=len(self._ids) - carried,
+                        **self._record_kw(),
+                    )
 
             elif action.name == "ask" or (p < self.cfg.tau_ask and self._needs_user(action)):
                 q = action.args.get("question", "clarification needed")
-                records.append(StepRecord(step, think, action, verdict, "", "ask",
-                                          selected=selected, sel_margin=sel_margin,
-                                          copied=self._copied))
+                records.append(
+                    StepRecord(
+                        step,
+                        think,
+                        action,
+                        verdict,
+                        "",
+                        "ask",
+                        selected=selected,
+                        sel_margin=sel_margin,
+                        copied=self._copied,
+                    )
+                )
                 state.trajectory.append(self._traj(step, action, verdict, "", think))
                 self._close(state, passed=False, verified=False)
-                return EpisodeResult(False, "ask", records, state.notes, False, asked_user=q,
-                                     session=self._session(cache, fingerprint), tokens=len(self._ids) - carried)
+                return EpisodeResult(
+                    False,
+                    "ask",
+                    records,
+                    state.notes,
+                    False,
+                    asked_user=q,
+                    session=self._session(cache, fingerprint),
+                    tokens=len(self._ids) - carried,
+                    **self._record_kw(),
+                )
 
             elif self.tools.is_irreversible(action.name) and p < self.cfg.tau_act:
                 gated = "verify_first"
-                action = Action("verify", {"what": f"dry-run of {action.name} at confidence {p:.2f}"})
+                action = Action(
+                    "verify", {"what": f"dry-run of {action.name} at confidence {p:.2f}"}
+                )
 
             # 4. loop detector.
             repeats = state.note_action(action.hash())
             if repeats > self.cfg.max_repeats:
                 gated = "reflect"
-                action = Action("note", {"text": state.notes + f"\n[stuck: repeated {action.name} x{repeats}]"})
+                action = Action(
+                    "note", {"text": state.notes + f"\n[stuck: repeated {action.name} x{repeats}]"}
+                )
 
             # 5. execute / reserved actions.
             observation = self._execute(action, state, cache)
@@ -465,21 +616,45 @@ class AgentLoop:
             if observation:
                 obs_ids = self._observation_ids(observation)
                 start = cache.position
-                self._last_output = self._feed(obs_ids, cache, loop_k=k_ingest, modality=modality_tool,
-                                               observation=True) or self._last_output
-                obs = Observation(step, action.name, observation, len(obs_ids), start, cache.position)
+                self._last_output = (
+                    self._feed(
+                        obs_ids, cache, loop_k=k_ingest, modality=modality_tool, observation=True
+                    )
+                    or self._last_output
+                )
+                obs = Observation(
+                    step, action.name, observation, len(obs_ids), start, cache.position
+                )
                 for old in state.push_observation(obs):
                     state.evict_from_attention(cache, old)
 
-            records.append(StepRecord(step, think, action, verdict, observation, gated,
-                                      selected=selected, sel_margin=sel_margin,
-                                      copied=self._copied))
+            records.append(
+                StepRecord(
+                    step,
+                    think,
+                    action,
+                    verdict,
+                    observation,
+                    gated,
+                    selected=selected,
+                    sel_margin=sel_margin,
+                    copied=self._copied,
+                )
+            )
             state.trajectory.append(self._traj(step, action, verdict, observation, think))
             state.step += 1
 
         self._close(state, passed=False, verified=False)
-        return EpisodeResult(False, "max_steps", records, state.notes, False,
-                             session=self._session(cache, fingerprint), tokens=len(self._ids) - carried)
+        return EpisodeResult(
+            False,
+            "max_steps",
+            records,
+            state.notes,
+            False,
+            session=self._session(cache, fingerprint),
+            tokens=len(self._ids) - carried,
+            **self._record_kw(),
+        )
 
     # -- helpers -------------------------------------------------------------------------
 
@@ -544,8 +719,9 @@ class AgentLoop:
     def _needs_user(self, action: Action) -> bool:
         return action.name in ("done", "submit", "send", "purchase")
 
-    def _traj(self, step: int, action: Action | None, verdict: Verdict | None, obs: str,
-              think: str = "") -> dict:
+    def _traj(
+        self, step: int, action: Action | None, verdict: Verdict | None, obs: str, think: str = ""
+    ) -> dict:
         """One serialised step. The think span and the full (already capped)
         observation are kept: a promoted episode is rendered back into training text
         by ``prophet.agent.render``, and a summary cannot be un-summarised."""
@@ -585,15 +761,24 @@ class AgentLoop:
         if self.quarantine is None:
             return
         last = next((t for t in reversed(state.trajectory) if t.get("p_correct") is not None), None)
-        tier = Tier.GROUND_TRUTH if (verified and passed) else (
-            Tier.LEARNED if last is not None else Tier.UNVERIFIED
+        tier = (
+            Tier.GROUND_TRUTH
+            if (verified and passed)
+            else (Tier.LEARNED if last is not None else Tier.UNVERIFIED)
         )
-        self.quarantine.add(Entry(
-            family=self.cfg.family, goal=state.goal, trajectory=state.trajectory,
-            outcome_passed=passed, process_ok=verified,
-            provenance=Provenance(
-                tier=int(tier), verifier_version=self.cfg.verifier_version,
-                p_correct=float(last["p_correct"]) if last else 0.0,
-                depth_disagreement=None, attempts=state.attempts_on_current,
-            ),
-        ))
+        self.quarantine.add(
+            Entry(
+                family=self.cfg.family,
+                goal=state.goal,
+                trajectory=state.trajectory,
+                outcome_passed=passed,
+                process_ok=verified,
+                provenance=Provenance(
+                    tier=int(tier),
+                    verifier_version=self.cfg.verifier_version,
+                    p_correct=float(last["p_correct"]) if last else 0.0,
+                    depth_disagreement=None,
+                    attempts=state.attempts_on_current,
+                ),
+            )
+        )

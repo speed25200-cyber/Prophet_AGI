@@ -160,3 +160,23 @@ def test_resume_continues_at_the_next_round(work, tmp_path):
         run(work, out, "oracle", rounds=2)
     again = run(work, out, "oracle", rounds=1)
     assert again == first
+
+
+def test_closed_klpo_arm_keeps_every_episode_and_runs_klpo_updates(work, tmp_path):
+    out = tmp_path / "klpo"
+    rounds = run(work, out, "closed-klpo", klpo_steps=2, klpo_draws=3)
+    generation = rounds[1]["generation"]
+    assert generation["episodes"] >= 3 and generation["policy_tokens"] > 0
+    assert 0 <= generation["rewarded_episodes"] <= generation["episodes"]
+    episodes = json.loads((out / "round-001-episodes.json").read_text())
+    assert len(episodes) == generation["episodes"]
+    assert all(e["reward"] in (0, 1) and e["ids"] and e["sampled"] for e in episodes)
+    assert all(len(r["mc_ids"]) == 3 for e in episodes for r in e["sampled"])
+    klpo = rounds[1]["klpo"]
+    assert klpo["steps"] == 2 and len(klpo["losses"]) == 2 and klpo["seconds"] > 0
+    assert klpo["beta"] == 0.1 and klpo["episodes"] == generation["episodes"]
+    assert rounds[1]["compute_seconds"] > generation["seconds"] + (rounds[1]["train"] or {}).get(
+        "seconds", 0
+    )
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["klpo"]["draws"] == 3 and protocol["klpo"]["steps"] == 2

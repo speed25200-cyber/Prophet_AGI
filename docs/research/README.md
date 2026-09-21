@@ -151,3 +151,9 @@ faire la moyenne, `scripts/design_search.py` a énuméré l'espace de conception
   seule +40 points ([`../09_FIRST_RUN.md`](../09_FIRST_RUN.md)). Ce que cela vaut à
   l'échelle reste à la recette A2 (67 h), non financée, comme l'ablation des plafonds de
   profondeur par token (4 h) et la sonde de désaccord de profondeur (1 h).
+
+## Ajout du 2026-09-21
+
+| Track | Rapport | Objet |
+|---|---|---|
+| A5 | [`A5_klpo.md`](A5_klpo.md) | KLPO : amélioration de politique régularisée par la KL vers l'échantillonneur, sans critique ; thèse importée, implémentée dans `prophet/train/klpo.py`, ablation comme bras `closed-klpo` de la boucle fermée (docs/31) |
