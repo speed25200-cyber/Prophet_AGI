@@ -175,10 +175,29 @@ gradient de politique mal régularisé contre rejet seul ». Le bras v2 garde ce
 hyperparamètres (pré-enregistrés) et la grammaire compacte ; un bras à β plus grand et à
 moins de pas est la suite naturelle si v2 confirme l'effondrement.
 
-## 7. Pilote v2 et suite
+## 7. Pilote v2 (grammaire compacte) et suite
 
-*À compléter.* Pré-enregistré (docs/31 amendement 3, H6) : quatre bras, graines 0, 2, 3,
-grammaire compacte, rien d'autre de changé.
+*En cours ; les lignes ci-dessous sont écrites au fil des tours.* Pré-enregistré (docs/31
+amendement 3, H6) : quatre bras, graines 0, 2, 3, grammaire compacte, rien d'autre de changé.
+
+**Réplication.** Tant qu'aucun blanc n'apparaît dans un span d'appel, v2 rejoue v1 au bit
+près : bras `oracle` des graines 0 et 2, bras `closed` de la graine 0 (mêmes tokens générés
+par tour, 8 815 / 7 705 / 8 708 / 10 219 / 6 557, mêmes BPB à la quatrième décimale, mêmes
+succès). Le pipeline est déterministe de bout en bout.
+
+**Le point de contrôle de H6, graine 2, tour 2 : même modèle, deux grammaires.** Les tours
+0–2 de v2 reprennent exactement l'entraînement de v1 (mêmes 9 754 tokens générés au tour 2,
+même BPB 2,2283), donc les poids évalués au tour 2 sont les mêmes ; seule la grammaire du
+banc diffère :
+
+| Grammaire du banc | Succès | Malformées (banc 7 / 11) |
+|---|---:|---:|
+| tolérante (v1) | 0,233 | 49 % / 42 % |
+| compacte (v2) | **0,550** | 8 % / 8 % |
+
+19 tâches sur 60 récupérées sans toucher aux poids : le mode (a) était bien un défaut de
+décodage. Les 8 % restants sont le mode (c) (corps de `done`). À partir du tour 3 les deux
+pilotes divergent (la génération elle-même passe par la grammaire compacte).
 
 Pour l'échelle A100 (docs/31 §3), trois choses sont acquises dès maintenant : la marge de
 départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la recette par
