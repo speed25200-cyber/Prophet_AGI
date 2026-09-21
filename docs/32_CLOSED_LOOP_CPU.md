@@ -124,6 +124,15 @@ parce que ses 30 lignes par tour sont toutes parfaites. Ce mode n'est pas corrig
 grammaire ; il relève de la recette (taux, pas par tour, rejeu) et, par construction, de la
 régularisation KL vers l'échantillonneur du bras KLPO (H5).
 
+**(c) Le corps de `done`, dès l'amorce.** Les 13–17 % de sorties malformées du modèle
+amorce (graine 0, tour 0, identiques sous les deux grammaires) ont une seule forme :
+`{"name":"done","args":{"` puis `{` — après `"args":{`, le modèle suit le motif majoritaire
+des lignes d'entraînement (`{"path"`, `{"text"`) au lieu du `}` que `done` demande, et le
+span meurt sur le jeton suivant. La bonne valeur est déjà dans les notes ; il manque un pas
+de budget (quatre pas par épisode) pour réémettre `done`. Ce mode ne dépend pas de la
+grammaire ; il relève de la taille du modèle et du budget de pas, et il coûte à tous les
+bras de la même façon (le banc du tour 0 est commun).
+
 ## 5. Ce que l'amorce décide
 
 | Famille | Amorce | Départ (banc 7 / 11) | Suite |
