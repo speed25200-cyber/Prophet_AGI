@@ -132,3 +132,24 @@ amorce 100 / 200, 5 tours × 30 tâches × 2 tentatives, 60 pas, rejeu 0,5, banc
 BPB 200 documents, les quatre bras, et les critères H1–H5 tels qu'écrits. Les scripts
 prennent la famille par `FAMILY=lookup` ; le run abandonné et la calibration sont des
 résultats et figurent dans docs/32.
+
+## Amendement 2 — 2026-09-21, après la graine 0, avant la seconde graine
+
+**Observation.** Sur `lookup`, l'amorce de la graine 1 (100 épisodes / 200 pas) donne elle
+aussi **1,0 au tour 0** (60/60, 0 % malformées) ; son run a été arrêté après ce tour 0. Le
+départ dépend fortement des 100 tâches tirées pour l'amorce :
+
+| Graine | Succès tour 0 (banc 7 / banc 11) | Malformés | Statut |
+|---|---|---|---|
+| 0 | 0,667 / 0,800 | 17 % / 10 % | utilisée, trois bras terminés |
+| 1 | 1,000 / 1,000 | 0 % | saturée, exclue de H1 |
+| 2 | 0,500 / 0,633 | 0 % | utilisée |
+| 3 | 0,633 / 0,767 | 5 % / 3 % | utilisée |
+
+**Règle, fixée maintenant.** Une graine dont l'amorce démarre à 0 ou à 1 ne peut pas tester
+H1 ; elle est rapportée mais exclue du critère. Les graines sont prises dans l'ordre
+0, 1, 2, 3, … et retenues si leur départ est strictement entre 0 et 1, jusqu'à en avoir au
+moins deux ; la calibration s'arrête là (graines 2 et 3, sans regarder au-delà). Le critère
+H1 devient « gain > 0 sur **toutes** les graines retenues », soit trois ici, avec l'intervalle
+qui exclut zéro sur le banc cumulé de chacune. Les poids d'amorce calibrés sont réutilisés
+tels quels par le pilote (entraînement d'amorce déterministe, même sortie).
