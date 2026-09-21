@@ -215,3 +215,24 @@ H1–H6. Le bras KLPO garde son propre taux (5e-4) ; seul son fine-tuning par re
 
 Le mode (c) (corps de `done` dès l'amorce, 13–17 % de malformées au tour 0) n'est pas visé
 par v3 ; il relève de la taille du modèle et du budget de pas et sera traité à part.
+
+## Amendement 6 — 2026-09-21, bras KLPO v2 arrêté après la graine 0, tour 1 ; v3 change ses hyperparamètres
+
+**Observation.** Sous la grammaire compacte, le bras `closed-klpo` tombe à **0,000** dès le
+tour 1 de la graine 0 (v1 : 0,517 puis 0,000) ; malformées 58 % / 57 %, perte KLPO
++1,0 → −10,3 en 60 pas, log p − log q moyen −0,83 nat/token. Le critère H5 ne peut plus
+passer en v2 (même arithmétique que l'amendement 4) ; le bras est arrêté et rapporté.
+
+**Diagnostic.** Deux runs, même forme : 60 pas d'AdamW à 5e-4 sur les **mêmes** 40–50
+épisodes et leurs tirages auxiliaires enregistrés (« substitut empirique » du rapport),
+avec β = 0,1. Le terme de KL est cent fois trop faible pour retenir une dérive de
+0,8–1,4 nat par token ; le score centré pousse la politique vers des jetons que
+l'échantillonneur n'aurait jamais tirés, et la grammaire ne rattrape pas une
+distribution effondrée.
+
+**Décision pour v3.** Le bras `closed-klpo` garde sa place mais avec **β = 1,0 et 20 pas
+KLPO** (lr 5e-4 et M = 8 inchangés), plus le `--lr-scale 0.25` commun à tous les bras.
+Son critère, H5, reste tel qu'écrit (gain ≥ `closed`, Δ BPB ≤ `closed`) et gagne une
+condition de non-effondrement : aucun tour sous succès(tour 0) − 0,10. Deux variables
+changent donc pour ce bras entre v2 et v3 ; la comparaison propre de KLPO est
+« `closed-klpo` v3 contre `closed` v3 », pas contre v2.
