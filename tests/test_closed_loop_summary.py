@@ -107,3 +107,40 @@ def test_a_loop_that_forgets_or_stalls_fails_the_checks(tmp_path):
     assert checks["H1_self_improvement"]["pass"] is False
     assert checks["H3_forgetting"]["pass"] is False
     assert checks["H4_compute"]["pass"] is False
+
+
+def test_h5_compares_the_klpo_arm_with_the_closed_arm(tmp_path):
+    base = record(0, [False] * 16 + [True] * 4, bpb=2.00, compute=0, promoted=0)
+    for seed in (0, 1):
+        write(
+            tmp_path,
+            "closed",
+            seed,
+            [base, record(1, [False] * 10 + [True] * 10, bpb=2.03, compute=600, promoted=8)],
+        )
+        write(
+            tmp_path,
+            "closed-klpo",
+            seed,
+            [base, record(1, [False] * 8 + [True] * 12, bpb=2.02, compute=700, promoted=8)],
+        )
+    checks = summarise(load_runs(tmp_path))["checks"]
+    assert "H2_yield" not in checks  # no oracle arm here
+    h5 = checks["H5_klpo"]
+    assert h5["pass"] is True
+    assert h5["klpo_gain"] == pytest.approx(0.4) and h5["closed_gain"] == pytest.approx(0.3)
+    # Same gain but more drift fails: both conditions are required.
+    write(
+        tmp_path / "worse",
+        "closed",
+        0,
+        [base, record(1, [False] * 10 + [True] * 10, bpb=2.03, compute=600, promoted=8)],
+    )
+    write(
+        tmp_path / "worse",
+        "closed-klpo",
+        0,
+        [base, record(1, [False] * 10 + [True] * 10, bpb=2.05, compute=700, promoted=8)],
+    )
+    assert summarise(load_runs(tmp_path / "worse"))["checks"]["H5_klpo"]["pass"] is False
+    assert "closed-klpo" in markdown(summarise(load_runs(tmp_path)))

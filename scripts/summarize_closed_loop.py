@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Summarise a closed-loop pilot (docs/31): the curves per arm and seed, and the four
-pre-registered checks, computed from the round records and nothing else.
+"""Summarise a closed-loop pilot (docs/31): the curves per arm and seed, and the five
+pre-registered checks (H1-H4, and H5 when the KLPO arm ran), computed from the round
+records and nothing else.
 
     python scripts/summarize_closed_loop.py --root OUT --out OUT/summary.json
 
@@ -17,7 +18,7 @@ import math
 import random
 from pathlib import Path
 
-ARMS = ("closed", "oracle", "frozen")
+ARMS = ("closed", "oracle", "frozen", "closed-klpo")
 H3_ALLOWANCE = 0.05
 
 
@@ -142,6 +143,20 @@ def summarise(runs: dict[str, dict[int, list[dict]]]) -> dict:
                 "allowance": H3_ALLOWANCE,
                 "pass": closed["mean_bpb_delta"] <= oracle["mean_bpb_delta"] + H3_ALLOWANCE,
             }
+    klpo = arms.get("closed-klpo")
+    if closed and klpo:
+        # docs/31 H5: at equal task budget the KLPO arm gains at least as much as the
+        # closed arm on the seed mean and drifts no more in bits per byte.
+        gain_ok = klpo["mean_gain"] >= closed["mean_gain"]
+        deltas_known = closed["mean_bpb_delta"] is not None and klpo["mean_bpb_delta"] is not None
+        drift_ok = deltas_known and klpo["mean_bpb_delta"] <= closed["mean_bpb_delta"]
+        checks["H5_klpo"] = {
+            "klpo_gain": klpo["mean_gain"],
+            "closed_gain": closed["mean_gain"],
+            "klpo_bpb_delta": klpo["mean_bpb_delta"],
+            "closed_bpb_delta": closed["mean_bpb_delta"],
+            "pass": bool(gain_ok and drift_ok),
+        }
     return {"arms": arms, "checks": checks}
 
 
