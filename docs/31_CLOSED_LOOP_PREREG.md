@@ -193,3 +193,25 @@ graines ; avec −0,733 sur la graine 0, il ne peut plus passer quels que soient
 graines 2 et 3 (au mieux +0,433 et +0,300, moyenne 0,000 < +0,111). Les graines 2 et 3 ne
 sont donc pas lancées en v1 ; le verdict v1 de H5 est **échec**, rapporté avec les chiffres
 dans docs/32 §6. Le bras KLPO tourne en v2 sur les trois graines, hyperparamètres inchangés.
+
+## Amendement 5 — 2026-09-21, pendant v2, avant tout run v3
+
+**Observation.** Sous la grammaire compacte (v2), le mode (a) a disparu (graine 2, tour 2 :
+0,233 → 0,550 à poids égaux), mais le bras `closed` de la graine 2 reste instable
+(0,567 → 0,500 → 0,550 → 0,400 → 0,517 → 0,600) et ses échecs sont désormais des copies du
+mauvais champ, bien formées : le mode (b). L'oracle connaît le même creux (graine 0,
+tour 2) et tous les bras oublient autant (+0,40 à +0,46 bit/octet en cinq tours). Le
+suspect commun est la recette par tour : un planning WSD neuf à taux de pointe plein
+(Muon 0,01, AdamW 2e-3) pendant 60 pas sur 14–30 lignes, soit 12 à 30 passages par ligne.
+
+**Pilote v3, une seule variable.** `--lr-scale 0.25` : taux de pointe divisés par quatre
+pour l'entraînement des tours (pas pour l'amorce, réutilisée). Tout le reste comme v2 :
+grammaire compacte, 60 pas, rejeu 0,5, graines 0, 2, 3, quatre bras, mêmes critères
+H1–H6. Le bras KLPO garde son propre taux (5e-4) ; seul son fine-tuning par rejet change.
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H7 recette** | Le taux de pointe divisé par quatre supprime les creux et divise l'oubli, sans perdre le gain. | (i) aucun tour du bras `closed` sous succès(tour 0) − 0,10 sur les graines retenues ; (ii) gain moyen de `closed` ≥ celui de v2 ; (iii) Δ BPB moyen de `closed` ≤ la moitié de celui de v2. Les trois, sinon échec. |
+
+Le mode (c) (corps de `done` dès l'amorce, 13–17 % de malformées au tour 0) n'est pas visé
+par v3 ; il relève de la taille du modèle et du budget de pas et sera traité à part.

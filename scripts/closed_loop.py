@@ -118,8 +118,13 @@ def train_rows(
     replay_fraction: float,
     checkpoint_dir: Path,
     seed: int,
+    lr_scale: float = 1.0,
 ) -> dict:
-    """``steps`` updates on ``rows`` mixed with the base corpus; a fresh schedule each call."""
+    """``steps`` updates on ``rows`` mixed with the base corpus; a fresh schedule each call.
+
+    ``lr_scale`` multiplies both peak learning rates (docs/31 amendment 5: the per-round
+    recipe is the suspected cause of the drift and the forgetting).
+    """
     if not rows or steps < 1:
         return {
             "steps": 0,
@@ -136,8 +141,8 @@ def train_rows(
         total_steps=steps,
         batch_size=batch_size,
         seq_len=seq_len,
-        peak_lr_muon=0.01,
-        peak_lr_adamw=2e-3,
+        peak_lr_muon=0.01 * lr_scale,
+        peak_lr_adamw=2e-3 * lr_scale,
         warmup_frac=0.05,
         decay_frac=0.3,
         checkpoint_dir=str(checkpoint_dir),
@@ -376,6 +381,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--replay-fraction", type=float, default=0.5)
     ap.add_argument(
+        "--lr-scale",
+        type=float,
+        default=1.0,
+        help="multiplies the peak learning rates of the per-round training (not the seed)",
+    )
+    ap.add_argument(
         "--temperature", type=float, default=0.7, help="sampling temperature during generation"
     )
     ap.add_argument("--bench-tasks", type=int, default=40)
@@ -423,6 +434,7 @@ def main(argv: list[str] | None = None) -> int:
         "seed_episodes": args.seed_episodes,
         "seed_steps": args.seed_steps,
         "replay_fraction": args.replay_fraction,
+        "lr_scale": args.lr_scale,
         "temperature": args.temperature,
         "bench_tasks": args.bench_tasks,
         "bench_seeds": list(BENCH_SEEDS),
@@ -610,6 +622,7 @@ def main(argv: list[str] | None = None) -> int:
                     replay_fraction=args.replay_fraction,
                     checkpoint_dir=args.out / "scratch",
                     seed=args.seed * 1_000 + r,
+                    lr_scale=args.lr_scale,
                 ),
             }
         klpo = None

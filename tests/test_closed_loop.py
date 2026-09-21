@@ -8,6 +8,7 @@ import pytest
 from prophet.data.tokenizer import ProphetTokenizer
 from prophet.modeling.model import ProphetModel
 from prophet.train.checkpoint import CheckpointManager
+from scripts import closed_loop
 from scripts.closed_loop import main
 from tests.test_loop_core_corpus import paragraph
 from tests.test_run_loop_core import tiny_config
@@ -180,3 +181,27 @@ def test_closed_klpo_arm_keeps_every_episode_and_runs_klpo_updates(work, tmp_pat
     )
     protocol = json.loads((out / "protocol.json").read_text())
     assert protocol["klpo"]["draws"] == 3 and protocol["klpo"]["steps"] == 2
+
+
+def test_lr_scale_reaches_the_round_trainer_but_not_the_seed(work, tmp_path, monkeypatch):
+    """docs/31 amendment 5: --lr-scale multiplies the peak rates of the per-round training,
+    is frozen in the protocol, and leaves the amorce at the full rate."""
+    captured = []
+    real = closed_loop.Trainer
+
+    class Spy(real):
+        def __init__(self, model, loader, tc, **kw):
+            captured.append(tc)
+            super().__init__(model, loader, tc, **kw)
+
+    monkeypatch.setattr(closed_loop, "Trainer", Spy)
+    out = tmp_path / "scaled"
+    run(work, out, "oracle", lr_scale=0.25)
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["lr_scale"] == 0.25
+    assert len(captured) == 3  # the seed, then one trainer per round
+    assert captured[0].peak_lr_muon == pytest.approx(0.01)
+    assert captured[0].peak_lr_adamw == pytest.approx(2e-3)
+    for tc in captured[1:]:
+        assert tc.peak_lr_muon == pytest.approx(0.0025)
+        assert tc.peak_lr_adamw == pytest.approx(5e-4)
