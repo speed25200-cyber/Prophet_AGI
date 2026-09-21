@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -110,6 +111,16 @@ class Quarantine:
                     e.promoted = True
 
     # -- queries ----------------------------------------------------------------------
+
+    def discard(self, predicate: Callable[[Entry], bool]) -> int:
+        """Drop the entries ``predicate`` selects and persist; returns how many went.
+        Used on resume to forget a round that was generated but never recorded."""
+        keep = [e for e in self.entries if not predicate(e)]
+        dropped = len(self.entries) - len(keep)
+        if dropped:
+            self.entries = keep
+            self._save()
+        return dropped
 
     def promoted(self, family: str | None = None) -> list[Entry]:
         return [e for e in self.entries if e.promoted and (family is None or e.family == family)]

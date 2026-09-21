@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -71,7 +72,9 @@ SEED_TASK_BASE = 1_000
 ROUND_TASK_BASE = 10_000
 
 
-def generation_config(family: str, *, temperature: float) -> AgentConfig:
+def generation_config(
+    family: str, *, temperature: float, verifier_version: str = "prior-0"
+) -> AgentConfig:
     """The bench's loop settings (docs/09), with the family named so the quarantine
     files the episodes under it and a temperature the caller chooses: sampled for
     generation, greedy for the held-out bench."""
@@ -86,6 +89,7 @@ def generation_config(family: str, *, temperature: float) -> AgentConfig:
         tau_ask=0.0,
         sample_temperature=temperature,
         family=family,
+        verifier_version=verifier_version,
     )
 
 
@@ -213,6 +217,7 @@ def generate_round(
     tasks,
     quarantine: Quarantine,
     *,
+    round_index: int,
     attempts: int,
     temperature: float,
 ) -> dict:
@@ -230,7 +235,9 @@ def generate_round(
             model,
             tokenizer,
             remaining,
-            generation_config(family, temperature=temperature),
+            generation_config(
+                family, temperature=temperature, verifier_version=f"round-{round_index}"
+            ),
             quarantine=quarantine,
             tools_for=task_families.tools_for,
             verifier_for_task=task_families.verifier_for,
@@ -257,6 +264,7 @@ def generate_round_klpo(
     tasks,
     quarantine: Quarantine,
     *,
+    round_index: int,
     attempts: int,
     temperature: float,
     draws: int,
@@ -264,7 +272,9 @@ def generate_round_klpo(
     """Like ``generate_round`` but every episode is kept with its terminal reward and
     the sampler's records (docs/research/A5_klpo.md): the action span is sampled and
     every drawn token carries the sampler's log-probability and auxiliary draws."""
-    cfg = generation_config(family, temperature=temperature)
+    cfg = generation_config(
+        family, temperature=temperature, verifier_version=f"round-{round_index}"
+    )
     cfg.sample_actions = True
     cfg.record_sampling = True
     cfg.mc_draws = draws
@@ -319,7 +329,14 @@ def generate_round_klpo(
     return generation, episodes
 
 
-def oracle_round(family: str, tasks, quarantine: Quarantine) -> dict:
+def entry_round(entry: Entry) -> int | None:
+    """The round an entry was generated in, from its provenance tag (``round-N`` or
+    ``oracle-round-N``); ``None`` for entries without a tag (seed episodes, old runs)."""
+    m = re.search(r"round-(\d+)$", entry.provenance.verifier_version)
+    return int(m.group(1)) if m else None
+
+
+def oracle_round(family: str, tasks, quarantine: Quarantine, *, round_index: int) -> dict:
     before = len(quarantine.promoted(family))
     for task in tasks:
         quarantine.add(
@@ -331,7 +348,7 @@ def oracle_round(family: str, tasks, quarantine: Quarantine) -> dict:
                 process_ok=True,
                 provenance=Provenance(
                     tier=int(Tier.GROUND_TRUTH),
-                    verifier_version="oracle",
+                    verifier_version=f"oracle-round-{round_index}",
                     p_correct=1.0,
                     depth_disagreement=None,
                     attempts=1,
@@ -560,6 +577,12 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     done = max(r["round"] for r in rounds)
+    # A crash between a round's generation and its record leaves that round's entries in
+    # the quarantine; regenerating the round would then train on them twice. Entries are
+    # tagged with their round, so drop the ones beyond the last recorded round.
+    dropped = quarantine.discard(lambda e: (entry_round(e) or 0) > done)
+    if dropped:
+        print("PRUNED", {"orphan_entries": dropped, "after_round": done}, flush=True)
     compute = rounds[-1]["compute_seconds"]
     for r in range(done + 1, args.rounds + 1):
         if (time.time() - began) / 60 > args.minutes:
@@ -578,6 +601,7 @@ def main(argv: list[str] | None = None) -> int:
                 quarantine,
                 attempts=args.attempts,
                 temperature=args.temperature,
+                round_index=r,
             )
         elif args.arm == "closed-klpo":
             generation, klpo_episodes = generate_round_klpo(
@@ -589,10 +613,11 @@ def main(argv: list[str] | None = None) -> int:
                 attempts=args.attempts,
                 temperature=args.klpo_temperature,
                 draws=args.klpo_draws,
+                round_index=r,
             )
             write_json(args.out / f"round-{r:03d}-episodes.json", klpo_episodes)
         elif args.arm == "oracle":
-            generation = oracle_round(args.family, tasks, quarantine)
+            generation = oracle_round(args.family, tasks, quarantine, round_index=r)
         else:
             generation = {
                 "tasks": len(tasks),

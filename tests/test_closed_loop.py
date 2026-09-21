@@ -5,6 +5,7 @@ import random
 
 import pytest
 
+from prophet.agent.quarantine import Quarantine
 from prophet.data.tokenizer import ProphetTokenizer
 from prophet.modeling.model import ProphetModel
 from prophet.train.checkpoint import CheckpointManager
@@ -205,3 +206,24 @@ def test_lr_scale_reaches_the_round_trainer_but_not_the_seed(work, tmp_path, mon
     for tc in captured[1:]:
         assert tc.peak_lr_muon == pytest.approx(0.0025)
         assert tc.peak_lr_adamw == pytest.approx(5e-4)
+
+
+def test_resume_forgets_a_round_that_was_generated_but_never_recorded(work, tmp_path, capsys):
+    """A crash between a round's generation and its record must not make the resumed run
+    train on that round twice: entries carry their round and orphans are dropped."""
+    out = tmp_path / "orphans"
+    rounds = run(work, out, "oracle", rounds=2)
+    assert [r["promoted_total"] for r in rounds] == [0, 3, 6]
+    quarantine = Quarantine(out / "quarantine.json")
+    assert {e.provenance.verifier_version for e in quarantine.promoted("calc")} == {
+        "oracle-round-1",
+        "oracle-round-2",
+    }
+    # Simulate the crash: round 2 was generated (its entries are in the quarantine) but
+    # never recorded.
+    lines = (out / "rounds.jsonl").read_text().splitlines(keepends=True)
+    (out / "rounds.jsonl").write_text("".join(lines[:2]))
+    rounds = run(work, out, "oracle", rounds=2)
+    assert "PRUNED" in capsys.readouterr().out
+    assert [r["promoted_total"] for r in rounds] == [0, 3, 6]
+    assert len(Quarantine(out / "quarantine.json").promoted("calc")) == 6
