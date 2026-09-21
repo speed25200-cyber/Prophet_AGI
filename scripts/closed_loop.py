@@ -66,7 +66,7 @@ from scripts.first_agent_run_cpu import (  # noqa: E402
     replay_source,
 )
 
-ARMS = ("closed", "oracle", "frozen", "closed-klpo")
+ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean")
 BENCH_SEEDS = (7, 11)
 SEED_TASK_BASE = 1_000
 ROUND_TASK_BASE = 10_000
@@ -327,6 +327,26 @@ def generate_round_klpo(
         "seconds": time.time() - started,
     }
     return generation, episodes
+
+
+def clean_trajectory(trajectory: list[dict]) -> bool:
+    """Canonical form (docs/31 amendment 7): every step parsed, no refused ``done``, no step
+    identical to the previous one, and ``done`` last. The executable verifier judges the
+    outcome; this only refuses to *teach* a sloppy way of reaching it."""
+    if not trajectory:
+        return False
+    previous = None
+    for step in trajectory:
+        action = step.get("action")
+        if action is None or step.get("gated"):
+            return False
+        if str(step.get("observation") or "").startswith("verification failed"):
+            return False
+        current = (action.get("name"), json.dumps(action.get("args", {}), sort_keys=True))
+        if current == previous:
+            return False
+        previous = current
+    return trajectory[-1]["action"].get("name") == "done"
 
 
 def entry_round(entry: Entry) -> int | None:
@@ -592,7 +612,7 @@ def main(argv: list[str] | None = None) -> int:
         tasks = task_families.make_tasks(
             args.tasks_per_round, family=args.family, seed=ROUND_TASK_BASE * (args.seed + 1) + r
         )
-        if args.arm == "closed":
+        if args.arm in ("closed", "closed-clean"):
             generation = generate_round(
                 model,
                 tokenizer,
@@ -603,6 +623,15 @@ def main(argv: list[str] | None = None) -> int:
                 temperature=args.temperature,
                 round_index=r,
             )
+            if args.arm == "closed-clean":
+                # Verified but sloppy episodes are not taught (docs/31 amendment 7).
+                demoted = quarantine.discard(
+                    lambda e: (
+                        entry_round(e) == r and e.promoted and not clean_trajectory(e.trajectory)
+                    )
+                )
+                generation["demoted_sloppy"] = demoted
+                generation["promoted_new"] -= demoted
         elif args.arm == "closed-klpo":
             generation, klpo_episodes = generate_round_klpo(
                 model,

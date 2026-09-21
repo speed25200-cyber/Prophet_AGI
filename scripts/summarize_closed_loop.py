@@ -18,7 +18,9 @@ import math
 import random
 from pathlib import Path
 
-ARMS = ("closed", "oracle", "frozen", "closed-klpo")
+ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean")
+COLLAPSE_ALLOWANCE = 0.10
+H8_BPB_ALLOWANCE = 0.02
 H3_ALLOWANCE = 0.05
 
 
@@ -156,6 +158,27 @@ def summarise(runs: dict[str, dict[int, list[dict]]]) -> dict:
             "klpo_bpb_delta": klpo["mean_bpb_delta"],
             "closed_bpb_delta": closed["mean_bpb_delta"],
             "pass": bool(gain_ok and drift_ok),
+        }
+    clean = arms.get("closed-clean")
+    if closed and clean:
+        # docs/31 H8: canonical-form promotion removes the collapse without losing the gain.
+        no_collapse = all(
+            min(point["success"] for point in s["curve"])
+            >= s["curve"][0]["success"] - COLLAPSE_ALLOWANCE
+            for s in clean["seeds"].values()
+        )
+        gain_ok = clean["mean_gain"] >= closed["mean_gain"]
+        deltas_known = closed["mean_bpb_delta"] is not None and clean["mean_bpb_delta"] is not None
+        drift_ok = (
+            deltas_known and clean["mean_bpb_delta"] <= closed["mean_bpb_delta"] + H8_BPB_ALLOWANCE
+        )
+        checks["H8_clean"] = {
+            "no_round_below_start_minus_allowance": no_collapse,
+            "clean_gain": clean["mean_gain"],
+            "closed_gain": closed["mean_gain"],
+            "clean_bpb_delta": clean["mean_bpb_delta"],
+            "closed_bpb_delta": closed["mean_bpb_delta"],
+            "pass": bool(no_collapse and gain_ok and drift_ok),
         }
     return {"arms": arms, "checks": checks}
 

@@ -10,7 +10,7 @@ from prophet.data.tokenizer import ProphetTokenizer
 from prophet.modeling.model import ProphetModel
 from prophet.train.checkpoint import CheckpointManager
 from scripts import closed_loop
-from scripts.closed_loop import main
+from scripts.closed_loop import clean_trajectory, main
 from tests.test_loop_core_corpus import paragraph
 from tests.test_run_loop_core import tiny_config
 
@@ -227,3 +227,50 @@ def test_resume_forgets_a_round_that_was_generated_but_never_recorded(work, tmp_
     assert "PRUNED" in capsys.readouterr().out
     assert [r["promoted_total"] for r in rounds] == [0, 3, 6]
     assert len(Quarantine(out / "quarantine.json").promoted("calc")) == 6
+
+
+def step(name, args=None, **extra):
+    return {"step": 0, "think": "", "action": {"name": name, "args": args or {}}, **extra}
+
+
+def test_clean_trajectory_is_the_canonical_form():
+    assert clean_trajectory(
+        [step("read_file", {"path": "a"}), step("note", {"text": "x"}), step("done")]
+    )
+    assert not clean_trajectory([])
+    assert not clean_trajectory([step("read_file", {"path": "a"}), step("note", {"text": "x"})])
+    assert not clean_trajectory(
+        [
+            step("read_file", {"path": "a"}),
+            step("note", {"text": "x"}),
+            step("note", {"text": "x"}),
+            step("done"),
+        ]
+    )
+    assert not clean_trajectory(
+        [
+            step("read_file", {"path": "a"}),
+            {"step": 1, "think": "", "action": None, "gated": "malformed"},
+            step("done"),
+        ]
+    )
+    assert not clean_trajectory(
+        [
+            step("read_file", {"path": "a"}),
+            step("done", observation="verification failed"),
+            step("note", {"text": "x"}),
+            step("done"),
+        ]
+    )
+
+
+def test_closed_clean_arm_records_demotions_and_trains_on_canonical_episodes_only(work, tmp_path):
+    out = tmp_path / "clean"
+    rounds = run(work, out, "closed-clean")
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["arm"] == "closed-clean"
+    for r in rounds[1:]:
+        assert "demoted_sloppy" in r["generation"]
+        assert r["generation"]["promoted_new"] >= 0
+    quarantine = Quarantine(out / "quarantine.json")
+    assert all(clean_trajectory(e.trajectory) for e in quarantine.promoted("calc"))

@@ -236,3 +236,25 @@ Son critère, H5, reste tel qu'écrit (gain ≥ `closed`, Δ BPB ≤ `closed`) e
 condition de non-effondrement : aucun tour sous succès(tour 0) − 0,10. Deux variables
 changent donc pour ce bras entre v2 et v3 ; la comparaison propre de KLPO est
 « `closed-klpo` v3 contre `closed` v3 », pas contre v2.
+
+## Amendement 7 — 2026-09-21, pendant v3, avant tout run v4
+
+**Observation.** Sous le taux divisé par quatre (v3), la graine 0 tient H7 sur ses trois
+conditions (0,733 → 0,967 sans creux, BPB +0,060). Mais la graine 2 s'effondre au tour 1
+(0,567 → **0,017**) d'une façon nouvelle, vue jeton par jeton : le modèle note la bonne
+valeur puis **répète `note`** jusqu'au bout des quatre pas sans jamais appeler `done`, ou
+meurt dans le corps de `done` (`"summ`). Les 14 trajectoires promues de ce tour sont
+vérifiées mais bâclées (notes en double, pas malformés) ; le rendu retire les pas
+malformés mais garde les doublons, et le modèle les imite. C'est le mode (b) de docs/32
+sous une autre forme : le vérificateur de résultat promeut le processus bâclé.
+
+**Bras `closed-clean`, une seule variable de plus.** Comme `closed`, mais la promotion
+exige une trajectoire de **forme canonique** : aucun pas malformé, aucun `done` refusé,
+aucun pas identique au précédent, et `done` en dernier. Tout le reste comme v3
+(`--lr-scale 0.25`, grammaire compacte, mêmes graines, mêmes tours). Le vérificateur
+exécutable reste le juge du résultat ; la forme n'ajoute qu'un filtre de processus, lisible
+dans la quarantaine (`demoted_sloppy` par tour).
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H8 forme** | Promouvoir seulement les trajectoires canoniques supprime l'effondrement sans perdre le gain. | (i) aucun tour de `closed-clean` sous succès(tour 0) − 0,10 sur les graines retenues ; (ii) gain moyen de `closed-clean` ≥ celui de `closed` v3 ; (iii) Δ BPB moyen ≤ celui de `closed` v3 + 0,02. Les trois, sinon échec. |

@@ -144,3 +144,31 @@ def test_h5_compares_the_klpo_arm_with_the_closed_arm(tmp_path):
     )
     assert summarise(load_runs(tmp_path / "worse"))["checks"]["H5_klpo"]["pass"] is False
     assert "closed-klpo" in markdown(summarise(load_runs(tmp_path)))
+
+
+def test_h8_requires_no_collapse_and_no_loss_of_gain(tmp_path):
+    base = record(0, [False] * 16 + [True] * 4, bpb=2.00, compute=0, promoted=0)
+    for seed in (0, 1):
+        write(
+            tmp_path,
+            "closed",
+            seed,
+            [
+                base,
+                record(1, [False] * 19 + [True] * 1, bpb=2.02, compute=600, promoted=5),  # collapse
+                record(2, [False] * 10 + [True] * 10, bpb=2.03, compute=1200, promoted=8),
+            ],
+        )
+        write(
+            tmp_path,
+            "closed-clean",
+            seed,
+            [
+                base,
+                record(1, [False] * 14 + [True] * 6, bpb=2.02, compute=600, promoted=4),
+                record(2, [False] * 9 + [True] * 11, bpb=2.04, compute=1200, promoted=8),
+            ],
+        )
+    h8 = summarise(load_runs(tmp_path))["checks"]["H8_clean"]
+    assert h8["no_round_below_start_minus_allowance"] is True and h8["pass"] is True
+    assert h8["clean_gain"] == pytest.approx(0.35) and h8["closed_gain"] == pytest.approx(0.3)
