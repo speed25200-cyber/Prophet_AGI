@@ -16,13 +16,18 @@ COMMON=(--work "$WORK" --family "$FAMILY" --tasks-per-round 30 --attempts 2
         --bench-tasks 30 --bpb-docs 200 --seq-len 512 --batch-size 8 --minutes 600
         --lr-scale "$LR_SCALE")
 mkdir -p "$OUT"
+ARMS="${ARMS:-oracle closed frozen}"  # arms per seed, in order; the first must train the shared seed
 for SEED in $SEEDS; do
   SEED_DIR="$OUT/oracle-seed$SEED/seed"
-  python scripts/closed_loop.py "${COMMON[@]}" --arm oracle --seed "$SEED" --rounds "$ROUNDS" \
-      --out "$OUT/oracle-seed$SEED" 2>&1 | tee -a "$OUT/oracle-seed$SEED.log"
-  python scripts/closed_loop.py "${COMMON[@]}" --arm closed --seed "$SEED" --rounds "$ROUNDS" \
-      --seed-dir "$SEED_DIR" --out "$OUT/closed-seed$SEED" 2>&1 | tee -a "$OUT/closed-seed$SEED.log"
-  python scripts/closed_loop.py "${COMMON[@]}" --arm frozen --seed "$SEED" --rounds 1 \
-      --seed-dir "$SEED_DIR" --out "$OUT/frozen-seed$SEED" 2>&1 | tee -a "$OUT/frozen-seed$SEED.log"
+  for ARM in $ARMS; do
+    N="$ROUNDS"; [ "$ARM" = frozen ] && N=1
+    if [ "$ARM" = oracle ] && [ ! -d "$SEED_DIR" ]; then
+      python scripts/closed_loop.py "${COMMON[@]}" --arm oracle --seed "$SEED" --rounds "$N" \
+          --out "$OUT/oracle-seed$SEED" 2>&1 | tee -a "$OUT/oracle-seed$SEED.log"
+    else
+      python scripts/closed_loop.py "${COMMON[@]}" --arm "$ARM" --seed "$SEED" --rounds "$N" \
+          --seed-dir "$SEED_DIR" --out "$OUT/$ARM-seed$SEED" 2>&1 | tee -a "$OUT/$ARM-seed$SEED.log"
+    fi
+  done
 done
 echo "PILOT_COMPLETE"

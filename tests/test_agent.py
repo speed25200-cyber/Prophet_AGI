@@ -554,3 +554,14 @@ def test_rendered_calls_are_exactly_what_the_compact_grammar_accepts():
             for body in bodies:
                 assert grammar.check(body).complete, body
                 assert grammar.complete(body) is not None, body
+
+
+def test_done_takes_no_arguments_so_the_grammar_closes_its_body_at_once():
+    """docs/31 amendment 8: the renderer only ever writes {"name":"done","args":{}}; the old
+    optional "summary" key let a drifting model open a key after "args":{ and die there
+    (mode (c) of docs/32). With no properties, "}" is the only viable continuation."""
+    g = ActionGrammar(registry())
+    assert g.check('{"name":"done","args":{').viable
+    assert not g.check('{"name":"done","args":{"').viable
+    assert g.check('{"name":"done","args":{}}').complete
+    assert g.complete('{"name":"done","args":{"summary":"x"}}') is None

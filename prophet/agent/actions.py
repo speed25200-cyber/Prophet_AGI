@@ -50,7 +50,7 @@ RESERVED_ACTIONS: dict[str, dict[str, Any]] = {
         "properties": {"question": {"type": "string"}, "proposed_action": {"type": "string"}},
         "required": ["question"],
     },
-    "done": {"type": "object", "properties": {"summary": {"type": "string"}}, "required": []},
+    "done": {"type": "object", "properties": {}, "required": []},
     "rollback": {"type": "object", "properties": {"step": {"type": "integer"}}, "required": ["step"]},
 }
 

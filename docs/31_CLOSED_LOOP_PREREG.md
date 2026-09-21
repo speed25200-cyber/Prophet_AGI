@@ -258,3 +258,25 @@ dans la quarantaine (`demoted_sloppy` par tour).
 | Hypothèse | Énoncé mesurable | Critère |
 |---|---|---|
 | **H8 forme** | Promouvoir seulement les trajectoires canoniques supprime l'effondrement sans perdre le gain. | (i) aucun tour de `closed-clean` sous succès(tour 0) − 0,10 sur les graines retenues ; (ii) gain moyen de `closed-clean` ≥ celui de `closed` v3 ; (iii) Δ BPB moyen ≤ celui de `closed` v3 + 0,02. Les trois, sinon échec. |
+
+## Amendement 8 — 2026-09-22, après v4, avant tout run v5
+
+**Observation.** H7 et H8 échouent sur la même condition, la même graine et le même tour :
+graine 0, tour 1, 0,600 < 0,633. Ce recul est le mode (c) de docs/32 §4 : après
+`"args":{`, le modèle ouvre une clé (`"su`, `"{`) au lieu de fermer, et le span meurt. Le
+schéma de `done` admettait une clé facultative `summary` que **rien ne lit** (ni le
+vérificateur, ni le rendu, qui n'écrit jamais que `{"name":"done","args":{}}`) : encore
+une continuation autorisée au décodage et jamais montrée à l'entraînement, comme les
+blancs de l'amendement 3. 13–17 % de sorties malformées du modèle amorce viennent de là.
+
+**Correctif, décodage seulement.** `done` n'a plus d'argument ; après `{`, seule `}` est
+viable. Test : la grammaire refuse `{"name":"done","args":{"`.
+
+**Pilote v5, une seule variable.** Bras `oracle`, `closed-clean`, `frozen`, taux ÷ 4,
+grammaire compacte, mêmes amorces, mêmes tours, `done` sans argument. Le tour 0 change
+(le banc du modèle amorce perd ses malformées de mode c), donc les gains se comparent à
+leur propre tour 0 et le rendement à l'oracle v5.
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H9 `done`** | Sans continuation fantôme dans `done`, le bras fermé ne recule plus au premier tour et garde son gain. | (i) aucun tour de `closed-clean` sous succès(tour 0) − 0,10 sur les graines retenues ; (ii) part malformée du banc ≤ 5 % à chaque tour ; (iii) rendement gain(closed-clean) / gain(oracle) ≥ 0,8. Les trois, sinon échec. |
