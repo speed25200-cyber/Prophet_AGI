@@ -68,7 +68,7 @@ par construction (`scripts/closed_loop.py`).
 
 | Échelle | Modèle | Famille | Tours | Coût estimé |
 |---|---|---|---|---|
-| Pilote CPU | 7 M (docs/09), 4 cœurs | `calc` (60–80 % avec trajectoires parfaites à cette taille) | amorce 100 épisodes / 200 pas ; 5 tours × 30 tâches, 2 tentatives, 60 pas, rejeu 0,5 ; banc 2 × 30 | ≈ 25 min par bras et par graine (`scripts/closed_loop_cpu_pilot.sh`) |
+| Pilote CPU | 7 M (docs/09), 4 cœurs | `calc` (60–80 % avec trajectoires parfaites à cette taille) — **faux, voir amendement 1 : `lookup`** | amorce 100 épisodes / 200 pas ; 5 tours × 30 tâches, 2 tentatives, 60 pas, rejeu 0,5 ; banc 2 × 30 | ≈ 25 min par bras et par graine (`scripts/closed_loop_cpu_pilot.sh`) |
 | A100 | 375 M du programme docs/29, têtes d'action ajoutées à l'amorce | `calc`, puis `lookup` et `files` | 8 × 200 tâches, 300 pas | ≈ 1 h par bras et par graine |
 
 Le pilote CPU n'est pas une revendication de capacité : il vérifie que la boucle tourne,
@@ -101,3 +101,34 @@ poids du programme docs/29 et n'est pas lancée avant.
 | Perte KLPO, enregistrement de l'échantillonneur, bras `closed-klpo` | `prophet/train/klpo.py`, `prophet/agent/loop.py`, `scripts/closed_loop_cpu_pilot_klpo.sh` | `tests/test_klpo.py` |
 | Boucle d'agent, quarantaine, rendu, banc (existants) | `prophet/agent/`, `prophet/eval/agent_bench.py` | suite existante |
 | Poids de base 7 M | `scripts/first_run_cpu.py` | docs/09 |
+
+## Amendement 1 — 2026-09-21, avant tout tour d'entraînement
+
+**Observation.** Le pilote CPU tel que pré-enregistré (famille `calc`, amorce 100 épisodes /
+200 pas, graine 0) donne un succès de **1,0 au tour 0** : 60 tâches sur 60, sur les deux bancs
+(graines 7 et 11), 0 % de sorties malformées, 267 tokens par tâche. La prédiction de §3
+(60–80 %) était fausse. Un départ à 100 % rend H1 (gain > 0) impossible par construction :
+le run a été arrêté avant tout tour d'entraînement ; son tour 0 est conservé et sera rapporté
+dans docs/32.
+
+**Calibration** (graine 0, mêmes bancs, sans BPB, `--rounds 0`) :
+
+| Famille | Amorce (épisodes / pas) | Succès tour 0 (banc 7 / banc 11) | Malformés | Pas d'amorce (s) |
+|---|---|---|---|---|
+| `calc` | 10 / 20 | 0,00 / 0,00 | 100 % | 71 |
+| `calc` | 20 / 40 | 0,00 / 0,00 | 72 % / 64 % | 131 |
+| `calc` | 40 / 80 | 0,00 / 0,00 | 0 % — bien formées, fausses | 270 |
+| `calc` | 100 / 200 | 1,00 / 1,00 | 0 % | 747 |
+| `lookup` | 100 / 200 | 0,67 / 0,80 | 17 % / 10 % | 639 |
+
+À cette taille, `calc` n'a pas d'amorce donnant un départ non dégénéré : le succès passe de
+0 à 100 % entre 40/80 et 100/200, un seuil, donc un départ instable d'une graine à l'autre.
+`lookup` satisfait le but déclaré de l'amorce (« juste assez pour que le succès de départ soit
+non nul », §2) au budget pré-enregistré, avec 27 points de marge et une part de sorties
+malformées que des épisodes vérifiés peuvent corriger.
+
+**Décision.** La famille du pilote CPU devient **`lookup`**. Tout le reste est inchangé :
+amorce 100 / 200, 5 tours × 30 tâches × 2 tentatives, 60 pas, rejeu 0,5, bancs 2 × 30,
+BPB 200 documents, les quatre bras, et les critères H1–H5 tels qu'écrits. Les scripts
+prennent la famille par `FAMILY=lookup` ; le run abandonné et la calibration sont des
+résultats et figurent dans docs/32.
