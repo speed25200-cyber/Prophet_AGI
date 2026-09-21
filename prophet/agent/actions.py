@@ -177,7 +177,7 @@ class ToolRegistry:
         if missing:
             raise ValueError(f"{action.name}: missing required {missing}")
         unknown = [k for k in action.args if k not in props]
-        if unknown and props:
+        if unknown:
             raise ValueError(f"{action.name}: unknown arguments {unknown}")
         for key, value in action.args.items():
             expected = props.get(key, {}).get("type")
@@ -385,14 +385,18 @@ class ActionGrammar:
                 if i2 is None:
                     return seen, i, False, None
                 i = self._ws(s, i2)
+            if not props:
+                # An empty schema means "no parameters", not "anything goes": the renderer
+                # never writes a key here, so the decoder must not admit one (docs/32, mode c).
+                raise _Dead(f"{schema.name} takes no parameters")
             key, i = _scan_string(s, i)
             if key is None:
                 return seen, i, False, None
             if not key.done:
-                if props and not any(k.startswith(key.value) for k in props):
+                if not any(k.startswith(key.value) for k in props):
                     raise _Dead(f"no parameter of {schema.name} starts with {key.value!r}")
                 return seen, i, False, None
-            if props and key.value not in props:
+            if key.value not in props:
                 raise _Dead(f"{schema.name} has no parameter {key.value!r}")
             if key.value in seen:
                 raise _Dead(f"duplicate parameter {key.value!r}")
