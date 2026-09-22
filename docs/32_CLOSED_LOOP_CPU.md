@@ -684,6 +684,24 @@ famille sans épisode canonique dans le bassin n'est pas seulement stagnante, el
 et une boucle multi-familles doit vérifier à chaque tour que chaque famille a apporté des
 lignes, ou geler la mise à jour.
 
+**Addendum v10b — l'échelle de calibration (amendement 16, note ; amendement 20).** Sur
+le succès canonique, aucune graine ne laisse une marge aux deux familles à la fois :
+
+| Graine | *N* / *S* par famille | `lookup` (canonique) | `files` (canonique) | Verdict |
+|---:|---:|---:|---:|---|
+| 0 | 50 / 100 | 0,467 (0,167) | 0,467 (**0,000**) | v10 : `files` sans épisode canonique |
+| 0 | 100 / 200 | 0,900 (0,750) | **1,000** (1,000) | `files` saturé |
+| 1 | 100 / 200 | **1,000** (0,150) | 0,783 (0,333) | `lookup` saturé |
+| 2 | 100 / 200 | 0,100 (0,083) | **1,000** (1,000) | `files` saturé |
+| 0 | 75 / 150 | 0,367 (0,367) | **1,000** (1,000) | `files` saturé ; retenue sous la règle assouplie |
+
+Sous une amorce partagée, `files` passe de zéro succès canonique à la saturation entre 50 et
+75 trajectoires, et `lookup` varie de 0,10 à 1,00 selon la graine à *N* / *S* égaux — la
+marge d'une famille dépend autant du tirage de l'amorce que de sa taille. L'amendement 20
+juge une famille saturée sur ce qu'elle garde (perte ≤ 0,05) et lance v10c sur la graine 0
+à 75 / 150 : quatre bras, cinq tours, recette de référence sans exploration. Résultats en
+§19.
+
 ## 16. Pilotes v11 et v11b : la reprise explore le pointeur
 
 Amendements 15 et 17, même graine dure de `lookup` (2), même amorce et même recette que
