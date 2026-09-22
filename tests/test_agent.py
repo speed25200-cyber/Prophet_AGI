@@ -527,6 +527,9 @@ def test_malformed_call_within_budget_is_recorded_not_crashed():
     )
     result = loop.run("read")
     assert result.steps and result.steps[0].gated == "malformed"
+    # The span the budget cut is kept for reading (docs/33 amendment 7).
+    span = result.steps[0].span
+    assert span and '{"name":"read_file","args":{"path":"a.py"'.startswith(span)
 
 
 def test_episode_lands_in_quarantine_with_provenance(tmp_path):

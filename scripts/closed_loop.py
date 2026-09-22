@@ -571,22 +571,33 @@ def propose_round(
         "novel": 0,
         "n_fields": {},
         "tokens": 0,
+        "samples": [],
     }
+    # What each proposal was, so a failed calibration is read from the record rather than
+    # re-decoded (docs/33 amendment 7): the arguments, the rule that refused them, or the
+    # span a malformed call left.
+    samples = counts["samples"]
     proposals = []
     for i in range(n):
         result = AgentLoop(model, tokenizer, registry, cfg).run(PROPOSE_GOAL[family])
         counts["tokens"] += int(getattr(result, "tokens", 0))
-        action = result.steps[0].action if result.steps else None
+        step = result.steps[0] if result.steps else None
+        action = step.action if step is not None else None
         if action is None or action.name != f"propose_{family}":
             counts["malformed"] += 1
+            span = getattr(step, "span", "") if action is None else action.name
+            samples.append({"verdict": "malformed", "span": span})
             continue
         verdict = validate(family, action.args)
         if isinstance(verdict, str):
             counts["invalid"] += 1
+            samples.append({"verdict": "invalid", "reason": verdict, "args": action.args})
             continue
         if verdict.signature() in seen:
             counts["duplicate"] += 1
+            samples.append({"verdict": "duplicate", "args": action.args})
             continue
+        samples.append({"verdict": "valid", "args": action.args})
         seen.add(verdict.signature())
         counts["valid"] += 1
         counts["novel"] += int(novel(verdict, amorce_specs))

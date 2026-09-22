@@ -187,6 +187,9 @@ class StepRecord:
     """Top-1 minus top-2 selection probability -- A3's ambiguity signal."""
     copied: int = 0
     """Argument values filled by the copy pointer rather than generated."""
+    span: str = ""
+    """The decoded action span of a malformed step, which no parse keeps otherwise: what
+    the model emitted before the budget ran out (docs/33 amendment 7)."""
 
 
 @dataclass
@@ -656,6 +659,7 @@ class AgentLoop:
                         selected=selected,
                         sel_margin=sel_margin,
                         copied=self._copied,
+                        span=text,
                     )
                 )
                 state.trajectory.append(

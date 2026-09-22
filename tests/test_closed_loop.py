@@ -619,8 +619,11 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
             )
         )
         action = next(scripted)
-        step = types.SimpleNamespace(action=action, gated="")
-        return types.SimpleNamespace(steps=[step] if action is not None else [], tokens=7)
+        if action is None:  # a malformed call: the loop keeps its span
+            step = types.SimpleNamespace(action=None, gated="malformed", span='{"file":"orc')
+        else:
+            step = types.SimpleNamespace(action=action, gated="")
+        return types.SimpleNamespace(steps=[step], tokens=7)
 
     monkeypatch.setattr(loop_module.AgentLoop, "run", fake_run)
     tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
@@ -633,6 +636,17 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
     assert counts["invalid"] == 1 and counts["malformed"] == 1 and counts["tokens"] == 35
     assert counts["novel"] == 2 and counts["n_fields"] == {"3": 1, "2": 1}
     assert [t.answer for _, t in proposals] == ["meadow", "ana"]
+    # Every proposal is kept for reading, in order (docs/33 amendment 7).
+    samples = counts["samples"]
+    assert [x["verdict"] for x in samples] == [
+        "valid",
+        "duplicate",
+        "invalid",
+        "malformed",
+        "valid",
+    ]
+    assert samples[0]["args"] == good and samples[2]["reason"] == "ask is not one of the keys"
+    assert samples[3] == {"verdict": "malformed", "span": '{"file":"orc'}
     assert all(t.family == "lookup" and t.extra["proposed"] for _, t in proposals)
     assert len(seen) == 2
     # A proposal call is ~60 tokens: the loop's 64-token action budget is raised for it

@@ -237,3 +237,38 @@ l'amendement 1 reçoit un barreau de plus, après « second temps 100 pas » : *
 propositions, 200 pas**, puisque le passage de 50 à 100 pas a réduit les malformées de 30
 à 1 et relevé le solveur. Ordre des barreaux : 50 / 50, 100 / 50, 100 / 25, 200 / 100. La
 règle de calibration est inchangée.
+
+## Amendement 7 — 2026-09-22, échelle reprise par une nouvelle session, avant tout tour entraîné : un premier run reconstruit, l'échelle entière rejouée
+
+**Ce qui s'est passé.** La session qui a écrit l'amendement 6 a rejoué les barreaux 1 à 3
+sous la grammaire ordonnée (`28b9e9a`) : 50 pas / 50 propositions, 7 malformées, 23
+invalides, 0 valide ; 100 / 50, solveur 0,733, 17 malformées, 13 invalides, 0 valide ;
+100 / 25, solveur 0,617, banc hors distribution 0,417, 8 malformées, 22 invalides, 0
+valide. Elle a été archivée pendant le barreau 4 (200 / 100) : son verdict, le premier run
+7 M, les amorces et les `rounds.jsonl` sont perdus avec son conteneur. Ces trois barreaux
+ne sont connus que par ses messages : **non reproduits**, rapportés comme tels, jamais
+comptés dans un verdict.
+
+**Ce qui change : les poids, pas le protocole.** Le premier run est reconstruit dans le
+nouveau conteneur par `scripts/first_run_cpu.py --stage all --minutes 45 --resume-minutes 15
+--tokens 2.4e6` (docs/09), PyTorch 2.14 sur CPU. Son corpus est le texte que cette machine
+contient, qui n'est pas celui de la première : 7 497 documents de prose au lieu de 6 745,
+213 tenus à l'écart au lieu de 198. Les poids ne sont donc pas ceux des amendements 1 à 6,
+et l'échelle est rejouée **en entier** sur eux, dans l'ordre de l'amendement 6 (second
+temps 50 / 50, 100 / 50, 100 / 25, 200 / 100). Le premier temps (100 trajectoires
+parfaites, 200 pas) est entraîné une fois, par le bras `closed-clean` à zéro tour, puis
+copié pour chaque barreau. Chaque barreau est le bras `closed-propose` à zéro tour sur sa
+copie : second temps, deux bancs, sonde de 30 propositions. Graine 0, options de
+`scripts/closed_loop_cpu_pilot_propose.sh`, un seul processus torch à la fois.
+
+**Enregistrement.** La sonde garde désormais chaque proposition dans `rounds.jsonl`
+(`samples` : les arguments, la règle qui les refuse, ou le span d'un appel malformé, que la
+boucle conserve désormais dans `StepRecord.span`). C'est une lecture, pas un critère : aucun
+compte ne change (tests).
+
+**Règle, inchangée (amendement 1).** Banc du générateur strictement entre 0,30 et 0,95 avec
+succès canonique > 0, et validité ≥ 0,5 sur la sonde. Le premier barreau qui satisfait les
+deux arrête l'échelle et lance les trois bras de §2 sur la graine 0. Si aucun ne les
+satisfait, le résultat est « le proposeur ne démarre pas à 7 M », écrit dans docs/32 §22
+avec les taux des quatre barreaux, et le CPU s'arrête pour les programmes 2 et 3
+(docs/34 §7).
