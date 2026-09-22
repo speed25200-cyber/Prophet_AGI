@@ -567,3 +567,30 @@ amorces, recette de référence, `--copy-topk 3 --copy-explore observations --at
 ≥ 10 par graine ; gain ≥ v7 par graine avec intervalle excluant zéro ; rendement moyen
 ≥ 0,8), plus **H17 (mode e)** : sur la graine 0, les deux tâches `beacon_*.txt` du banc 7
 sont réussies au tour 5. Lancé après l'échelle de calibration v10b.
+
+## Amendement 20 — 2026-09-22, échelle v10b épuisée : une famille saturée se juge sur ce qu'elle garde
+
+**Ce qui s'est passé.** Amorce mixte, calibrée sur le succès canonique (amendement 16) :
+graine 0 à 100 / 200 → `lookup` 0,90 (canonique 0,75), `files` 1,00 ; graine 1 → 1,00 (0,15),
+0,78 (0,33) ; graine 2 → 0,10 (0,08), 1,00 ; graine 0 à 75 / 150 → `lookup` 0,367 (canonique
+0,367), `files` 1,00 (1,00). Aucune graine ne laisse une marge aux deux familles à la fois :
+sous une amorce partagée, `files` sature dès 75 trajectoires (et n'a aucun succès canonique
+à 50), `lookup` varie de 0,10 à 1,00 selon la graine. La règle « chaque famille strictement
+entre 0 et 0,95 » n'a pas de solution sur cette échelle, et chaque barreau coûte dix
+minutes.
+
+**Règle assouplie, pré-enregistrée avant tout tour.** Une famille qui démarre à 0,95 ou
+plus ne peut pas gagner ; elle est jugée sur ce qu'elle **garde** : à chaque critère où
+son gain intervenait, il est remplacé par « aucune perte de plus de 0,05 entre le tour 0
+et le tour 5 » (`summarize_closed_loop.py`, H14 (i)). Les autres critères sont inchangés :
+(ii) somme des gains mixte ≥ max(mono) — une perte de `files` compte négativement dans la
+somme du bras mono `lookup` ; (iii) aucun tour sous départ − 0,10 sur la famille non
+entraînée d'un bras mono ; (iv) rendement union ≥ 0,6.
+
+**Pilote v10c.** Graine 0, amorce 75 / 150 (`lookup` 0,367, tous canoniques ; `files` 1,000),
+quatre bras de l'amendement 14, cinq tours, recette de référence sans exploration (une
+variable à la fois : la boucle multi-familles d'abord, l'exploration ensuite). Lancé après
+v13. Ce que ce pilote peut dire : si `lookup` progresse autant dans le bassin mixte que
+seul (interférence), si `files` tient à 1,0 quand la boucle tourne sur `lookup` seul (oubli
+par omission, mesuré cette fois sur une famille que l'amorce a bien apprise), et le
+rendement du bassin mixte contre l'oracle mixte.

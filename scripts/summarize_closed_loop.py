@@ -24,6 +24,8 @@ COLLAPSE_ALLOWANCE = 0.10
 H8_BPB_ALLOWANCE = 0.02
 H3_ALLOWANCE = 0.05
 H14_YIELD = 0.6
+SATURATED = 0.95  # a family starting here or above is judged on retention, not gain
+SATURATION_LOSS = 0.05
 
 
 def load_runs(root: Path) -> dict[str, dict[int, list[dict]]]:
@@ -282,8 +284,16 @@ def h14_multi_family(arms: dict[str, dict]) -> dict[str, dict]:
     def summed_gain(name: str) -> float:
         return sum(sum(family_gain(name, s, f) for f in families) for s in seeds) / len(seeds)
 
+    def learns_or_keeps(name: str, seed: str, f: str) -> bool:
+        """A family with room to gain must gain; one that starts saturated (docs/31
+        amendment 20: at or above SATURATED) must not lose more than the allowance."""
+        curve_f = arms[name]["seeds"][seed]["by_family"][f]["curve"]
+        if curve_f[0] >= SATURATED:
+            return curve_f[-1] >= curve_f[0] - SATURATION_LOSS
+        return family_gain(name, seed, f) > 0
+
     learns_both = all(
-        all(family_gain(mixed_name, s, f) > 0 for f in families)
+        all(learns_or_keeps(mixed_name, s, f) for f in families)
         and arms[mixed_name]["seeds"][s]["gain"]["interval_95"][0] > 0
         for s in seeds
     )

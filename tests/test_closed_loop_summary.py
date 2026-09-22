@@ -348,3 +348,63 @@ def test_task_sets_count_what_the_loop_never_solves(tmp_path):
         "flip": 4,
         "reachable_bound": 0.6,
     }
+
+
+def test_h14_judges_a_saturated_family_on_retention(tmp_path):
+    """docs/31 amendment 20: a family starting at or above 0.95 cannot gain; the mixed
+    loop passes (i) on it by keeping it within 0.05 of its start, fails by losing more."""
+    start = {"lookup": flags(4), "files": flags(10)}  # files saturated at 1.0
+    for files_final, expected in ((10, True), (9, False)):
+        root = tmp_path / f"files{files_final}"
+        write(
+            root,
+            "closed-clean",
+            0,
+            [
+                family_record(0, start),
+                family_record(
+                    1,
+                    {"lookup": flags(9), "files": flags(files_final)},
+                    trained=["lookup", "files"],
+                    compute=600,
+                ),
+            ],
+        )
+        write(
+            root,
+            "closed-clean-lookup",
+            0,
+            [
+                family_record(0, start),
+                family_record(
+                    1, {"lookup": flags(7), "files": flags(10)}, trained=["lookup"], compute=500
+                ),
+            ],
+        )
+        write(
+            root,
+            "closed-clean-files",
+            0,
+            [
+                family_record(0, start),
+                family_record(
+                    1, {"lookup": flags(4), "files": flags(10)}, trained=["files"], compute=500
+                ),
+            ],
+        )
+        write(
+            root,
+            "oracle",
+            0,
+            [
+                family_record(0, start),
+                family_record(
+                    1,
+                    {"lookup": flags(9), "files": flags(10)},
+                    trained=["lookup", "files"],
+                    compute=400,
+                ),
+            ],
+        )
+        check = summarise(load_runs(root))["checks"]["H14_multi_family"]
+        assert check["mixed_learns_both_every_seed"] is expected, files_final
