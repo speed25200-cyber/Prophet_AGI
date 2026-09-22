@@ -521,6 +521,42 @@ deux modes, tous deux hors de la boucle elle-même :
   pointeur prend l'argmax quelle que soit la température, donc les tâches qu'il rate ne
   donnent jamais d'épisode vérifié. D'où l'amendement 12 (le pointeur explore).
 
+## 13. Pilote v8 : le pointeur de copie explore
+
+Amendement 12 : `AgentConfig.sample_copy`, début et fin du span copié tirés de leur softmax
+à la température de génération (0,7) ; banc glouton inchangé, mêmes amorces `files`
+50 / 100, recette v7 pour le reste.
+
+| Bras | Graine | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | v7 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| closed-clean | 0 | 0,850 | 0,800 | 0,833 | 0,867 | 0,867 | 0,867 | **+0,017** [+0,000, +0,050] | +0,069 | +0,083 |
+| closed-clean | 1 | 0,783 | 0,767 | 0,867 | 0,883 | 0,900 | 0,917 | **+0,133** [+0,050, +0,217] | +0,065 | +0,117 |
+| oracle | 0 | 0,850 | 0,933 | 0,983 | 1,000 | 0,983 | 0,967 | +0,117 [+0,033, +0,217] | +0,066 | +0,117 |
+| oracle | 1 | 0,783 | 0,950 | 0,950 | 1,000 | 1,000 | 1,000 | +0,217 [+0,117, +0,317] | +0,065 | +0,217 |
+
+**Verdicts v8 (H12).**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H12 (i)** intervalles excluant zéro | **échoue** | graine 0 : [+0,000, +0,050] |
+| **H12 (ii)** rendement ≥ 0,6 | **échoue** | 0,450 (+0,075 / +0,167) |
+| **H12 (iii)** aucun tour sous t0 − 0,10 | passe | pires tours 0,800 et 0,767 |
+| **H12 (iv)** graine 1 : gain ≥ +0,117 et ≤ 1 copie décalée sur 30 | **échoue** | gain +0,133 ≥ +0,117, mais **3** copies décalées sur 30 (`antern_x.txt` pour `lantern_x.txt`) |
+| **H12** | **échoue** | |
+
+L'exploration du pointeur ne corrige pas le mode (e) : sur la graine 1, les trois échecs du
+banc 7 sont encore des copies en retard d'un jeton, et la graine 0, qui n'en avait pas en
+v7, en montre deux (`con_0.txt`, `acon_2.txt` pour `beacon_x.txt`). Lecture : le pointeur
+décalé est **confiant** ; à température 0,7 sa softmax ne tire presque jamais le bon
+début, et quand la tâche est réussie par une autre voie, la ligne promue enseigne la même
+cible alignée qu'avant, que le pointeur reçoit déjà depuis l'amorce sans la suivre. Ce
+que la boucle ne réussit jamais, elle ne l'apprend jamais : le mur d'amorçage de docs/31
+§2 au niveau du jeton, et une limite de **couverture**, pas de décodage. L'oracle, qui
+reçoit trente trajectoires parfaites par tour sur ces mêmes noms, le corrige en deux tours.
+Les écarts de gain entre v7 et v8 (±4 tâches sur 60) sont dans le bruit d'échantillonnage
+de la génération. `sample_copy` reste disponible mais désactivé par défaut ; la recette de
+référence est celle de v7.
+
 Pour l'échelle A100 (docs/31 §3), trois choses sont acquises dès maintenant : la marge de
 départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la recette par
 tour doit être mesurée sur l'oubli avant tout (un planning neuf à taux plein par tour est
