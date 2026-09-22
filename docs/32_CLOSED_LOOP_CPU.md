@@ -31,7 +31,12 @@ Base de code : `claude/codex-results-analysis-5jz95y`. Poids de départ : le 7 M
    30 ; ses propres succès ne contredisent jamais cette règle, et la boucle fermée reste à
    +0,000 [−0,100, +0,100] là où l'oracle, qui reçoit aussi les tâches ratées, fait +0,300.
    Le rendement d'une famille est borné par la part des tâches que le modèle ne réussit
-   jamais — 18 sur 60 ici.
+   jamais — 18 sur 60 ici. **La reprise qui explore ce qu'elle a lu** (v11b, §16 : à la
+   deuxième et troisième tentative, le départ du span copié depuis une observation est
+   tiré parmi les 3 meilleurs) casse ce piège : 13 épisodes contradictoires sur 114 promus,
+   0,583 → **0,817** (+0,233 [+0,100, +0,367]), 6 tâches jamais réussies au lieu de 18, à
+   compute égal (+20 % de jetons générés). Dose-réponse sur trois pilotes : 0, 3, 13
+   épisodes contradictoires → +0,000, +0,133, +0,233.
 
 ## 1. Protocole tel qu'exécuté
 
@@ -678,3 +683,58 @@ famille sans épisode canonique dans le bassin n'est pas seulement stagnante, el
 **détruite** par les 60 pas sur les autres — l'oubli par omission est rapide (un tour),
 et une boucle multi-familles doit vérifier à chaque tour que chaque famille a apporté des
 lignes, ou geler la mise à jour.
+
+## 16. Pilotes v11 et v11b : la reprise explore le pointeur
+
+Amendements 15 et 17, même graine dure de `lookup` (2), même amorce et même recette que
+v9 ; seule la génération change, le banc reste glouton. v11 : à la deuxième tentative, le
+départ de **chaque** span copié est tiré uniformément parmi les 3 meilleurs du pointeur.
+v11b : le tirage ne porte que sur les spans dont le départ préféré est dans une
+**observation d'outil** (le nom de fichier lu dans le but garde l'argmax), et deux reprises
+au lieu d'une. `explorés` compte les épisodes vérifiés issus des reprises qui explorent :
+les seuls qui contredisent la règle du modèle.
+
+| Bras | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | Explorés | Jamais réussies | Jetons générés |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| v9 (témoin, sans exploration) | 0,583 | 0,567 | 0,600 | 0,533 | 0,517 | 0,583 | +0,000 [−0,100, +0,100] | +0,083 | 0 | 18 | 47 k |
+| v11 (tous les spans, 1 reprise) | 0,583 | 0,567 | 0,583 | 0,550 | 0,567 | 0,717 | +0,133 [+0,000, +0,267] | +0,087 | 3 | 10 | 49 k |
+| v11b (observations, 2 reprises) | 0,583 | 0,600 | 0,583 | 0,483 | 0,650 | **0,817** | **+0,233** [+0,100, +0,367] | +0,085 | 13 | **6** | 57 k |
+| oracle v5 (référence) | 0,567 | 0,667 | 0,833 | 0,867 | 0,850 | 0,867 | +0,300 [+0,167, +0,433] | +0,082 | — | — | 0 |
+
+Explorés par tour, v11b : 3, 4, 3, 3, 0 (v11 : 1, 0, 2, 0, 0). Entre le tour 0 et le
+tour 5 de v11b : 16 tâches gagnées, 2 perdues ; sur les 18 tâches que v9 n'a jamais
+réussies, **11** sont réussies au tour 5 de v11b et 12 l'ont été au moins une fois.
+Malformées : 0 % à tous les tours. Compute : 0,29 h contre 0,28 h (v9), +20 % de jetons
+générés pour la troisième tentative.
+
+**Verdicts (H15, critères de l'amendement 17 pour v11b).**
+
+| Hypothèse | v11 | v11b |
+|---|---|---|
+| **H15 (i)** mécanisme : explorés ≥ 10 (v11) / ≥ 15 (v11b) | **échoue** (3) | **échoue** (13 : deux de moins que le seuil relevé ; le seuil initial de 10 est passé) |
+| **H15 (ii)** gain > 0, intervalle excluant zéro | **échoue** ([+0,000, +0,267]) | **passe** ([+0,100, +0,367]) |
+| **H15 (iii)** jamais réussies ≤ 12 sur 60 | passe (10) | **passe** (6) |
+| **H15** | échoue | **échoue sur (i)**, de deux épisodes ; (ii) et (iii) passent |
+
+**Diagnostic, banc 7, checkpoints finaux.** v11 : 8 échecs, dont 4 encore du mauvais champ
+(`Perth` pour `code`, `ripple` pour `city`…). v11b : **4 échecs, aucun du mauvais champ**
+(deux notes vides, un span malformé, un fragment) ; sur ces 4, le pointeur ne place plus
+la bonne valeur au second rang que dans un cas. Le mode (f) a disparu du banc 7 en cinq
+tours, avec 13 épisodes contradictoires sur 114 promus (11 %).
+
+Lecture. Ce que §14 concluait — un vérificateur filtre, il ne contredit pas — tient, et la
+réponse est de fabriquer la contradiction **là où elle est bon marché** : à la reprise,
+sur les tâches que la politique vient de rater, et seulement sur le choix que le modèle
+peut rater systématiquement (ce qu'il copie depuis ce qu'il a lu), pas sur ce que le but
+lui donne. v11, qui explorait aussi le nom de fichier, ne réussissait une reprise que si
+les deux tirages sortaient bien (1 / 9) : 3 épisodes en cinq tours, et un gain à la limite
+du bruit. La relation est monotone sur trois pilotes à poids, tâches et recette égaux : 0,
+3, 13 épisodes contradictoires → +0,000, +0,133, +0,233 ; le rendement contre l'oracle v5
+passe de 0 à 0,78. Le tour 3 de v11b (0,483) rappelle que la variance d'un banc de 60
+tâches est de ±0,1 ; c'est le tour 5 et l'ensemble jamais réussi qui portent le verdict.
+
+Ce que cela change pour l'échelle A100 : l'exploration du pointeur à la reprise entre
+dans la recette de référence comme option **validée sur une graine et une famille** ; sa
+généralité (`files`, mode (e) : le pointeur décalé d'un jeton) est la variable suivante
+(amendement 18). Et la comptabilité doit rapporter `explorés` à chaque tour : c'est le
+nombre d'épisodes qui apprennent quelque chose que le modèle ne savait pas déjà.

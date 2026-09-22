@@ -512,3 +512,26 @@ soit ≈ 5 épisodes contradictoires par tour. Critères : ceux de H15, avec (i)
 `promoted_explored` ≥ 15 sur 5 tours (≥ 3 par tour), l'exploration étant deux fois plus
 tentée. v11 va à son terme et est rapporté tel quel (docs/32 §16) : c'est le témoin de
 v11b à une variable près.
+
+## Amendement 18 — 2026-09-22, après v11b, avant tout run v12 : l'exploration ciblée sur `files`
+
+**Pourquoi.** v11b (docs/32 §16) : sur la graine dure de `lookup`, la reprise qui explore
+les spans lus dans les observations a produit 13 épisodes contradictoires et porté le banc
+de 0,583 à 0,817, les tâches jamais réussies de 18 à 6. Une graine, une famille. La
+famille `files` porte l'autre mode jamais corrigé par la boucle, (e) : un pointeur de copie
+décalé d'un jeton sur certains noms de fichiers (`con_0.txt` pour `beacon_0.txt`), confiant,
+que ni la température (v8) ni l'oracle mono-famille en moins de deux tours ne corrigeaient
+dans la boucle fermée. Si le bon départ est au second rang là aussi, l'exploration ciblée
+doit le trouver.
+
+**Pilote v12, une seule variable par rapport à v7.** `files`, graines 0 et 1, amorces 50 / 100
+de v6–v8 réutilisées, recette de référence, `--copy-topk 3 --copy-explore observations
+--attempts 3` ; bras `closed-clean` seul, comparé à v7 (closed-clean +0,083 / +0,117,
+oracle +0,117 / +0,217, tâches jamais réussies à compter depuis les enregistrements v7).
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H16 (i)** mécanisme | Les reprises exploratoires produisent des épisodes vérifiés sur `files`. | explorés ≥ 10 sur 5 tours, sur chaque graine. |
+| **H16 (ii)** gain | Le gain dépasse v7 avec certitude. | sur chaque graine : gain ≥ gain v7 de la même graine, intervalle excluant zéro. |
+| **H16 (iii)** rendement | La boucle rejoint l'oracle. | gain moyen / gain moyen oracle v7 ≥ 0,8 (v7 : 0,60). |
+| **H16** | | les trois, sinon échec ; rapportés séparément. |
