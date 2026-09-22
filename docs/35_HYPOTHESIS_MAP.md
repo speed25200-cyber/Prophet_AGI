@@ -79,12 +79,13 @@ quantification (H5). Il est prêt et n'a jamais été lancé. Sans lui, C1 reste
 | Le vérificateur contredit les erreurs systématiques | **réfuté** | graine dure : **+0,000** [−0,100, +0,100] contre +0,300 pour l'oracle ; 18 tâches jamais réussies sur 60 | 32 §14 |
 | La reprise qui explore le pointeur crée la contradiction | **établi, 1 graine, 1 famille** | 0,583 → **0,817** ; dose-réponse 0 / 3 / 13 épisodes → +0,000 / +0,133 / +0,233 | 32 §16 |
 | … aussi quand la bonne valeur est loin dans le pointeur | **réfuté** | rang 11 et 15 (`files`) ; 5 tours ne suffisent pas | 32 §17–18 |
-| … aussi quand l'étape manque (`done` prématuré) | **réfuté** | 18 échecs sur 30, tous `read_file` puis `done` refusé | 32 §21 |
+| … aussi quand l'étape manque (`done` prématuré) | **réfuté** (v10d) | 18 échecs sur 30, tous `read_file` puis `done` refusé | 32 §21 |
+| Le `done` prématuré est une étape que la politique n'émet pas | **réfuté : un défaut de décodage** (H28) | `no_repeat_action` interdisait le substitut `verify`, pas le `done` émis ; corrigé : banc 0,667 → **0,967**, hors distribution 0,267 → 0,617, ce mode 16 → 0 | 32 §24 |
 | Un signal négatif sur les échecs (KLPO) | **réfuté à 7 M**, 3 fois | effondrement à β = 0,1, oscillation à β = 1,0 | 32 §6, §8 |
 | Plusieurs familles dans une boucle | **établi : oubli par omission total** ; bassin cumulé protège | une famille absente d'un tour : 1,000 → **0,000** | 32 §15, §19 |
 
-**Tests ouverts, CPU :** un a priori de décodage qui refuse `done` avant toute note (32
-§21, « à mesurer ») ; un curriculum qui rend atteignable l'ensemble jamais réussi (32 §14,
+**Tests ouverts, CPU :** ~~un a priori de décodage contre le `done` prématuré~~ (fait, H28,
+32 §24) ; un curriculum qui rend atteignable l'ensemble jamais réussi (32 §14,
 voie 3) ; KLPO avec β entre 0,1 et 1,0 ou des tirages frais à chaque pas (32 §8). **Test
 qui tranche à l'échelle :** `scripts/closed_loop_a100.sh` sur le checkpoint du programme 1.
 Il n'a jamais tourné sur GPU.
@@ -138,7 +139,7 @@ retiré. Chaque fois qu'une courbe s'aplatit, le dépôt a nommé le mur. Aujour
 |---|---|---|
 | **Amorçage** : il faut déjà réussir parfois | `calc` passe de 0 à 100 % entre 40/80 et 100/200 (31 §2) | une amorce calibrée famille par famille (fait) |
 | **Vérificateur** : il filtre, il ne contredit pas | graine dure : +0,000 (32 §14) | la reprise qui explore (+0,233, 32 §16) ; un curriculum (non testé) |
-| **Étape absente** : `done` prématuré | 32 §21 | un a priori de décodage (à mesurer) |
+| ~~**Étape absente** : `done` prématuré~~ | 32 §21 | **levé** : c'était un défaut de décodage (H28, 32 §24) |
 | **Proposeur** : il ne démarre pas | 0,40 de validité au mieux (32 §22–23) | le format objet a levé les champs ; reste `ask`, une référence : cibler des clés à l'entraînement du pointeur, l'échelle 375 M |
 | **Familles écrites par un humain** | 33 §5 | des tâches-programmes jugées par un exécuteur (non testé) |
 | **Capacité** : 7 M ne boucle pas utilement | 10 §3a | le programme 1 (375 M, A100) |
@@ -150,8 +151,8 @@ retiré. Chaque fois qu'une courbe s'aplatit, le dépôt a nommé le mur. Aujour
 1. ~~H26, le format objet, puis H27, la clé copiée~~ : faits (32 §23). Le proposeur ne
    démarre pas à 7 M ; le CPU s'arrête pour le programme 3. H21 à H25, et donc H23, le
    cœur du but, attendent l'A100.
-2. **Le `done` prématuré** : un a priori de décodage, une variable, sur l'amorce de v10d
-   (≈ 30 min).
+2. ~~Le `done` prématuré~~ : fait (H28, 32 §24). C'était un défaut de décodage ; l'option
+   corrigée entre dans la recette A100 (31, amendement 25).
 3. **A4-0 à 7 M** : l'AUROC du désaccord entre profondeurs sur le banc, avec le premier run
    bouclé (minutes). Il dirait si le signal existe déjà en petit.
 

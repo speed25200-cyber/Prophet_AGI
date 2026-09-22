@@ -1109,3 +1109,33 @@ programme 3.**
 5. **La validité monte avec la dose d'entraînement du proposeur** (listes : 0, 0, 0, 9 ;
    objet : 0, 0, 0, 12), et le solveur monte avec elle vers le haut de sa fenêtre. À 7 M,
    les deux conditions de la règle ne se recouvrent qu'à peine, au dernier barreau.
+
+## 24. `done` prématuré : un défaut de décodage, pas une étape que la politique n'émet pas (H28)
+
+Pré-enregistrement : docs/31, amendement 24. **Date :** 2026-09-22. Point de contrôle : le
+premier temps de l'amorce reconstruite (§22), `lookup`, bancs gloutons des graines 7 et 11,
+sous `no_repeat_action` comme tous les pilotes depuis v7. Un seul changement : l'option
+`no_repeat_emitted`, qui interdit au pas suivant l'action émise plutôt que le substitut que
+la porte a inscrit.
+
+| Mesure, à poids égaux | `no_repeat_action` (tel que les pilotes l'ont lu) | + `no_repeat_emitted` |
+|---|---:|---:|
+| Banc `lookup` | 0,667 | **0,967** (0,933 et 1,000) |
+| Succès canonique | 0,667 | 0,667 |
+| Banc hors distribution | 0,267 | **0,617** |
+| Échecs « `done` prématuré » (`read_file`, `done` refusé ×3, aucune note) | **16** sur 60 | **0** |
+| Autres échecs | 2 mauvaises notes, 2 notes justes trop tardives | 2 notes du mauvais champ, le budget de 4 pas épuisé |
+
+**H28 passe** (critère : ≥ 0,767 et moins de 16 échecs de ce mode). Le succès canonique ne
+bouge pas : une réussite qui passe par un `done` refusé n'est pas canonique, et c'est
+elle que la promotion garde (§9). Le changement ne touche donc pas ce que la boucle
+apprend ; il touche ce que le banc mesure et ce que la génération peut trouver.
+
+**Ce que cela révise.** Le mode « `done` prématuré » de §21 (v10d : 18 échecs sur 30, tous
+de cette forme) a été lu comme « une étape que la politique n'émet jamais », que
+l'exploration du pointeur ne pouvait pas créer. Sur les poids reconstruits, la même forme
+disparaît entièrement dès que le décodeur n'autorise plus la répétition immédiate d'un
+`done` refusé : la politique émet la note au pas suivant quand on lui en laisse la place.
+Les chiffres de v7 à v14 et de v10c/v10d restent tels qu'enregistrés (ils ont été mesurés
+avec ce défaut, sur d'autres poids) ; leur lecture du mode `done` prématuré est à prendre
+avec cette réserve. L'option entre dans la recette A100 (docs/31, amendement 25).

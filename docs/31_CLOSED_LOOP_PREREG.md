@@ -705,3 +705,11 @@ et le même diagnostic reclasse les échecs. **Critère** : succès au banc `loo
 0,10, et moins de 16 échecs « `done` prématuré ». Rapporté aussi : le succès canonique et
 le banc hors distribution. Si H28 passe, l'option entre dans la recette de référence
 proposée pour l'A100 (`scripts/closed_loop_a100.sh`), par un amendement séparé.
+
+## Amendement 25 — 2026-09-22, après la mesure d'H28, avant tout run sur GPU : la recette A100 exclut l'action émise
+
+H28 passe (docs/32 §24) : à poids égaux, banc `lookup` 0,667 → 0,967, échecs « `done`
+prématuré » 16 → 0, canonique inchangé. Comme l'amendement 24 l'avait prévu,
+`--no-repeat-emitted` entre dans la recette du lanceur A100 (`scripts/closed_loop_a100.sh`,
+avec `--no-repeat-action`), pour la calibration comme pour les bras. Les pilotes CPU ne
+sont pas relancés : leurs chiffres restent ceux de leur commit.

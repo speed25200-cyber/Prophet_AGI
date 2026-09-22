@@ -67,7 +67,7 @@ EXPLORE_FLAGS=(); [ "$EXPLORE" = 1 ] && EXPLORE_FLAGS=(--copy-topk 3 --copy-expl
 COMMON=(--work "$WORK" --config "$CONFIG" --device "$DEVICE" --replay-names fineweb-edu,composition
         --tasks-per-round "$TASKS" --attempts "$ATTEMPTS" --steps-per-round "$STEPS" --replay-fraction 0.5
         --bench-tasks "$BENCH" --bpb-docs "$BPB_DOCS" --seq-len 1024 --batch-size 8 --minutes 600
-        --lr-scale "$LR_SCALE" --no-repeat-action "${EXPLORE_FLAGS[@]}")
+        --lr-scale "$LR_SCALE" --no-repeat-action --no-repeat-emitted "${EXPLORE_FLAGS[@]}")
 
 # 2. Calibration, family by family, on the canonical success (amendment 16): the first rung
 #    of the ladder where every family succeeds with a canonical success strictly positive,
