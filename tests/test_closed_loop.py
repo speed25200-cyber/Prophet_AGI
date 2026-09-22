@@ -511,3 +511,11 @@ def test_copy_topk_explores_from_the_second_attempt_only(work, tmp_path, monkeyp
         ).copy_explore
         == "observations"
     )
+    run(work, tmp_path / "bounds", "frozen", rounds=0, copy_boundaries="explore")
+    protocol = json.loads((tmp_path / "bounds" / "protocol.json").read_text())
+    assert protocol["copy_boundaries"] == "explore" and closed_loop.COPY_BOUNDARIES == "explore"
+    # The bench and the generation read the same switch.
+    assert closed_loop.generation_config("calc", temperature=0.0).copy_boundaries == "explore"
+    run(work, tmp_path / "plain2", "frozen", rounds=0)
+    assert "copy_boundaries" not in json.loads((tmp_path / "plain2" / "protocol.json").read_text())
+    assert closed_loop.COPY_BOUNDARIES == "off"

@@ -743,3 +743,58 @@ def test_copy_exploration_can_be_limited_to_spans_read_from_observations(monkeyp
         assert seen == expect, (explore, seen)
         seen.clear()
     assert AgentLoop(None, tok, reg, AgentConfig())._from_observation(0) is False
+
+
+def test_copy_starts_can_be_restricted_to_word_boundaries(monkeypatch):
+    """docs/31 amendment 19: a copied value is a whole word; starts inside a word are
+    masked for the exploratory draw ("explore") or for every choice ("always")."""
+    import types
+
+    import torch as _t
+
+    from prophet.agent import loop as loop_module
+
+    seen = []
+
+    def spy(s_logits, e_logits, *, temperature, topk=0):
+        seen.append((topk, [float(v) for v in s_logits]))
+        return int(s_logits.argmax()), int(s_logits.argmax())
+
+    monkeypatch.setattr(loop_module, "choose_copy_span", spy)
+    reg = ToolRegistry()
+    reg.add(
+        ToolSchema("say", "Say", {"type": "object", "properties": {"text": {"type": "string"}}})
+    )
+    tok = ProphetTokenizer(merges=[])
+    text = 'goal x\n"be" beacon_0.txt\n'
+    ids = [ord(c) for c in text]  # the bare tokenizer is byte-level
+    obs_start = text.index('"be"')
+    inside = text.index("acon")  # inside beacon_0.txt
+    after_nl = text.index("beacon") - 0  # follows a space
+    positions = [0, obs_start, inside, after_nl]
+    for mode, topk, expect_masked in (
+        ("off", 2, []),
+        ("explore", 2, [inside]),
+        ("explore", 0, []),
+        ("always", 0, [inside]),
+    ):
+        loop = AgentLoop(None, tok, reg, AgentConfig(copy_topk=topk, copy_boundaries=mode))
+        loop._ids = list(ids)
+        loop._observation_spans = [(obs_start, len(ids))]
+        assert loop._word_start(0) and loop._word_start(obs_start) and loop._word_start(after_nl)
+        assert not loop._word_start(inside)
+        out = types.SimpleNamespace(
+            copy_gate=_t.tensor([[1.0]]),
+            copy_start=_t.tensor([[[0.0, 1.0, 5.0, 2.0]]]),
+            copy_end=_t.tensor([[[0.0, 0.0, 0.0, 0.0]]]),
+            copy_key_positions=_t.tensor(positions),
+        )
+        loop._try_copy('{"name":"say","args":{"text":', out)
+        got_topk, logits = seen.pop()
+        masked = [positions[i] for i, v in enumerate(logits) if v == float("-inf")]
+        assert masked == expect_masked and got_topk == topk, (mode, topk, masked)
+    # Only finite candidates are drawn among.
+    s = _t.tensor([1.0, float("-inf"), 3.0, float("-inf")])
+    e = _t.tensor([0.0, 0.0, 0.0, 0.0])
+    _t.manual_seed(0)
+    assert {choose_copy_span(s, e, temperature=0.0, topk=3)[0] for _ in range(100)} == {0, 2}

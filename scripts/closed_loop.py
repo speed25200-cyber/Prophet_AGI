@@ -74,6 +74,7 @@ from scripts.first_agent_run_cpu import (  # noqa: E402
 
 SAMPLE_COPY = False  # set by main() from --sample-copy; generation only (the bench is greedy)
 NO_REPEAT_ACTION = False  # set by main() from --no-repeat-action; read by generation_config callers
+COPY_BOUNDARIES = "off"  # set by main() from --copy-boundaries; bench and generation alike
 ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean")
 BENCH_SEEDS = (7, 11)
 SEED_TASK_BASE = 1_000
@@ -89,6 +90,7 @@ def generation_config(
     sample_copy: bool = False,
     copy_topk: int = 0,
     copy_explore: str = "all",
+    copy_boundaries: str | None = None,
 ) -> AgentConfig:
     """The bench's loop settings (docs/09), with the family named so the quarantine
     files the episodes under it and a temperature the caller chooses: sampled for
@@ -109,6 +111,7 @@ def generation_config(
         sample_copy=sample_copy,
         copy_topk=copy_topk,
         copy_explore=copy_explore,
+        copy_boundaries=COPY_BOUNDARIES if copy_boundaries is None else copy_boundaries,
     )
 
 
@@ -548,6 +551,13 @@ def main(argv: list[str] | None = None) -> int:
         "observation (docs/31 amendment 17)",
     )
     ap.add_argument(
+        "--copy-boundaries",
+        choices=("off", "explore", "always"),
+        default="off",
+        help="restrict the copy pointer's start to word boundaries: for the exploratory "
+        "draw only, or for the argmax too (docs/31 amendment 19)",
+    )
+    ap.add_argument(
         "--explore-from-attempt",
         type=int,
         default=2,
@@ -584,9 +594,10 @@ def main(argv: list[str] | None = None) -> int:
         "--klpo-temperature", type=float, default=1.0, help="sampling temperature of the KLPO arm"
     )
     args = ap.parse_args(argv)
-    global NO_REPEAT_ACTION, SAMPLE_COPY
+    global NO_REPEAT_ACTION, SAMPLE_COPY, COPY_BOUNDARIES
     NO_REPEAT_ACTION = bool(args.no_repeat_action)
     SAMPLE_COPY = bool(args.sample_copy)
+    COPY_BOUNDARIES = args.copy_boundaries
     if args.rounds < 0 or args.tasks_per_round < 1 or args.attempts < 1 or args.steps_per_round < 0:
         ap.error("rounds >= 0, tasks and attempts >= 1, steps >= 0")
     if not 0 <= args.replay_fraction < 1:
@@ -646,6 +657,8 @@ def main(argv: list[str] | None = None) -> int:
         protocol["explore_from_attempt"] = args.explore_from_attempt
         if args.copy_explore != "all":
             protocol["copy_explore"] = args.copy_explore
+    if args.copy_boundaries != "off":
+        protocol["copy_boundaries"] = args.copy_boundaries
     protocol_path = args.out / "protocol.json"
     if protocol_path.exists():
         if json.loads(protocol_path.read_text()) != json.loads(json.dumps(protocol)):

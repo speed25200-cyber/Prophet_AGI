@@ -142,6 +142,14 @@ class AgentConfig:
     argmax start lies in a tool ``"observations"`` (docs/31 amendment 17). What is copied
     from the goal is a constant of the task and not worth exploring; what is copied from
     an observation is the choice a loop can get systematically wrong."""
+    copy_boundaries: str = "off"
+    """Restrict the copy pointer's start to word boundaries -- positions whose previous
+    token ends in whitespace, a quote or punctuation, or that open an observation --
+    for the exploratory draw only (``"explore"``) or for the argmax as well
+    (``"always"``); ``"off"`` leaves the pointer free (docs/31 amendment 19). A copied
+    value is a whole word or field; a start inside a word is never right, and on the
+    misplaced pointer of docs/32 §13 the right start ranked 11th and 15th, behind
+    positions inside the same name."""
 
 
 @dataclass
@@ -193,8 +201,9 @@ def choose_copy_span(
     ``topk`` > 0 draws the start uniformly among the ``topk`` highest-scoring positions
     instead (docs/31 amendment 15): a confident pointer's second choice is then reached
     as often as its first, which no temperature achieves."""
-    if topk > 0:
-        candidates = torch.topk(s_logits, min(topk, s_logits.numel())).indices
+    finite = int(torch.isfinite(s_logits).sum())
+    if topk > 0 and finite > 0:
+        candidates = torch.topk(s_logits, min(topk, finite)).indices
         start_i = int(candidates[torch.randint(candidates.numel(), (1,))].item())
     elif temperature > 0:
         start_i = int(torch.multinomial(torch.softmax(s_logits / temperature, -1), 1).item())
@@ -418,6 +427,12 @@ class AgentLoop:
             preferred = int(key_pos[int(s_logits.argmax())])
             if not self._from_observation(preferred):
                 topk = 0
+        if self.cfg.copy_boundaries == "always" or (
+            self.cfg.copy_boundaries == "explore" and topk > 0
+        ):
+            boundary = torch.tensor([self._word_start(int(k)) for k in key_pos])
+            if bool(boundary.any()):
+                s_logits = s_logits.masked_fill(~boundary, float("-inf"))
         start_i, end_i = choose_copy_span(
             s_logits,
             e_logits,
@@ -452,6 +467,19 @@ class AgentLoop:
         """Whether an absolute position of ``self._ids`` lies in a tool observation fed
         this episode."""
         return any(start <= position < end for start, end in self._observation_spans)
+
+    _BOUNDARY_CHARS = " \t\n\r\"'`:,;=(){}[]<>|"
+
+    def _word_start(self, position: int) -> bool:
+        """Whether a copied span may start at ``position``: the first token of the
+        context or of an observation, or a token whose predecessor ends in whitespace,
+        a quote or punctuation (a control token decodes to nothing and counts too)."""
+        if position <= 0 or position >= len(self._ids):
+            return position == 0
+        if any(position == start for start, _ in self._observation_spans):
+            return True
+        previous = self.tok.decode([self._ids[position - 1]])
+        return previous == "" or previous[-1] in self._BOUNDARY_CHARS
 
     # -- the episode -------------------------------------------------------------------
 
