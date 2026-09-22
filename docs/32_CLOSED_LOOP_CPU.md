@@ -738,3 +738,45 @@ dans la recette de référence comme option **validée sur une graine et une fam
 généralité (`files`, mode (e) : le pointeur décalé d'un jeton) est la variable suivante
 (amendement 18). Et la comptabilité doit rapporter `explorés` à chaque tour : c'est le
 nombre d'épisodes qui apprennent quelque chose que le modèle ne savait pas déjà.
+
+## 17. Pilote v12 : l'exploration ciblée sur `files`
+
+Amendement 18 : `files`, graines 0 et 1, amorces 50 / 100 de v6–v8, recette de référence
+plus l'exploration de v11b (`--copy-topk 3 --copy-explore observations --attempts 3`),
+bras `closed-clean` seul ; témoin v7 (même amorce, deux tentatives, sans exploration).
+
+| Graine | Bras | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | Explorés | Jamais réussies | Promus | Jetons |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | v12 | 0,850 | 0,833 | 0,867 | 0,883 | 0,867 | 0,867 | +0,017 [+0,000, +0,050] | +0,073 | 8 | 6 | 137 | 51,6 k |
+| 0 | v7 | 0,850 | 0,800 | 0,850 | 0,817 | 0,883 | 0,933 | +0,083 [+0,017, +0,150] | +0,070 | — | 4 | 122 | 49,9 k |
+| 0 | oracle v7 | 0,850 | 0,933 | 0,983 | 1,000 | 0,983 | 0,967 | +0,117 [+0,033, +0,217] | +0,066 | — | 0 | 150 | 0 |
+| 1 | v12 | 0,783 | 0,783 | 0,983 | **1,000** | 1,000 | 1,000 | **+0,217** [+0,117, +0,317] | +0,073 | **3** | 0 | 134 | 51,7 k |
+| 1 | v7 | 0,783 | 0,833 | 0,900 | 0,883 | 0,900 | 0,900 | +0,117 [+0,033, +0,217] | +0,070 | — | 5 | 123 | 49,3 k |
+| 1 | oracle v7 | 0,783 | 0,950 | 0,950 | 1,000 | 1,000 | 1,000 | +0,217 [+0,117, +0,317] | +0,065 | — | 0 | 150 | 0 |
+
+**Verdicts v12 (H16).**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H16 (i)** explorés ≥ 10 par graine | **échoue** | 8 (graine 0), 3 (graine 1) |
+| **H16 (ii)** gain ≥ v7 par graine, intervalle excluant zéro | **échoue** sur la graine 0 | +0,017 [+0,000, +0,050] contre +0,083 ; graine 1 : +0,217 [+0,117, +0,317] contre +0,117, passe |
+| **H16 (iii)** rendement moyen ≥ 0,8 | **échoue** | 0,70 (+0,117 / +0,167) |
+| **H16** | **échoue** | |
+
+**Diagnostic, graine 0, checkpoint final, banc 7.** Trois échecs : deux sont le mode (e)
+(`con_0.txt` et `acon_2.txt` notés pour `beacon_0.txt` et `beacon_2.txt`), un une note
+vide. Sur les deux premiers, le bon départ (`be`, premier jeton après le saut de ligne :
+`beacon` se découpe en `be`, `a`, `con`) est au **rang 11 et 15** du pointeur
+(p = 0,016 et 0,002), derrière `con`, `a`, `":` et `"list_f` : la masse est *à
+l'intérieur* du nom, et un tirage parmi les 3 meilleurs ne l'atteint jamais. C'est la
+borne du mécanisme de v11b : il fabrique la contradiction quand la bonne valeur est au
+second rang (mode (f), `lookup`), pas quand elle est au onzième (mode (e), `files`).
+L'amendement 19 restreint le tirage aux débuts de mots — v13.
+
+**La graine 1 n'est pas un effet de l'exploration.** Trois épisodes explorés sur 134
+promus (2 %) ne portent pas un gain de +0,217 ; la troisième tentative ajoute 11 lignes
+promues en cinq tours à jetons presque égaux (+5 %), et le reste est la variance d'un
+run — deux bancs de 30 tâches, une génération stochastique. On rapporte l'écart avec v7
+tel quel et sans cause établie ; il dit surtout que sur `files` graine 1 la boucle
+fermée peut rejoindre l'oracle (1,000 dès le tour 3, aucune tâche jamais réussie), et
+que la mesure du rendement à ±0,1 demande plus de graines que ce processeur n'en donne.
