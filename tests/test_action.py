@@ -396,6 +396,23 @@ def test_copy_pointer_fills_a_string_value_from_context():
     assert rec.copied == 1 and rec.observation == "contents of notes.txt"
 
 
+def test_copy_keys_limit_which_parameters_may_be_copied():
+    """docs/33 amendment 10: with copy_keys, only the named parameters may be filled by
+    the pointer; a proposal copies ask (a key it just wrote) and invents the rest."""
+    for keys, copied in ((("path",), 1), (("ask",), 0), (None, 1)):
+        model = _Copying(
+            _script("<|/think|>", '{"name":"read_file","args":{"path":', '}}<|/call|>'),
+            choice=1,
+            target="notes.txt",
+        )
+        loop = _loop(model)
+        loop.cfg.copy_keys = keys
+        rec = loop.run("please read notes.txt now").steps[0]
+        assert rec.copied == copied, keys
+        if copied:
+            assert rec.action.args == {"path": "notes.txt"}
+
+
 def test_copy_is_refused_when_the_span_does_not_fit_the_schema():
     # `count.n` is an integer; the pointer offers a word, so the loop generates instead.
     model = _Copying(_script("<|/think|>", '{"name":"count","args":{"n":', '3}}<|/call|>'),

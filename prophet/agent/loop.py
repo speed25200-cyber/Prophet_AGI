@@ -134,6 +134,10 @@ class AgentConfig:
     """Let the copy heads splice a span of the context into a value. Off for episodes
     whose values must be *invented* rather than read (proposals, docs/33 amendment 5):
     the gate otherwise copies fragments of the pinned prompt."""
+    copy_keys: tuple[str, ...] | None = None
+    """With ``allow_copy``, the only parameters whose value may be copied; ``None`` lets
+    every parameter copy. A proposal invents its values but *refers* to one of the keys it
+    just wrote in ``ask``: copying that one alone (docs/33 amendment 10)."""
     ordered_keys: bool = False
     """Require a call's argument keys in the schema's order, as the renderer writes
     them (docs/33 amendment 6)."""
@@ -441,6 +445,8 @@ class AgentLoop:
         and accept it only if the grammar does. Otherwise generate as usual."""
         state = self.grammar.check(prefix)
         if not state.value_start or not self.cfg.allow_copy:
+            return None
+        if self.cfg.copy_keys is not None and state.key not in self.cfg.copy_keys:
             return None
         gate = getattr(out, "copy_gate", None)
         starts, ends = getattr(out, "copy_start", None), getattr(out, "copy_end", None)

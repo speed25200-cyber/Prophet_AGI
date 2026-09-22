@@ -349,3 +349,47 @@ sont remesurés.
 `oracle`), cinq tours, graine 0, en format objet, avec H20 à H25 inchangées. Sinon, le
 résultat est « le format n'était pas le verrou à 7 M », rapporté avec les taux, et le CPU
 s'arrête pour le programme 3.
+
+## Amendement 10 — 2026-09-22, après l'échelle en objet (H26), avant tout tour entraîné : la clé demandée est une référence (H27)
+
+**Ce qui s'est passé : H26 échoue sur son critère.** Même premier temps, format objet :
+- 50 / 50 : solveur 0,950 ; sonde 12 malformées, 18 invalides, 0 valide ;
+- 100 / 50 : solveur 0,783 ; 1 / 29 / 0 ;
+- 100 / 25 : solveur 0,900 ; 1 / 29 / 0 ;
+- 200 / 100 : solveur **0,933** (canonique 0,900, hors distribution 0,483) ; 0 / 18 / **12**.
+
+Au dernier barreau, 12 valides sur 30, soit 0,40 < 0,5. En format listes, on avait 9.
+
+La décomposition par champ, sur les appels qui se lisent, localise l'échec :
+
+| Barreau | Champ | Format listes | Format objet |
+|---|---|---:|---:|
+| 100 / 50 | champs justes | 0 / 21 | 23 / 29 |
+| 200 / 100 | `file` juste | 30 / 30 | 30 / 30 |
+| 200 / 100 | champs justes | 14 / 30 | **30 / 30** |
+
+Au dernier barreau, les 18 invalides n'échouent **que** sur `ask`, qui n'est pas l'une des
+clés écrites (`yearbor`, `harbor`, `cinder`, `}}`). Le format objet a donc levé le verrou
+des champs, pas celui de `ask`. Aux barreaux intermédiaires, le nom de fichier commence par
+la fermeture du schéma d'outil qui précède l'appel (`]}}`).
+
+**H27 (référence).** `ask` n'est pas une valeur à inventer : c'est l'une des clés que le
+modèle vient d'écrire, une référence à son propre contexte. C'est ce que le pointeur de
+copie sait faire, et en format objet sa seule occurrence antérieure est dans les champs :
+c'est là que le pointeur a été entraîné à la chercher. L'amendement 5 avait coupé la copie
+pour toutes les valeurs d'une proposition, parce qu'elle recopiait le prompt épinglé. H27 la
+rouvre **pour `ask` seulement** : `AgentConfig.copy_keys = ("ask",)`, option
+`--propose-copy ask` (écrite dans `protocol.json` si elle n'est pas le défaut), tests.
+
+**Mesure.** Un changement de décodage seulement : les points de contrôle des quatre
+barreaux de l'échelle en objet sont réutilisés tels quels, sans aucun entraînement. Les
+bancs du solveur sont remesurés : ils ne décodent aucune proposition et doivent donner les
+mêmes chiffres. La sonde est rejouée. **Critère** : la règle de l'amendement 1, barreau par
+barreau dans l'ordre. H27 passe si un barreau la satisfait.
+
+**Arrêt.** Cet amendement remplace l'arrêt annoncé à l'amendement 9. La décomposition ne
+laisse plus qu'un champ, et un mécanisme existant y répond. C'est la **dernière**
+correction de décodage du programme 3 sur CPU. Si H27 échoue, le résultat est « le
+proposeur ne démarre pas à 7 M », avec les taux des trois échelles, et le CPU s'arrête pour
+le programme 3. Si elle passe, les trois bras de §2 tournent sur la graine 0, en format
+objet, avec copie de `ask`, et H20 à H25 inchangées.

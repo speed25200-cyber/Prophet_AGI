@@ -550,6 +550,7 @@ def propose_round(
     temperature: float,
     round_index: int,
     fmt: str = "lists",
+    copy: str = "none",
 ) -> tuple[list, dict]:
     """``n`` proposal episodes (one step each, action span sampled), validated by the
     rules; returns ``[(spec, task), ...]`` and the counts. ``seen`` holds the signatures
@@ -566,6 +567,9 @@ def propose_round(
     cfg.decoder_widen = True
     cfg.sample_topk = PROPOSE_SAMPLE_TOPK  # docs/33 amendment 4
     cfg.allow_copy = False  # values are invented, not read from the prompt (amendment 5)
+    if copy == "ask":
+        # ...except ask, a reference to a key just written (amendment 10).
+        cfg.allow_copy, cfg.copy_keys = True, ("ask",)
     cfg.ordered_keys = True  # keys in schema order, as rendered (amendment 6)
     # A proposal call is ~60 tokens; the bench's 64-token action budget cut nearly every
     # sampled one (docs/33 amendment 1).
@@ -819,6 +823,13 @@ def main(argv: list[str] | None = None) -> int:
         "position, or one JSON object shaped like the file (docs/33 amendment 9)",
     )
     ap.add_argument(
+        "--propose-copy",
+        choices=("none", "ask"),
+        default="none",
+        help="proposal values the copy pointer may fill: none (amendment 5), or ask only, "
+        "the reference to a key just written (docs/33 amendment 10)",
+    )
+    ap.add_argument(
         "--hard-bench",
         action="store_true",
         help="also measure the out-of-distribution lookup bench of docs/33 every round",
@@ -929,6 +940,8 @@ def main(argv: list[str] | None = None) -> int:
         protocol["propose_amorce_steps"] = args.propose_amorce_steps
     if args.propose_format != "lists":
         protocol["propose_format"] = args.propose_format
+    if args.propose_copy != "none":
+        protocol["propose_copy"] = args.propose_copy
     if args.hard_bench:
         protocol["hard_bench"] = True
     if args.device != "cpu":
@@ -1128,6 +1141,7 @@ def main(argv: list[str] | None = None) -> int:
                 temperature=args.temperature,
                 round_index=0,
                 fmt=args.propose_format,
+                copy=args.propose_copy,
             )
         record(
             {
@@ -1182,6 +1196,7 @@ def main(argv: list[str] | None = None) -> int:
                 temperature=args.temperature,
                 round_index=r,
                 fmt=args.propose_format,
+                copy=args.propose_copy,
             )
             proposed_tasks = [t for _, t in proposals]
             if proposed_tasks:

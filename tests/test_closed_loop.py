@@ -616,6 +616,7 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
                 self.cfg.sample_topk,
                 self.cfg.allow_copy,
                 self.cfg.ordered_keys,
+                self.cfg.copy_keys,
             )
         )
         action = next(scripted)
@@ -652,7 +653,22 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
     # A proposal call is ~60 tokens: the loop's 64-token action budget is raised for it
     # (docs/33 amendment 1).
     assert budgets and all(b >= 160 for b in budgets)
-    assert set(scopes) == {("values", True, True, 5, False, True)}  # docs/33 amendments 2 to 6
+    assert set(scopes) == {("values", True, True, 5, False, True, None)}  # amendments 2 to 6
+    # Amendment 10: --propose-copy ask reopens the pointer for ask, and for ask only.
+    scripted = iter([Action("propose_lookup", good)])
+    scopes.clear()
+    propose_round(
+        model,
+        tokenizer,
+        "lookup",
+        1,
+        seen=set(),
+        amorce_specs=[],
+        temperature=0.7,
+        round_index=2,
+        copy="ask",
+    )
+    assert scopes == [("values", True, True, 5, True, True, ("ask",))]
 
 
 def test_the_object_format_reaches_the_amorce_the_probe_and_the_protocol(work, monkeypatch):
