@@ -916,3 +916,42 @@ et avec la variance d'un banc de 60 tâches ; on ne tranche pas ici. Ce que ce p
 ferme, c'est l'explication la plus économe (le budget de reprise), et la ligne des pilotes
 CPU sur `files` : à ±0,1 par mesure, la question suivante coûte plus de graines que ce
 processeur n'en donne.
+
+## 21. Pilote v10d : le bassin mixte avec la reprise qui explore
+
+Amendement 22 : le bras mixte de v10c (graine 0, amorce 75 / 150, `lookup` 0,367 et `files`
+1,000) avec l'exploration de §16 (`--copy-topk 3 --copy-explore observations --attempts 3`).
+
+| Bras | `lookup` t0 → t5 | `files` t0 → t5 | Gain `lookup` [IC 95 %] | Explorés `lookup` par tour | Résolues `lookup` par tour | Δ BPB | Jetons | Heures |
+|---|---:|---:|---:|---|---|---:|---:|---:|
+| v10d mixte + exploration | 0,367 → 0,383 (0,333, 0,267, 0,350, 0,350) | 1,000 → 1,000 | +0,017 [−0,033, +0,083] | 6, 0, 0, 0, 0 | 13, 8, 8, 10, 14 | +0,026 | 125 k | 0,40 |
+| v10c mixte (témoin) | 0,367 → 0,350 | 1,000 → 1,000 | −0,017 [−0,050, +0,000] | — | 8, 8, 10, 9, 14 | +0,028 | 101 k | 0,36 |
+| oracle mixte v10c | 0,367 → 1,000 | 1,000 → 0,967 | +0,633 [+0,500, +0,750] | — | 30 × 5 | +0,023 | 0 | 0,26 |
+
+**Verdicts v10d (H19).**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H19 (i)** explorés `lookup` ≥ 10 | **échoue** | 6, tous au tour 1 |
+| **H19 (ii)** gain `lookup` ≥ +0,100, intervalle excluant zéro | **échoue** | +0,017 [−0,033, +0,083] |
+| **H19 (iii)** `files` ≥ 0,950 à chaque tour | passe | 1,000 partout |
+| **H19 (iv)** rendement union ≥ 0,6 | **échoue** | 0,03 (+0,008 / +0,300) |
+| **H19** | **échoue** | |
+
+**Diagnostic, banc 7, checkpoint final.** Dix-huit échecs sur 30, **tous de la même forme** :
+`read_file`, puis `done` refusé trois fois, sans jamais une `note`. Sur cette graine et cette
+amorce, ce que la politique rate n'est pas le choix d'un champ, c'est **l'étape de note
+elle-même** : le modèle appelle `done` dès l'observation lue. Il n'y a donc aucun span
+copié à explorer sur ces tâches, et le mécanisme de §16, qui tire le départ du span à la
+reprise, n'a rien à tirer : 6 épisodes contradictoires au tour 1 (des tâches où la note
+avait lieu), zéro ensuite, 36 tâches de banc sur 60 jamais réussies. Le bassin mixte, lui,
+tient `files` à 1,000 sur les cinq tours, avec plus de jetons (+24 %) et sans surcoût
+d'oubli (+0,026 contre +0,028).
+
+Ce que cela précise : la reprise qui explore corrige une **erreur de sélection** dans une
+étape que la politique atteint (v11b) ; elle ne crée pas une étape que la politique n'émet
+jamais. Le mode « `done` prématuré » est celui de la promotion canonique (§9, §15) : il se
+corrige par l'amorce (plus d'exposition à cette famille) ou par un a priori de décodage
+(refuser `done` avant toute note, à mesurer), pas par l'exploration du pointeur. Fin de la
+ligne v10 : la boucle multi-familles garde ce qu'elle sait, n'apprend pas plus qu'une boucle
+seule, et ses échecs sont ceux de l'amorce.
