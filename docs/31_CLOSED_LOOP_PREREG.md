@@ -280,3 +280,24 @@ leur propre tour 0 et le rendement à l'oracle v5.
 | Hypothèse | Énoncé mesurable | Critère |
 |---|---|---|
 | **H9 `done`** | Sans continuation fantôme dans `done`, le bras fermé ne recule plus au premier tour et garde son gain. | (i) aucun tour de `closed-clean` sous succès(tour 0) − 0,10 sur les graines retenues ; (ii) part malformée du banc ≤ 5 % à chaque tour ; (iii) rendement gain(closed-clean) / gain(oracle) ≥ 0,8. Les trois, sinon échec. |
+
+## Amendement 9 — 2026-09-22, pendant v5, avant tout run v6 : une seconde famille
+
+**Pourquoi.** Cinq pilotes sur une seule famille (`lookup`) ont isolé et corrigé trois
+défauts, une variable à la fois. Ce qui n'est pas établi : que la boucle fermée, avec cette
+recette, apprend aussi une famille dont la **forme** est autre. `files` (« quel fichier
+contient le mot X ? » : `grep` → `note` du nom de fichier → `done`) exige de lire une
+observation à plusieurs lignes et d'en copier la bonne, et démarrait à 7 % avec les
+trajectoires parfaites de docs/09 — une marge réelle, et le mur d'amorçage de §2 en vrai.
+
+**Pilote v6.** Famille `files`, recette v5 sans changement (taux ÷ 4, grammaire compacte,
+`done` sans argument, promotion canonique), bras `oracle`, `closed-clean`, `frozen`,
+5 tours × 30 tâches, banc 2 × 30 (graines 7 et 11), BPB 200 documents. Graines : calibrées
+comme à l'amendement 2 (tour 0 par graine, retenues si le départ est strictement entre 0
+et 1, dans l'ordre 0, 1, 2, … jusqu'à trois retenues) ; si aucune graine ne démarre
+au-dessus de 0, le résultat est « la boucle ne démarre pas à 7 M sur `files` », rapporté
+tel quel avec le taux de départ.
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H10 généralité** | La recette qui marche sur `lookup` fait démarrer et progresser la boucle sur `files`. | (i) gain(closed-clean) > 0 avec un intervalle excluant zéro sur chaque graine retenue ; (ii) rendement gain(closed-clean) / gain(oracle) ≥ 0,6 ; (iii) aucun tour sous succès(tour 0) − 0,10. Les trois, sinon échec, et le taux de départ est rapporté. |
