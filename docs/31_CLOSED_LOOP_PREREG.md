@@ -460,3 +460,27 @@ tâches ratées par tour dont ≈ 8 ont la bonne valeur en second ; à ε = 1 su
 | **H15 (ii)** la boucle apprend d'eux | Le banc progresse avec certitude. | gain > 0, intervalle excluant zéro. |
 | **H15 (iii)** l'ensemble jamais réussi rétrécit | Les tâches jamais réussies passent sous les deux tiers de v9. | jamais réussies ≤ 12 sur 60 (v9 : 18). |
 | **H15** | | les trois, sinon échec ; (i) seul dit si l'exploration atteint la valeur, (ii) et (iii) si la boucle en apprend. |
+
+## Amendement 16 — 2026-09-22, v10 interrompu après un tour : calibrer sur le succès *canonique*
+
+**Ce qui s'est passé.** La calibration de v10 (amorce mixte 50 / 100 par famille, graine 0)
+a donné 0,467 sur chaque famille : retenue par la règle de l'amendement 14. Au tour 1, le
+bras mixte `closed-clean` a résolu 12 tâches `lookup` et 14 tâches `files`, en a rétrogradé
+18 comme non canoniques — **les 14 de `files`** —, s'est entraîné 60 pas sur 8 lignes
+`lookup` seules, et `files` est passé de 0,467 à **0,000** (40 % de sorties malformées),
+`lookup` de 0,467 à 0,383. Diagnostic sur le checkpoint d'amorce (banc 7) : `files` 18
+succès sur 30, **0 canonique** (tous `grep → done refusé → note → done`) ; `lookup` 13 succès,
+5 canoniques. À demi-exposition par famille, l'amorce mixte a appris à appeler `done` dès
+la première observation ; la promotion canonique n'a alors rien à enseigner sur `files`,
+et la boucle « mixte » est de fait une boucle `lookup` seule — l'oubli par omission
+(H14 (iii)) mesuré sur le bras qui devait l'éviter. v10 est arrêté là et rapporté tel quel
+(docs/32 §15) ; ses bras mono-famille et oracle à cette amorce ne sont pas lancés.
+
+**Règle corrigée.** La calibration retient une graine si, sur **chaque** famille, le succès
+au tour 0 est strictement entre 0 et 0,95 **et le succès canonique est strictement
+positif** (`canonical_by_family`, mesuré par le banc : succès sans pas refusé, sans pas
+malformé, sans pas répété). Échelle *N* / *S* par famille : 100 / 200 d'abord (l'exposition
+de v3–v9 sur `lookup` et le double de v6–v8 sur `files`), 50 / 100 si une famille sature.
+
+**Pilote v10b.** Identique à l'amendement 14 (bras, tours, critères H14) avec l'amorce
+recalibrée ; lancé après v11. Les hypothèses H14 restent celles de l'amendement 14.

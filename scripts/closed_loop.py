@@ -210,6 +210,7 @@ def bench_family(model, tokenizer, family: str, *, n_tasks: int, seed: int) -> d
         "seed": seed,
         "tasks": report.n,
         "success_rate": report.success_rate,
+        "canonical_rate": report.canonical_rate,
         "malformed_rate": report.malformed_rate,
         "mean_tokens": report.mean_tokens,
         "tokens_per_success": report.tokens_per_success,
@@ -242,12 +243,23 @@ def evaluate(
         family: sum(b["success_rate"] for b in benches if b["family"] == family) / len(BENCH_SEEDS)
         for family in families
     }
+    canonical_by_family = {
+        family: sum(b["canonical_rate"] for b in benches if b["family"] == family)
+        / len(BENCH_SEEDS)
+        for family in families
+    }
     bpb = (
         heldout_bpb(work, model, tokenizer, seq_len=min(seq_len, 256), max_docs=bpb_docs)
         if bpb_docs
         else None
     )
-    return {"bench": benches, "success_mean": mean, "success_by_family": by_family, "bpb": bpb}
+    return {
+        "bench": benches,
+        "success_mean": mean,
+        "success_by_family": by_family,
+        "canonical_by_family": canonical_by_family,
+        "bpb": bpb,
+    }
 
 
 def generate_round(
@@ -647,6 +659,7 @@ def main(argv: list[str] | None = None) -> int:
         line = {k: entry[k] for k in ("round", "success_mean", "promoted_total", "compute_seconds")}
         if len(bench_families) > 1:
             line["by_family"] = entry["success_by_family"]
+            line["canonical"] = entry["canonical_by_family"]
         print("ROUND", json.dumps(line), flush=True)
 
     if manager.has_checkpoint():

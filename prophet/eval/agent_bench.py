@@ -123,6 +123,11 @@ class EpisodeReport:
     reason: str
     tokens: int = 0
     """Tokens the model processed in the episode, prompt included."""
+    canonical: bool = False
+    """A success in canonical form: no gated step (no refused ``done``), no malformed
+    step, no step repeating the previous one (docs/31 amendment 7). The closed loop's
+    canonical promotion learns from these only, so a family whose successes are all
+    sloppy has nothing to learn from itself (docs/32 §15)."""
 
     @property
     def success(self) -> bool:
@@ -145,6 +150,11 @@ class BenchReport:
     def malformed_rate(self) -> float:
         total = sum(e.steps for e in self.episodes)
         return sum(e.malformed for e in self.episodes) / max(total, 1)
+
+    @property
+    def canonical_rate(self) -> float:
+        """Share of the tasks solved in canonical form."""
+        return sum(e.canonical for e in self.episodes) / max(self.n, 1)
 
     @property
     def mean_steps(self) -> float:
@@ -216,10 +226,19 @@ def run_bench(
         result: EpisodeResult = loop.run(task.goal, session=session if carry_session else None)
         if carry_session:
             session = result.session
+        actions = [s.action.canonical() if s.action is not None else None for s in result.steps]
+        canonical = (
+            result.finished
+            and result.verified_before_done
+            and all(s.gated == "" for s in result.steps)
+            and all(a is not None for a in actions)
+            and all(a != b for a, b in zip(actions, actions[1:], strict=False))
+        )
         report.episodes.append(EpisodeReport(
             task=task.name,
             finished=result.finished,
             verified=result.verified_before_done,
+            canonical=bool(canonical),
             steps=len(result.steps),
             tool_calls=sum(1 for s in result.steps if s.action is not None and s.action.name in tools.names
                            and s.action.name not in ("note", "verify", "ask", "done", "rollback")),

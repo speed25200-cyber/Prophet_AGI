@@ -153,3 +153,20 @@ def test_tokens_per_success_is_reported():
     assert report.mean_tokens > 50 and report.tokens_per_success == pytest.approx(report.mean_tokens)
     bad = run_bench(_Scripted([_wrong(t) for t in tasks]), TOK, tasks, _cfg())
     assert bad.tokens_per_success is None and "tokens/success inf" in bad.summary()
+
+
+def test_canonical_successes_are_told_from_sloppy_ones():
+    """docs/32 §15: a success with a refused ``done`` is not canonical, and the closed
+    loop's canonical promotion has nothing to learn from a family whose successes are
+    all of that kind."""
+    tasks = make_tasks(3, seed=4)
+    good = run_bench(_Scripted([_perfect(t) for t in tasks]), TOK, tasks, _cfg())
+    assert good.canonical_rate == 1.0 and all(e.canonical for e in good.episodes)
+    bad = run_bench(_Scripted([_wrong(t) for t in tasks]), TOK, tasks, _cfg())
+    assert bad.canonical_rate == 0.0 and not any(e.canonical for e in bad.episodes)
+    r = BenchReport([
+        EpisodeReport("t", finished=True, verified=True, steps=3, tool_calls=1, malformed=0,
+                      copied=1, asked=False, reason="done", canonical=c)
+        for c in (True, False, True, False)
+    ])
+    assert r.canonical_rate == 0.5 and r.success_rate == 1.0
