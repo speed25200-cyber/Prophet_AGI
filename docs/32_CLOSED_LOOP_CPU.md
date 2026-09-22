@@ -841,3 +841,56 @@ L'exploration n'explique pas cet écart ; ce qui distingue ces deux runs de v7 e
 **troisième tentative** : 30 épisodes promus par tour dès le tour 3 (tout le tour résolu)
 contre 25–27. Une hypothèse à une variable, pré-enregistrée à l'amendement 21 : la
 troisième tentative seule, sans exploration.
+
+## 19. Pilote v10c : deux familles dans une boucle, quatre bras
+
+Amendement 20 : graine 0, amorce mixte 75 / 150 par famille (`lookup` 0,367, tous canoniques ;
+`files` 1,000, jugé sur ce qu'il garde), recette de référence sans exploration, 30 tâches
+de chaque famille par tour, 60 pas pour tous les bras, banc 2 × 30 par famille. Quatre bras
+à partir du même checkpoint.
+
+| Bras | Tours sur | `lookup` t0 → t5 | `files` t0 → t5 (pire tour) | Gain union [IC 95 %] | Δ BPB | Promus | Heures |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `closed-clean` mixte | les deux | 0,367 → 0,350 | 1,000 → 1,000 (0,983) | −0,008 [−0,025, +0,000] | +0,028 | 199 | 0,36 |
+| `closed-clean` mono `lookup` | `lookup` | 0,367 → 0,350 | **1,000 → 0,000** dès t1 | −0,508 [−0,600, −0,417] | +0,024 | 47 | 0,36 |
+| `closed-clean` mono `files` | `files` | **0,367 → 0,000** dès t1 | 1,000 → 1,000 | −0,183 [−0,258, −0,117] | +0,023 | 150 | 0,30 |
+| `oracle` mixte | les deux | 0,367 → **1,000** | 1,000 → 0,967 (0,917) | +0,300 [+0,208, +0,392] | +0,023 | 300 | 0,26 |
+
+Tâches `lookup` résolues par tour, bras mixte : 8, 8, 10, 9, 14 sur 30 (mono `lookup` : 8, 8,
+10, 10, 15) ; bras mixte, `lookup` par tour : 0,333, 0,350, 0,350, 0,350, 0,350 ; oracle :
+0,483, 0,917, 0,867, 0,917, 1,000.
+
+**Verdicts v10c (H14, amendement 20).**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H14 (i)** la boucle mixte apprend `lookup` et garde `files` | **échoue** | `lookup` −0,017 [−0,050, +0,000] ; `files` gardé (perte 0,000) |
+| **H14 (ii)** pas d'interférence à compute égal : somme mixte ≥ max(mono) | passe | −0,017 contre −1,017 (mono `lookup`) et −0,367 (mono `files`) |
+| **H14 (iii)** pas d'oubli par omission | **échoue** | `files` 1,000 → 0,000 (mono `lookup`) ; `lookup` 0,367 → 0,000 (mono `files`), dès le tour 1 |
+| **H14 (iv)** rendement union ≥ 0,6 | **échoue** | −0,03 (−0,008 / +0,300) |
+| **H14** | **échoue** | |
+
+Trois choses, nettes.
+
+1. **L'oubli par omission est total, symétrique et immédiat.** Soixante pas (taux ÷ 4,
+   rejeu 0,5 du corpus de base) sur un bassin qui omet une famille apprise la font tomber
+   à zéro au premier tour, et elle ne revient pas ; le rejeu du corpus de base ne la
+   protège en rien, puisque ce corpus ne contient pas d'épisodes. Le bassin mixte, qui
+   garde les épisodes promus de chaque famille, la protège entièrement (0,983 au pire).
+   Pour une boucle à plusieurs familles, la règle est mécanique : **chaque tour s'entraîne
+   sur le bassin cumulé de toutes les familles apprises**, jamais sur celui du tour.
+2. **Le bassin mixte n'interfère pas, mais n'aide pas.** `lookup` fait la même chose dans le
+   bassin mixte (150 lignes `files` pour 47 `lookup`) que seul : rien. Ce n'est pas la
+   dominance de `files` qui bloque `lookup`, c'est le régime de §14 sur une graine plus
+   basse — 8 tâches résolues par tour, toutes du même type que celles que la politique
+   sait déjà faire, et rien qui la contredise. L'oracle, qui reçoit les trente trajectoires
+   par tour, porte `lookup` de 0,367 à 0,917 en deux tours à partir des mêmes poids.
+3. **Ce que le bras mixte ne peut pas mesurer**, c'est le gain de `files` : saturé à
+   l'amorce. La question « le bassin mixte apprend-il les deux ? » reste ouverte sur cette
+   famille de tâches à 7 M ; ce que ce pilote établit, c'est qu'il garde ce qu'il sait et
+   qu'il n'apprend pas plus qu'une boucle seule.
+
+Variable suivante (amendement 22, v10d) : le même bras mixte avec la reprise qui explore de
+§16, la seule mécanique qui ait fait bouger `lookup` sur une graine bloquée. Si `lookup` y
+progresse alors que `files` reste gardé, la boucle multi-familles a sa recette ; sinon la
+graine 0 de `lookup` est hors de portée de la boucle fermée à 7 M, et on le dira.
