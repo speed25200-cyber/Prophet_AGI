@@ -89,6 +89,7 @@ ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean", "closed-pro
 BENCH_SEEDS = (7, 11)
 HARD_BENCH_SEEDS = (17, 19)  # the out-of-distribution bench of docs/33, never trained on
 PROPOSE_ACTION_BUDGET = 160  # tokens for a proposal call (docs/33 amendment 1)
+PROPOSE_SAMPLE_TOPK = 5  # values drawn among the 5 likeliest tokens (docs/33 amendment 4)
 SEED_TASK_BASE = 1_000
 ROUND_TASK_BASE = 10_000
 
@@ -554,6 +555,7 @@ def propose_round(
     cfg.sample_actions = True
     cfg.sample_scope = "values"  # structure greedy, values drawn (docs/33 amendment 2)
     cfg.decoder_widen = True
+    cfg.sample_topk = PROPOSE_SAMPLE_TOPK  # docs/33 amendment 4
     # A proposal call is ~60 tokens; the bench's 64-token action budget cut nearly every
     # sampled one (docs/33 amendment 1).
     cfg.action_budget = max(cfg.action_budget, PROPOSE_ACTION_BUDGET)

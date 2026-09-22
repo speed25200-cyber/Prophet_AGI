@@ -860,3 +860,40 @@ def test_a_partial_key_must_open_a_parameter_not_given_yet():
     assert not grammar.check('{"name":"propose","args":{"ask":"code","ask":"x"}').viable
     # A fresh key is still fine, and so is the first key.
     assert grammar.check('{"name":"propose","args":{"a').viable
+
+
+def test_once_every_parameter_is_given_only_the_closing_brace_is_viable():
+    """docs/33 amendment 4: a comma after the last parameter led the decoder into a key
+    that cannot exist; the grammar refuses the comma itself."""
+    reg = ToolRegistry()
+    reg.add(
+        ToolSchema(
+            "propose",
+            "P",
+            {
+                "type": "object",
+                "properties": {"ask": {"type": "string"}, "keys": {"type": "string"}},
+            },
+        )
+    )
+    grammar = ActionGrammar(reg, compact=True)
+    assert grammar.check('{"name":"propose","args":{"ask":"code",').viable
+    assert grammar.check('{"name":"propose","args":{"ask":"code","keys":"x"}}').complete
+    dead = grammar.check('{"name":"propose","args":{"ask":"code","keys":"x",')
+    assert not dead.viable and "all parameters given" in dead.reason
+    assert grammar.check('{"name":"propose","args":{"ask":"code","keys":"x"').viable
+
+
+def test_sampling_can_be_kept_to_the_likeliest_tokens():
+    import torch as _t
+
+    tok = ProphetTokenizer(merges=[])
+    reg = ToolRegistry()
+    logits = _t.tensor([0.1, 3.0, 2.0, -1.0, 2.5])
+    loop = AgentLoop(None, tok, reg, AgentConfig(sample_topk=2))
+    kept = loop._sampling_logits(logits)
+    assert kept.isfinite().sum() == 2 and kept[1] == 3.0 and kept[4] == 2.5
+    assert AgentLoop(None, tok, reg, AgentConfig())._sampling_logits(logits).equal(logits)
+    assert (
+        AgentLoop(None, tok, reg, AgentConfig(sample_topk=9))._sampling_logits(logits).equal(logits)
+    )

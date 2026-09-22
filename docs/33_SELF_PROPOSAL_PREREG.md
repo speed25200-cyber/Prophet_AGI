@@ -187,3 +187,19 @@ clé, où plus rien n'est viable sauf un antislash. 30 malformées sur 30, pour 
 pas du proposeur ; il n'affectait pas le décodage glouton des pilotes précédents (qui ne
 répète pas de clé) et ne change aucun de leurs chiffres. Calibration relancée sur la même
 amorce, même règle.
+
+## Amendement 4 — 2026-09-22, même calibration, avant tout tour entraîné : fermer l'appel, tirer près de la tête
+
+**Ce qui s'est passé.** Après les amendements 2 et 3 : 30 propositions, 14 malformées,
+16 invalides, 0 valide ; à température 0,3 ou 0,5, pas mieux. Deux causes lues dans les
+sorties. (a) Structure : après le quatrième et dernier paramètre, le modèle émet une
+virgule ; la grammaire l'acceptait alors qu'aucun paramètre ne reste, et le span mourait
+sur une clé impossible (`"values":"code",",`). (b) Contenu : les valeurs tirées à 0,7 sur
+la queue de la distribution d'un modèle de 7 M sont des sous-mots brouillés
+(`cityical`, `codereserveloparameters`) ; `keys` n'est plus une liste de 2 à 6 jetons.
+
+**Corrections, pré-enregistrées.** (a) La grammaire refuse la virgule quand tous les
+paramètres sont donnés : la fermeture est forcée (test). (b) `AgentConfig.sample_topk` :
+les valeurs sont tirées parmi les **5** jetons les plus probables (après le masque de
+grammaire), la température inchangée ; les épisodes de proposition seuls. La règle de
+calibration de l'amendement 1 est inchangée ; l'échelle repart au premier barreau.

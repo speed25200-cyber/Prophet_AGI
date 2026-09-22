@@ -126,6 +126,10 @@ class AgentConfig:
     decoder_widen: bool = False
     """When no token of the decoder's top candidates keeps the call viable, check the
     whole vocabulary before giving the span up (docs/33 amendment 2)."""
+    sample_topk: int = 0
+    """When a token is drawn, keep the ``sample_topk`` most likely tokens only (after
+    any grammar mask); 0 draws from the full tempered distribution (docs/33 amendment
+    4). A small model's tail is where garbled sub-words come from."""
     record_sampling: bool = False
     """Record, for every token the model draws, the sampler's log-probability as used
     (grammar-masked, tempered) and ``mc_draws`` auxiliary draws with theirs, in
@@ -378,7 +382,9 @@ class AgentLoop:
             if not self._sample_here(prefix, constrained=constrained, greedy=greedy):
                 nxt = int(logits.argmax().item())
             else:
-                probs = torch.softmax(logits / self.cfg.sample_temperature, -1)
+                probs = torch.softmax(
+                    self._sampling_logits(logits) / self.cfg.sample_temperature, -1
+                )
                 nxt = int(torch.multinomial(probs, 1).item())
                 if self.cfg.record_sampling:
                     self._record_draw(logits, probs, nxt)
@@ -474,6 +480,17 @@ class AgentLoop:
         else:
             return None
         return rendered if self.grammar.check(prefix + rendered).viable else None
+
+    def _sampling_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """The logits a draw is taken from: the ``sample_topk`` best kept, the rest
+        masked out, when the option is set."""
+        k = int(self.cfg.sample_topk)
+        if k <= 0 or k >= logits.numel():
+            return logits
+        kept = logits.topk(k).indices
+        masked = torch.full_like(logits, float("-inf"))
+        masked[kept] = logits[kept]
+        return masked
 
     def _sample_here(self, prefix: str, *, constrained: bool, greedy: bool) -> bool:
         """Whether the next token is drawn rather than taken by argmax: never when greedy

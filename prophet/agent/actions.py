@@ -387,6 +387,10 @@ class ActionGrammar:
             if s[i] == "}":
                 return seen, i + 1, True, None, False
             if seen:
+                if s[i] == "," and all(k in seen for k in props):
+                    # Every parameter is given: the only continuation is the closing
+                    # brace. A comma here led the decoder into a key that cannot exist.
+                    raise _Dead(f"{schema.name}: all parameters given, expected '}}'")
                 i2 = _expect(s, i, ",")
                 if i2 is None:
                     return seen, i, False, None, False
