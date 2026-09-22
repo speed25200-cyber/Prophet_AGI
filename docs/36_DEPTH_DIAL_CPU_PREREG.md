@@ -57,6 +57,15 @@ saut seule. Sinon, la recette est en cause, pas la thèse.
 - Rien ici n'est une revendication de capacité. C'est un test de mécanisme, à 150k
   paramètres, sur deux graines.
 
+## Amendement 1 — 2026-09-23, avant tout résultat : la normalisation QK coupée
+
+La première exécution a été arrêtée au pas 800 de son premier modèle, sans aucune mesure.
+La configuration gardait la normalisation QK par défaut, et `design_warnings()` le
+signalait : à *head_dim* 16, elle plafonne le logit d'attention à 4. Une consultation
+exacte parmi 28 positions en souffre, précisément ce que les bras attention doivent faire.
+docs/10 §1 l'avait appris sur le banc de l'aiguille, et `depth_cpu.py` la coupe. Elle est
+coupée ici aussi (test). Rien d'autre ne change : mêmes bras, même recette, mêmes critères.
+
 ## 3. Résultats
 
 *(à venir)*

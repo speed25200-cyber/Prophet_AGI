@@ -95,6 +95,7 @@ def config(core: str) -> ProphetConfig:
             pattern=["swa", "full_attn"],
             n_heads=4,
             n_kv_heads=2,
+            qk_norm=False,  # at head_dim 16 it caps the logit at 4 (docs/10 §1)
             sliding_window=LENGTH,
             attention_sink_tokens=1,
             nope_layers=(1,),

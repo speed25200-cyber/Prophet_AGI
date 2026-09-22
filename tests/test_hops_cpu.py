@@ -30,6 +30,9 @@ def test_the_schedule_ties_or_fixes_the_loop_count():
     assert {h.loop_k("fixed", n) for n in (1, 3, 6)} == {h.FIXED_K}
     assert h.config("attn").recurrent.core_pattern == ["full_attn"]
     assert h.config("gdn").recurrent.core_pattern == ["gdn"]
+    # Exact look-ups need a sharp attention: no qk_norm cap at head_dim 16 (docs/36 amend. 1).
+    for core in ("gdn", "attn"):
+        assert not any("qk_norm" in w for w in h.config(core).design_warnings())
 
 
 def test_a_run_reports_every_hop_count_for_every_arm_and_seed(tmp_path):
