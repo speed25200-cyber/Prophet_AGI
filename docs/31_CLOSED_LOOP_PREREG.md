@@ -484,3 +484,31 @@ de v3–v9 sur `lookup` et le double de v6–v8 sur `files`), 50 / 100 si une fa
 
 **Pilote v10b.** Identique à l'amendement 14 (bras, tours, critères H14) avec l'amorce
 recalibrée ; lancé après v11. Les hypothèses H14 restent celles de l'amendement 14.
+
+## Amendement 17 — 2026-09-22, pendant v11 (tour 1), avant tout run v11b : n'explorer que ce qui est lu
+
+**Pourquoi.** v11, tour 1 : 43 épisodes, 18 résolues, `promoted_explored` = **1** — la même
+tâche que la reprise de v9 avait résolue sans explorer. La raison est mécanique, pas
+statistique : le tirage parmi les 3 meilleurs départs s'applique à **chaque** span copié,
+y compris le nom de fichier de `read_file` à l'étape 0, que le pointeur lit dans le but et
+ne se trompe jamais. Sur une reprise, la bonne valeur n'est atteinte que si le chemin
+(1 / 3) *et* la valeur (1 / 3) sortent bien : 1 / 9 par reprise, ≈ 1,4 attendue sur 13 —
+1 observée. Ce qui est copié depuis le **but** est une constante de la tâche ; ce qui est
+copié depuis une **observation** est le choix que la boucle peut rater systématiquement
+(docs/32 §14). L'exploration ne doit porter que sur le second.
+
+**Mécanique** (`AgentConfig.copy_explore = "observations"`, `--copy-explore observations`) :
+la boucle mémorise les positions des observations d'outil de l'épisode ; le tirage
+top-k ne s'applique qu'aux spans dont le départ préféré (argmax) est dans une observation,
+les autres gardent l'argmax. Le protocole enregistre l'option (absente = `all`, le
+comportement de v11).
+
+**Pilote v11b, une seule variable de plus que v11.** Identique à v11 (`lookup`, graine 2,
+même amorce, recette de référence, `--copy-topk 3`) avec `--copy-explore observations` et
+**trois** tentatives par tâche (la première suit la politique, les deux reprises explorent).
+Attendu si la mécanique est juste : sur les ≈ 13 tâches ratées par tour dont ≈ 2 / 3 ont la
+bonne valeur en deuxième position, 1 − (2 / 3)² ≈ 0,56 de réussite sur deux reprises,
+soit ≈ 5 épisodes contradictoires par tour. Critères : ceux de H15, avec (i) porté à
+`promoted_explored` ≥ 15 sur 5 tours (≥ 3 par tour), l'exploration étant deux fois plus
+tentée. v11 va à son terme et est rapporté tel quel (docs/32 §16) : c'est le témoin de
+v11b à une variable près.

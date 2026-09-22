@@ -702,3 +702,44 @@ def test_choose_copy_span_topk_reaches_every_top_candidate_equally():
         assert en >= st
     # The loop reads the option: a config with copy_topk set changes the choice.
     assert AgentConfig(copy_topk=3).copy_topk == 3 and AgentConfig().copy_topk == 0
+
+
+def test_copy_exploration_can_be_limited_to_spans_read_from_observations(monkeypatch):
+    """docs/31 amendment 17: with ``copy_explore="observations"`` the top-k draw applies
+    only when the pointer's preferred start lies in a tool observation; a span copied
+    from the goal keeps the argmax."""
+    import types
+
+    import torch as _t
+
+    from prophet.agent import loop as loop_module
+
+    seen = []
+
+    def spy(s_logits, e_logits, *, temperature, topk=0):
+        seen.append(topk)
+        return int(s_logits.argmax()), int(s_logits.argmax())
+
+    monkeypatch.setattr(loop_module, "choose_copy_span", spy)
+    reg = ToolRegistry()
+    reg.add(
+        ToolSchema("say", "Say", {"type": "object", "properties": {"text": {"type": "string"}}})
+    )
+    tok = ProphetTokenizer(merges=[])
+    for explore, expect in (("observations", [2, 0]), ("all", [2, 2])):
+        loop = AgentLoop(None, tok, reg, AgentConfig(copy_topk=2, copy_explore=explore))
+        loop._ids = list(range(40))
+        loop._observation_spans = [(20, 30)]  # one observation fed at positions 20..29
+        prefix = '{"name":"say","args":{"text":'
+        for preferred in (1, 0):  # index 1 -> position 25 (observation); 0 -> 3 (goal)
+            out = types.SimpleNamespace(
+                copy_gate=_t.tensor([[1.0]]),
+                copy_start=_t.tensor([[[0.0, 0.0]]]),
+                copy_end=_t.tensor([[[0.0, 0.0]]]),
+                copy_key_positions=_t.tensor([3, 25]),
+            )
+            out.copy_start[0, 0, preferred] = 5.0
+            loop._try_copy(prefix, out)
+        assert seen == expect, (explore, seen)
+        seen.clear()
+    assert AgentLoop(None, tok, reg, AgentConfig())._from_observation(0) is False

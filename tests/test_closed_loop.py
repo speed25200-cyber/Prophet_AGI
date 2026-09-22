@@ -502,3 +502,12 @@ def test_copy_topk_explores_from_the_second_attempt_only(work, tmp_path, monkeyp
     assert protocol["copy_topk"] == 3 and protocol["explore_from_attempt"] == 2
     run(work, tmp_path / "plain", "frozen", rounds=0)
     assert "copy_topk" not in json.loads((tmp_path / "plain" / "protocol.json").read_text())
+    run(work, tmp_path / "obs", "frozen", rounds=0, copy_topk=2, copy_explore="observations")
+    protocol = json.loads((tmp_path / "obs" / "protocol.json").read_text())
+    assert protocol["copy_explore"] == "observations" and protocol["copy_topk"] == 2
+    assert (
+        closed_loop.generation_config(
+            "calc", temperature=0.7, copy_topk=2, copy_explore="observations"
+        ).copy_explore
+        == "observations"
+    )

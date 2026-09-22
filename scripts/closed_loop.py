@@ -88,6 +88,7 @@ def generation_config(
     no_repeat_action: bool = False,
     sample_copy: bool = False,
     copy_topk: int = 0,
+    copy_explore: str = "all",
 ) -> AgentConfig:
     """The bench's loop settings (docs/09), with the family named so the quarantine
     files the episodes under it and a temperature the caller chooses: sampled for
@@ -107,6 +108,7 @@ def generation_config(
         no_repeat_action=no_repeat_action,
         sample_copy=sample_copy,
         copy_topk=copy_topk,
+        copy_explore=copy_explore,
     )
 
 
@@ -274,6 +276,7 @@ def generate_round(
     temperature: float,
     copy_topk: int = 0,
     explore_from_attempt: int = 2,
+    copy_explore: str = "all",
 ) -> dict:
     """Run the loop on every task, up to ``attempts`` times each; verified successes
     enter the quarantine through the loop itself (tier 0, promoted).
@@ -304,6 +307,7 @@ def generate_round(
                 no_repeat_action=NO_REPEAT_ACTION,
                 sample_copy=SAMPLE_COPY,
                 copy_topk=copy_topk if exploring else 0,
+                copy_explore=copy_explore,
             ),
             quarantine=quarantine,
             tools_for=task_families.tools_for,
@@ -537,6 +541,13 @@ def main(argv: list[str] | None = None) -> int:
         "(docs/31 amendment 15); 0 keeps the argmax",
     )
     ap.add_argument(
+        "--copy-explore",
+        choices=("all", "observations"),
+        default="all",
+        help="which copy events --copy-topk explores: all, or only spans read from a tool "
+        "observation (docs/31 amendment 17)",
+    )
+    ap.add_argument(
         "--explore-from-attempt",
         type=int,
         default=2,
@@ -633,6 +644,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.copy_topk:
         protocol["copy_topk"] = args.copy_topk
         protocol["explore_from_attempt"] = args.explore_from_attempt
+        if args.copy_explore != "all":
+            protocol["copy_explore"] = args.copy_explore
     protocol_path = args.out / "protocol.json"
     if protocol_path.exists():
         if json.loads(protocol_path.read_text()) != json.loads(json.dumps(protocol)):
@@ -769,6 +782,7 @@ def main(argv: list[str] | None = None) -> int:
                         round_index=r,
                         copy_topk=args.copy_topk,
                         explore_from_attempt=args.explore_from_attempt,
+                        copy_explore=args.copy_explore,
                     )
                     for f, tasks in tasks_by_family.items()
                 }

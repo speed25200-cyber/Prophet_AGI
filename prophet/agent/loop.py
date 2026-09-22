@@ -137,6 +137,11 @@ class AgentConfig:
     (docs/31 amendment 15); 0 keeps the argmax (or the tempered draw of ``sample_copy``).
     On the tasks a checkpoint always fails, the right value was the pointer's *second*
     choice with a probability its softmax never reaches (docs/32 §14)."""
+    copy_explore: str = "all"
+    """Which copy events ``copy_topk`` explores: ``"all"`` of them, or only those whose
+    argmax start lies in a tool ``"observations"`` (docs/31 amendment 17). What is copied
+    from the goal is a constant of the task and not worth exploring; what is copied from
+    an observation is the choice a loop can get systematically wrong."""
 
 
 @dataclass
@@ -231,6 +236,7 @@ class AgentLoop:
             end_id=self._sid("<|/call|>"),
         )
         self._ids: list[int] = []
+        self._observation_spans: list[tuple[int, int]] = []
         self._copied = 0
         self._has_action = getattr(model, "action", None) is not None
         recurrent = getattr(getattr(model, "cfg", None), "recurrent", None)
@@ -407,11 +413,16 @@ class AgentLoop:
         if float(gate[0, -1]) <= 0.0:
             return None
         s_logits, e_logits = starts[0, -1].float(), ends[0, -1].float()
+        topk = self.cfg.copy_topk
+        if topk > 0 and self.cfg.copy_explore == "observations":
+            preferred = int(key_pos[int(s_logits.argmax())])
+            if not self._from_observation(preferred):
+                topk = 0
         start_i, end_i = choose_copy_span(
             s_logits,
             e_logits,
             temperature=self.cfg.sample_temperature if self.cfg.sample_copy else 0.0,
-            topk=self.cfg.copy_topk,
+            topk=topk,
         )
         start, end = int(key_pos[start_i]), int(key_pos[end_i])
         if end < start or end >= len(self._ids):
@@ -437,6 +448,11 @@ class AgentLoop:
             return None
         return rendered if self.grammar.check(prefix + rendered).viable else None
 
+    def _from_observation(self, position: int) -> bool:
+        """Whether an absolute position of ``self._ids`` lies in a tool observation fed
+        this episode."""
+        return any(start <= position < end for start, end in self._observation_spans)
+
     # -- the episode -------------------------------------------------------------------
 
     @torch.no_grad()
@@ -459,6 +475,7 @@ class AgentLoop:
         cache = ProphetCache()
         self._ids = []
         self._sampled = []
+        self._observation_spans = []
         fingerprint = (
             model_fingerprint(self.model)
             if isinstance(self.model, torch.nn.Module) and hasattr(self.model, "cfg")
@@ -672,6 +689,7 @@ class AgentLoop:
                     )
                     or self._last_output
                 )
+                self._observation_spans.append((start, cache.position))
                 obs = Observation(
                     step, action.name, observation, len(obs_ids), start, cache.position
                 )
