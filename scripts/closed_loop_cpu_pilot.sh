@@ -18,7 +18,7 @@ SAMPLE_COPY="${SAMPLE_COPY:-0}"  # 1 = --sample-copy at generation (docs/31, ame
 COMMON=(--work "$WORK" --family "$FAMILY" --tasks-per-round 30 --attempts 2
         --steps-per-round 60 --seed-episodes "$SEED_EPISODES" --seed-steps "$SEED_STEPS" --replay-fraction 0.5
         --bench-tasks 30 --bpb-docs 200 --seq-len 512 --batch-size 8 --minutes 600
-        --lr-scale "$LR_SCALE" ${NO_REPEAT:+$([ "$NO_REPEAT" = 1 ] && echo --no-repeat-action) $([ "$SAMPLE_COPY" = 1 ] && echo --sample-copy)})
+        --lr-scale "$LR_SCALE" ${NO_REPEAT:+$([ "$NO_REPEAT" = 1 ] && echo --no-repeat-action || true) $([ "$SAMPLE_COPY" = 1 ] && echo --sample-copy || true)})
 mkdir -p "$OUT"
 ARMS="${ARMS:-oracle closed frozen}"  # arms per seed, in order; the first must train the shared seed
 for SEED in $SEEDS; do
