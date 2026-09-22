@@ -627,3 +627,54 @@ KLPO était cela et n'a pas tenu à 7 M), ou un curriculum où le sous-ensemble 
 atteignable. Pour l'échelle A100 : rapporter à chaque tour l'ensemble des tâches de banc
 jamais réussies, en plus du gain — c'est lui qui dit si la boucle a encore quelque chose à
 apprendre d'elle-même.
+
+## 15. Pilote v10 : deux familles dans une boucle — interrompu après un tour
+
+Amendement 14 : `lookup` + `files` dans une seule boucle, amorce **mixte** (50 trajectoires
+parfaites de chaque famille, entrelacées, 100 pas), recette de référence, 30 tâches de
+chaque famille par tour, 60 pas pour tous les bras, banc 2 × 30 par famille. La calibration
+(graine 0, tour 0 seul) a donné 0,467 sur chaque famille — retenue par la règle de
+l'amendement 14 (départ strictement entre 0 et 1 sur chaque famille).
+
+| Tour | `lookup` | `files` | Malformées `files` | BPB | Résolues (l / f) | Rétrogradées | Lignes entraînées |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0,467 | 0,467 | 0,8 % / 2,5 % | 2,093 | — | — | — |
+| 1 | 0,383 | **0,000** | **40 % / 38 %** | 2,061 | 12 / 14 | 18 (**14 `files`**, 4 `lookup`) | 8, toutes `lookup` |
+
+Le bras mixte a résolu 26 tâches sur 60 au tour 1, en a rétrogradé 18 comme non
+canoniques — les **quatorze** de `files` —, s'est entraîné 60 pas sur 8 lignes `lookup`,
+et `files` est tombé de 0,467 à 0 avec 40 % de sorties malformées. Le pilote a été
+interrompu là ; ses bras mono-famille et oracle à cette amorce n'ont pas été lancés (ils
+répondraient à une question que le tour 1 a déjà tranchée), et v11 a pris le processeur.
+
+**Diagnostic, sur le checkpoint d'amorce** (banc 7, même décodage que le banc) :
+
+| Famille | Résolues | … dont canoniques | Forme dominante des succès | Échecs |
+|---|---:|---:|---|---|
+| `files` | 18 / 30 | **0** | `grep → done refusé → note → done` (18 / 18) | 11 avec deux `done` refusés, 1 malformé |
+| `lookup` | 13 / 30 | 5 | `read_file → done refusé → note → done` (8 / 13) | 17 |
+
+À demi-exposition par famille (50 lignes et 100 pas, contre 50 / 100 pour `files` seule en
+v6–v8 et 100 / 200 pour `lookup` seule en v3–v9), l'amorce mixte a appris à appeler
+`done` dès la première observation. Le vérificateur accepte ces épisodes (le `done` refusé
+est suivi de la bonne note) ; la promotion canonique de l'amendement 7 les refuse tous, à
+raison — v4 a montré ce que deux trajectoires bâclées suffisent à enseigner. Sur `files`,
+la boucle n'a donc **rien** à apprendre d'elle-même, et la boucle « mixte » est de fait
+une boucle `lookup` seule : l'oubli par omission que H14 (iii) devait mesurer sur les bras
+mono-famille s'est produit sur le bras qui devait l'éviter, et en un tour (0,467 → 0,000).
+En v7, sur `files` seule, aucun des 121 épisodes promus en cinq tours n'avait été
+rétrogradé ; en v9, aucun des 98 de `lookup`.
+
+**Verdict.** H14 n'est pas évaluée : sa règle de calibration était fausse. Le succès au
+tour 0 ne dit pas ce que la boucle peut apprendre ; il faut le **succès canonique** —
+ce que le banc mesure désormais (`canonical_rate`, `canonical_by_family`, amendement 16 :
+retenue si chaque famille démarre strictement entre 0 et 0,95 **et** a un succès canonique
+strictement positif). v10b relance le même protocole avec une amorce 100 / 200 par famille,
+après v11.
+
+Deux choses acquises pour l'échelle A100 : (1) une amorce partagée entre familles se
+calibre famille par famille **sur la forme** de ses succès, pas sur leur nombre ; (2) une
+famille sans épisode canonique dans le bassin n'est pas seulement stagnante, elle est
+**détruite** par les 60 pas sur les autres — l'oubli par omission est rapide (un tour),
+et une boucle multi-familles doit vérifier à chaque tour que chaque famille a apporté des
+lignes, ou geler la mise à jour.
