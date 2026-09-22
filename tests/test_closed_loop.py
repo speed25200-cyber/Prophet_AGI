@@ -274,3 +274,47 @@ def test_closed_clean_arm_records_demotions_and_trains_on_canonical_episodes_onl
         assert r["generation"]["promoted_new"] >= 0
     quarantine = Quarantine(out / "quarantine.json")
     assert all(clean_trajectory(e.trajectory) for e in quarantine.promoted("calc"))
+
+
+def test_no_repeat_action_flag_reaches_the_protocol_and_the_generation_config(work, tmp_path):
+    out = tmp_path / "norepeat"
+    argv = [
+        "--work",
+        str(work),
+        "--out",
+        str(out),
+        "--arm",
+        "frozen",
+        "--family",
+        "calc",
+        "--config",
+        str(work / "tiny.json"),
+        "--seq-len",
+        str(SEQ_LEN),
+        "--batch-size",
+        "2",
+        "--rounds",
+        "1",
+        "--tasks-per-round",
+        "2",
+        "--attempts",
+        "1",
+        "--steps-per-round",
+        "1",
+        "--seed-episodes",
+        "2",
+        "--seed-steps",
+        "1",
+        "--bench-tasks",
+        "2",
+        "--bpb-docs",
+        "2",
+        "--no-repeat-action",
+    ]
+    assert main(argv) == 0
+    assert json.loads((out / "protocol.json").read_text())["no_repeat_action"] is True
+    assert closed_loop.NO_REPEAT_ACTION is True
+    assert closed_loop.generation_config(
+        "calc", temperature=0.0, no_repeat_action=closed_loop.NO_REPEAT_ACTION
+    ).no_repeat_action
+    closed_loop.NO_REPEAT_ACTION = False

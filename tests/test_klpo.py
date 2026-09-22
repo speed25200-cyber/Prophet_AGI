@@ -162,3 +162,33 @@ def test_update_raises_the_probability_of_rewarded_tokens(tiny_agent):
     # only feel the centering, so the rewarded episode gains at least as much.
     assert after[0] > before[0]
     assert after[0] - before[0] > after[1] - before[1]
+
+
+def test_no_repeat_action_never_lets_a_step_repeat_the_previous_action(tiny_agent):
+    """docs/31 amendment 11: with the option, step i cannot use step i-1's action name."""
+    model, tokenizer = tiny_agent
+    for seed in (99, 100, 101):
+        task = task_families.make_tasks(1, family="lookup", seed=seed)[0]
+        cfg = AgentConfig(
+            max_steps=4,
+            think_budget=2,
+            action_budget=24,
+            halt_threshold=None,
+            k_decide=2,
+            tau_done=0.0,
+            tau_act=0.0,
+            tau_ask=0.0,
+            sample_temperature=0.0,
+            no_repeat_action=True,
+            family="lookup",
+        )
+        loop = AgentLoop(
+            model,
+            tokenizer,
+            task_families.tools_for(task),
+            cfg,
+            verifier_tool=task_families.verifier_for(task),
+        )
+        result = loop.run(task.goal)
+        names = [s.action.name for s in result.steps if s.action is not None]
+        assert all(a != b for a, b in zip(names, names[1:], strict=False)), names

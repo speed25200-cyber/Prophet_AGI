@@ -246,15 +246,17 @@ class ActionGrammar:
         ``{`` -- the failure of the first closed-loop pilot (docs/32). ``compact=False``
         restores the tolerant JSON scanner."""
 
-    def restrict(self, names: "set[str] | None") -> None:
+    def restrict(self, names: "set[str] | None", *, exclude: "frozenset[str]" = frozenset()) -> None:
         """Limit the tool names the grammar accepts -- what the selection head decided --
         or ``None`` to accept every registered name again. Reserved actions are never
-        cut: the head's "none" option is exactly "one of those"."""
+        cut by ``names``: the head's "none" option is exactly "one of those". ``exclude``
+        removes names after that, reserved ones included: the loop uses it to forbid the
+        action of the previous step (``AgentConfig.no_repeat_action``)."""
         if names is None:
-            self.names = self._all_names
+            keep = set(self._all_names)
         else:
             keep = set(names) | set(RESERVED_ACTIONS)
-            self.names = tuple(n for n in self._all_names if n in keep)
+        self.names = tuple(n for n in self._all_names if n in keep and n not in exclude)
 
     # -- public ------------------------------------------------------------------------
 

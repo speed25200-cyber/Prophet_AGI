@@ -123,6 +123,10 @@ class AgentConfig:
     (grammar-masked, tempered) and ``mc_draws`` auxiliary draws with theirs, in
     ``EpisodeResult.sampled``; the exact token stream goes to ``EpisodeResult.ids``."""
     mc_draws: int = 8
+    no_repeat_action: bool = False
+    """Forbid, at step *i*, the action name of step *i - 1* (docs/31 amendment 11). Canonical
+    trajectories never repeat a step; without this the decoder could loop on ``note``
+    and never reach ``done`` within the step budget."""
 
 
 @dataclass
@@ -487,8 +491,19 @@ class AgentLoop:
                 positions={"decision_positions": [0]},
             )
             selected, sel_margin = self._selection(self._last_output, tool_names)
+            exclude = frozenset()
+            if self.cfg.no_repeat_action:
+                previous = next(
+                    (t["action"] for t in reversed(state.trajectory) if t.get("action")), None
+                )
+                if previous is not None:
+                    exclude = frozenset({previous["name"]})
             if selected is not None and self.cfg.use_selection_head:
-                self.grammar.restrict(set() if selected == "none" else {selected})
+                self.grammar.restrict(
+                    set() if selected == "none" else {selected}, exclude=exclude
+                )
+            elif exclude:
+                self.grammar.restrict(None, exclude=exclude)
             try:
                 text, out = self._decode(
                     cache,

@@ -66,6 +66,7 @@ from scripts.first_agent_run_cpu import (  # noqa: E402
     replay_source,
 )
 
+NO_REPEAT_ACTION = False  # set by main() from --no-repeat-action; read by generation_config callers
 ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean")
 BENCH_SEEDS = (7, 11)
 SEED_TASK_BASE = 1_000
@@ -73,7 +74,11 @@ ROUND_TASK_BASE = 10_000
 
 
 def generation_config(
-    family: str, *, temperature: float, verifier_version: str = "prior-0"
+    family: str,
+    *,
+    temperature: float,
+    verifier_version: str = "prior-0",
+    no_repeat_action: bool = False,
 ) -> AgentConfig:
     """The bench's loop settings (docs/09), with the family named so the quarantine
     files the episodes under it and a temperature the caller chooses: sampled for
@@ -90,6 +95,7 @@ def generation_config(
         sample_temperature=temperature,
         family=family,
         verifier_version=verifier_version,
+        no_repeat_action=no_repeat_action,
     )
 
 
@@ -177,7 +183,7 @@ def bench_family(model, tokenizer, family: str, *, n_tasks: int, seed: int) -> d
         model,
         tokenizer,
         tasks,
-        generation_config(family, temperature=0.0),
+        generation_config(family, temperature=0.0, no_repeat_action=NO_REPEAT_ACTION),
         tools_for=task_families.tools_for,
         verifier_for_task=task_families.verifier_for,
     )
@@ -236,7 +242,10 @@ def generate_round(
             tokenizer,
             remaining,
             generation_config(
-                family, temperature=temperature, verifier_version=f"round-{round_index}"
+                family,
+                temperature=temperature,
+                verifier_version=f"round-{round_index}",
+                no_repeat_action=NO_REPEAT_ACTION,
             ),
             quarantine=quarantine,
             tools_for=task_families.tools_for,
@@ -273,7 +282,10 @@ def generate_round_klpo(
     the sampler's records (docs/research/A5_klpo.md): the action span is sampled and
     every drawn token carries the sampler's log-probability and auxiliary draws."""
     cfg = generation_config(
-        family, temperature=temperature, verifier_version=f"round-{round_index}"
+        family,
+        temperature=temperature,
+        verifier_version=f"round-{round_index}",
+        no_repeat_action=NO_REPEAT_ACTION,
     )
     cfg.sample_actions = True
     cfg.record_sampling = True
@@ -418,6 +430,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--replay-fraction", type=float, default=0.5)
     ap.add_argument(
+        "--no-repeat-action",
+        action="store_true",
+        help="forbid at each step the action name of the previous step (docs/31 amendment 11)",
+    )
+    ap.add_argument(
         "--lr-scale",
         type=float,
         default=1.0,
@@ -448,6 +465,8 @@ def main(argv: list[str] | None = None) -> int:
         "--klpo-temperature", type=float, default=1.0, help="sampling temperature of the KLPO arm"
     )
     args = ap.parse_args(argv)
+    global NO_REPEAT_ACTION
+    NO_REPEAT_ACTION = bool(args.no_repeat_action)
     if args.rounds < 0 or args.tasks_per_round < 1 or args.attempts < 1 or args.steps_per_round < 0:
         ap.error("rounds >= 0, tasks and attempts >= 1, steps >= 0")
     if not 0 <= args.replay_fraction < 1:
@@ -472,6 +491,7 @@ def main(argv: list[str] | None = None) -> int:
         "seed_steps": args.seed_steps,
         "replay_fraction": args.replay_fraction,
         "lr_scale": args.lr_scale,
+        "no_repeat_action": args.no_repeat_action,
         "temperature": args.temperature,
         "bench_tasks": args.bench_tasks,
         "bench_seeds": list(BENCH_SEEDS),
