@@ -217,6 +217,9 @@ class PrefixState:
     tool: str | None = None
     key: str | None = None
     expected_type: str | None = None
+    in_string: bool = False
+    """The prefix ends inside an unterminated string value: the one place a sampled
+    token cannot break the structure (``AgentConfig.sample_scope``)."""
 
 
 class ActionGrammar:
@@ -348,14 +351,14 @@ class ActionGrammar:
         i2 = _expect(s, i, "{")
         if i2 is None:
             return PrefixState(True)
-        seen, i, closed, at_value = self._scan_args(s, i2, schema)
+        seen, i, closed, at_value, in_string = self._scan_args(s, i2, schema)
         if not closed:
             if at_value is not None:
                 key_name, expected = at_value
                 return PrefixState(
                     True, value_start=True, tool=name.value, key=key_name, expected_type=expected
                 )
-            return PrefixState(True, tool=name.value)
+            return PrefixState(True, tool=name.value, in_string=in_string)
         missing = [r for r in schema.required if r not in seen]
         if missing:
             raise _Dead(f"{name.value}: missing required {missing}")
@@ -371,21 +374,22 @@ class ActionGrammar:
 
     def _scan_args(
         self, s: str, i: int, schema: ToolSchema
-    ) -> tuple[set[str], int, bool, tuple[str, str | None] | None]:
-        """Returns ``(seen keys, index, closed, at_value)`` where ``at_value`` is
-        ``(key, expected type)`` when the prefix ends exactly at a value start."""
+    ) -> tuple[set[str], int, bool, tuple[str, str | None] | None, bool]:
+        """Returns ``(seen keys, index, closed, at_value, in_string)`` where ``at_value``
+        is ``(key, expected type)`` when the prefix ends exactly at a value start and
+        ``in_string`` says the prefix ends inside an unterminated string value."""
         props = schema.properties
         seen: set[str] = set()
         while True:
             i = self._ws(s, i)
             if i == len(s):
-                return seen, i, False, None
+                return seen, i, False, None, False
             if s[i] == "}":
-                return seen, i + 1, True, None
+                return seen, i + 1, True, None, False
             if seen:
                 i2 = _expect(s, i, ",")
                 if i2 is None:
-                    return seen, i, False, None
+                    return seen, i, False, None, False
                 i = self._ws(s, i2)
             if not props:
                 # An empty schema means "no parameters", not "anything goes": the renderer
@@ -393,11 +397,11 @@ class ActionGrammar:
                 raise _Dead(f"{schema.name} takes no parameters")
             key, i = _scan_string(s, i)
             if key is None:
-                return seen, i, False, None
+                return seen, i, False, None, False
             if not key.done:
                 if not any(k.startswith(key.value) for k in props):
                     raise _Dead(f"no parameter of {schema.name} starts with {key.value!r}")
-                return seen, i, False, None
+                return seen, i, False, None, False
             if key.value not in props:
                 raise _Dead(f"{schema.name} has no parameter {key.value!r}")
             if key.value in seen:
@@ -405,14 +409,15 @@ class ActionGrammar:
             i = self._ws(s, i)
             i2 = _expect(s, i, ":")
             if i2 is None:
-                return seen, i, False, None
+                return seen, i, False, None, False
             i = self._ws(s, i2)
             expected = props.get(key.value, {}).get("type")
             if i == len(s):
-                return seen, i, False, (key.value, expected)
+                return seen, i, False, (key.value, expected), False
+            value_start = i
             done, i = _scan_value(s, i, expected)
             if not done:
-                return seen, i, False, None
+                return seen, i, False, None, s[value_start] == '"'
             seen.add(key.value)
 
 
@@ -551,13 +556,18 @@ class ConstrainedDecoder:
         self.candidates = candidates
         self.end_id = end_id
 
-    def allowed(self, prefix: str, ranked_token_ids: Sequence[int]) -> list[int]:
-        """Token ids, from the ranked candidates, that keep ``prefix`` viable."""
+    def allowed(self, prefix: str, ranked_token_ids: Sequence[int], *,
+                limit: int | None = -1) -> list[int]:
+        """Token ids, from the ranked candidates, that keep ``prefix`` viable. ``limit``
+        caps how many candidates are checked (default: ``candidates``; ``None``: all of
+        them, the fallback when the model's head of the distribution has no viable
+        continuation, e.g. after a sampled sub-word)."""
         state = self.grammar.check(prefix)
         if not state.viable:
             return []
         out: list[int] = []
-        for tid in list(ranked_token_ids)[: self.candidates]:
+        cap = self.candidates if limit == -1 else limit
+        for tid in list(ranked_token_ids)[:cap]:
             if tid == self.end_id:
                 if state.complete:
                     out.append(tid)

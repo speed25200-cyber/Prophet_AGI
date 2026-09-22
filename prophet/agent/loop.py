@@ -118,6 +118,14 @@ class AgentConfig:
     """Sample the action span at ``sample_temperature`` instead of decoding it greedily.
     Off for benches; on when the episode is training data for a policy-gradient method
     (docs/research/A5_klpo.md): a greedy sampler is a point mass and teaches nothing."""
+    sample_scope: str = "span"
+    """With ``sample_actions``: ``"span"`` samples every token of the action span,
+    ``"values"`` only the tokens inside string values and decodes the structure (names,
+    keys, punctuation) greedily (docs/33 amendment 2). A small model sampling a key
+    picks a rare sub-word and the grammar finds no continuation in its head."""
+    decoder_widen: bool = False
+    """When no token of the decoder's top candidates keeps the call viable, check the
+    whole vocabulary before giving the span up (docs/33 amendment 2)."""
     record_sampling: bool = False
     """Record, for every token the model draws, the sampler's log-probability as used
     (grammar-masked, tempered) and ``mc_draws`` auxiliary draws with theirs, in
@@ -358,12 +366,16 @@ class AgentLoop:
             if constrained:
                 ranked = logits.topk(min(self.decoder.candidates, logits.numel())).indices.tolist()
                 allowed = self.decoder.allowed(prefix, ranked)
+                if not allowed and self.cfg.decoder_widen:
+                    allowed = self.decoder.allowed(
+                        prefix, logits.argsort(descending=True).tolist(), limit=None
+                    )
                 if not allowed:
                     break
                 mask = torch.full_like(logits, float("-inf"))
                 mask[allowed] = 0.0
                 logits = logits + mask
-            if greedy or self.cfg.sample_temperature <= 0:
+            if not self._sample_here(prefix, constrained=constrained, greedy=greedy):
                 nxt = int(logits.argmax().item())
             else:
                 probs = torch.softmax(logits / self.cfg.sample_temperature, -1)
@@ -462,6 +474,16 @@ class AgentLoop:
         else:
             return None
         return rendered if self.grammar.check(prefix + rendered).viable else None
+
+    def _sample_here(self, prefix: str, *, constrained: bool, greedy: bool) -> bool:
+        """Whether the next token is drawn rather than taken by argmax: never when greedy
+        or at temperature zero; in a constrained span under ``sample_scope="values"``,
+        only inside a string value."""
+        if greedy or self.cfg.sample_temperature <= 0:
+            return False
+        if constrained and self.cfg.sample_scope == "values":
+            return self.grammar.check(prefix).in_string
+        return True
 
     def _from_observation(self, position: int) -> bool:
         """Whether an absolute position of ``self._ids`` lies in a tool observation fed

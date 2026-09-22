@@ -149,3 +149,28 @@ départ strictement entre 0,30 et 0,95 avec succès canonique > 0 ; sur une sond
 propositions échantillonnées (tour 0, enregistrée), validité ≥ 0,5 (H20 au tour 0).
 Sinon, échelle : second temps à 100 pas, puis *P* = 25 ; si aucune amorce ne satisfait
 les deux, le résultat est « le proposeur ne démarre pas à 7 M », rapporté avec les taux.
+
+## Amendement 2 — 2026-09-22, après le second barreau de calibration, avant tout tour entraîné
+
+**Ce qui s'est passé.** Amorce en deux temps (50 pas, 50 propositions) : solveur à 0,433 sur
+le banc du générateur (canonique 0,367), banc hors distribution 0,100 — le solveur est
+réparé. Proposeur : **30 propositions malformées sur 30**, budget de 160 jetons compris.
+Trace jeton par jeton : le span d'action est échantillonné sous la grammaire ; le modèle
+tire « k » (préfixe viable de `keys`), et au jeton suivant aucun des 64 meilleurs candidats
+du modèle ne prolonge viablement « k » (« eys » n'est pas dans sa tête de distribution) :
+le span meurt. Un modèle de 7 M échantillonné sur la *structure* d'un appel se perd dans
+ses propres sous-mots.
+
+**Deux corrections, pré-enregistrées.**
+
+1. **Échantillonner les valeurs seulement** (`AgentConfig.sample_scope = "values"`) : dans un
+   span contraint, les noms, clés et ponctuations sont décodés gloutonnement, seuls les
+   jetons à l'intérieur d'une valeur chaîne sont tirés. La diversité des propositions vient
+   des valeurs (noms de fichiers, clés, valeurs, clé demandée), pas de la structure.
+2. **Élargir les candidats** (`AgentConfig.decoder_widen`) : quand aucun des 64 meilleurs
+   jetons ne garde l'appel viable, vérifier tout le vocabulaire avant d'abandonner le span.
+
+Les deux ne s'appliquent qu'aux épisodes de proposition ; le banc et le solveur gardent le
+décodage de docs/09. Les tests couvrent l'état « dans une chaîne » de la grammaire, la
+portée de l'échantillonnage et l'élargissement. La règle de calibration de l'amendement 1
+est inchangée ; l'échelle repart au premier barreau (second temps 50 pas, 50 propositions).

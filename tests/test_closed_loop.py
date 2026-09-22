@@ -604,9 +604,11 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
     )
 
     budgets = []
+    scopes = []
 
     def fake_run(self, goal, **kw):
         budgets.append(self.cfg.action_budget)
+        scopes.append((self.cfg.sample_scope, self.cfg.decoder_widen, self.cfg.sample_actions))
         action = next(scripted)
         step = types.SimpleNamespace(action=action, gated="")
         return types.SimpleNamespace(steps=[step] if action is not None else [], tokens=7)
@@ -627,6 +629,7 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
     # A proposal call is ~60 tokens: the loop's 64-token action budget is raised for it
     # (docs/33 amendment 1).
     assert budgets and all(b >= 160 for b in budgets)
+    assert set(scopes) == {("values", True, True)}  # docs/33 amendment 2
 
 
 def test_proposals_are_promoted_only_when_solved_on_a_retry(work, tmp_path):

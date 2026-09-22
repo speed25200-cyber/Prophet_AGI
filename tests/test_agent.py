@@ -798,3 +798,41 @@ def test_copy_starts_can_be_restricted_to_word_boundaries(monkeypatch):
     e = _t.tensor([0.0, 0.0, 0.0, 0.0])
     _t.manual_seed(0)
     assert {choose_copy_span(s, e, temperature=0.0, topk=3)[0] for _ in range(100)} == {0, 2}
+
+
+def test_grammar_reports_the_inside_of_a_string_value_and_the_decoder_can_widen():
+    """docs/33 amendment 2: a sampled sub-word inside a key leaves the decoder's top
+    candidates without a viable continuation; sampling is limited to string values and
+    the decoder may check the whole vocabulary before giving up."""
+    reg = ToolRegistry()
+    reg.add(
+        ToolSchema(
+            "propose",
+            "P",
+            {
+                "type": "object",
+                "properties": {"keys": {"type": "string"}, "ask": {"type": "string"}},
+            },
+        )
+    )
+    grammar = ActionGrammar(reg, compact=True)
+    assert not grammar.check('{"name":"prop').in_string
+    assert not grammar.check('{"name":"propose","args":{"ke').in_string
+    assert not grammar.check('{"name":"propose","args":{"keys":').in_string
+    assert grammar.check('{"name":"propose","args":{"keys":"').in_string
+    assert grammar.check('{"name":"propose","args":{"keys":"city,ye').in_string
+    assert not grammar.check('{"name":"propose","args":{"keys":"city"').in_string
+    assert not grammar.check('{"name":"propose","args":{"keys":"city",').in_string
+    tok = ProphetTokenizer(merges=[])
+    decoder = ConstrainedDecoder(grammar, lambda tid: tok.decode([tid]), candidates=2)
+    prefix = '{"name":"propose","args":{"k'
+    ranked = [ord("z"), ord("q"), ord("e")]  # the viable "e" sits outside the top 2
+    assert decoder.allowed(prefix, ranked) == []
+    assert decoder.allowed(prefix, ranked, limit=None) == [ord("e")]
+    loop = AgentLoop(None, tok, reg, AgentConfig(sample_actions=True, sample_scope="values"))
+    assert not loop._sample_here('{"name":"pro', constrained=True, greedy=False)
+    assert loop._sample_here('{"name":"propose","args":{"keys":"ci', constrained=True, greedy=False)
+    assert loop._sample_here("free text", constrained=False, greedy=False)
+    assert not loop._sample_here("free text", constrained=False, greedy=True)
+    span = AgentLoop(None, tok, reg, AgentConfig(sample_actions=True))
+    assert span._sample_here('{"name":"pro', constrained=True, greedy=False)
