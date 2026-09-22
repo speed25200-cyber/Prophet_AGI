@@ -897,3 +897,35 @@ def test_sampling_can_be_kept_to_the_likeliest_tokens():
     assert (
         AgentLoop(None, tok, reg, AgentConfig(sample_topk=9))._sampling_logits(logits).equal(logits)
     )
+
+
+def test_copy_can_be_switched_off_for_episodes_that_invent_their_values(monkeypatch):
+    """docs/33 amendment 5: with ``allow_copy`` off the pointer is never consulted, even
+    when the gate is open at a value start."""
+    import types
+
+    import torch as _t
+
+    from prophet.agent import loop as loop_module
+
+    calls = []
+    monkeypatch.setattr(loop_module, "choose_copy_span", lambda *a, **k: calls.append(1) or (0, 0))
+    reg = ToolRegistry()
+    reg.add(
+        ToolSchema("say", "Say", {"type": "object", "properties": {"text": {"type": "string"}}})
+    )
+    tok = ProphetTokenizer(merges=[])
+    out = types.SimpleNamespace(
+        copy_gate=_t.tensor([[1.0]]),
+        copy_start=_t.tensor([[[0.0, 5.0]]]),
+        copy_end=_t.tensor([[[0.0, 0.0]]]),
+        copy_key_positions=_t.tensor([3, 25]),
+    )
+    prefix = '{"name":"say","args":{"text":'
+    on = AgentLoop(None, tok, reg, AgentConfig())
+    on._ids = list(range(40))
+    on._try_copy(prefix, out)
+    assert calls == [1]
+    off = AgentLoop(None, tok, reg, AgentConfig(allow_copy=False))
+    off._ids = list(range(40))
+    assert off._try_copy(prefix, out) is None and calls == [1]

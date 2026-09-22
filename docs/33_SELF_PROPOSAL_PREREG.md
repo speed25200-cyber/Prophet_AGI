@@ -203,3 +203,18 @@ paramètres sont donnés : la fermeture est forcée (test). (b) `AgentConfig.sam
 les valeurs sont tirées parmi les **5** jetons les plus probables (après le masque de
 grammaire), la température inchangée ; les épisodes de proposition seuls. La règle de
 calibration de l'amendement 1 est inchangée ; l'échelle repart au premier barreau.
+
+## Amendement 5 — 2026-09-22, même calibration, avant tout tour entraîné : ne pas copier ce qu'on invente
+
+**Ce qui s'est passé.** Après l'amendement 4 : 30 propositions, 9 malformées, 21 invalides,
+0 valide. Les invalides sont de deux sortes : des listes de clés réduites à un mot brouillé
+(`codeerslook`, `cityslo` : 7 sur 14 sondées) et des valeurs **copiées du prompt épinglé**
+(`task: a file name, comma-separated`, `parameters`, `Read one file`) — la porte de copie
+s'ouvre à un début de valeur et le pointeur recopie un fragment du schéma, puisque rien
+dans le contexte ne contient la valeur à inventer.
+
+**Correction, pré-enregistrée.** `AgentConfig.allow_copy = False` pour les épisodes de
+proposition : les valeurs sont générées, jamais épissées (test). Les mots brouillés
+relèvent de l'entraînement du proposeur, que l'échelle de l'amendement 1 (second temps à
+100 pas) mesure ; s'ils persistent à 100 pas, le résultat est « le proposeur ne démarre pas
+à 7 M », rapporté avec les taux. L'échelle repart au premier barreau avec cette correction.

@@ -614,6 +614,7 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
                 self.cfg.decoder_widen,
                 self.cfg.sample_actions,
                 self.cfg.sample_topk,
+                self.cfg.allow_copy,
             )
         )
         action = next(scripted)
@@ -636,7 +637,7 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
     # A proposal call is ~60 tokens: the loop's 64-token action budget is raised for it
     # (docs/33 amendment 1).
     assert budgets and all(b >= 160 for b in budgets)
-    assert set(scopes) == {("values", True, True, 5)}  # docs/33 amendments 2 and 4
+    assert set(scopes) == {("values", True, True, 5, False)}  # docs/33 amendments 2, 4, 5
 
 
 def test_proposals_are_promoted_only_when_solved_on_a_retry(work, tmp_path):

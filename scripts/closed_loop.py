@@ -556,6 +556,7 @@ def propose_round(
     cfg.sample_scope = "values"  # structure greedy, values drawn (docs/33 amendment 2)
     cfg.decoder_widen = True
     cfg.sample_topk = PROPOSE_SAMPLE_TOPK  # docs/33 amendment 4
+    cfg.allow_copy = False  # values are invented, not read from the prompt (amendment 5)
     # A proposal call is ~60 tokens; the bench's 64-token action budget cut nearly every
     # sampled one (docs/33 amendment 1).
     cfg.action_budget = max(cfg.action_budget, PROPOSE_ACTION_BUDGET)

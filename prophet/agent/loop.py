@@ -130,6 +130,10 @@ class AgentConfig:
     """When a token is drawn, keep the ``sample_topk`` most likely tokens only (after
     any grammar mask); 0 draws from the full tempered distribution (docs/33 amendment
     4). A small model's tail is where garbled sub-words come from."""
+    allow_copy: bool = True
+    """Let the copy heads splice a span of the context into a value. Off for episodes
+    whose values must be *invented* rather than read (proposals, docs/33 amendment 5):
+    the gate otherwise copies fragments of the pinned prompt."""
     record_sampling: bool = False
     """Record, for every token the model draws, the sampler's log-probability as used
     (grammar-masked, tempered) and ``mc_draws`` auxiliary draws with theirs, in
@@ -430,7 +434,7 @@ class AgentLoop:
         chose out of everything fed so far, render it as the JSON the schema expects,
         and accept it only if the grammar does. Otherwise generate as usual."""
         state = self.grammar.check(prefix)
-        if not state.value_start:
+        if not state.value_start or not self.cfg.allow_copy:
             return None
         gate = getattr(out, "copy_gate", None)
         starts, ends = getattr(out, "copy_start", None), getattr(out, "copy_end", None)
