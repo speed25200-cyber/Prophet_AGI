@@ -130,15 +130,18 @@ def build_rows(tokenizer: ProphetTokenizer, n: int, *, seed: int, seq_len: int,
                   "longest": longest, "truncated": truncated}
 
 
-def replay_source(work: Path, tokenizer: ProphetTokenizer, weight: float) -> TokenisedSource:
+def replay_source(work: Path, tokenizer: ProphetTokenizer, weight: float,
+                  names: tuple[str, ...] = ("prose", "code")) -> TokenisedSource:
     """The first run's prose and code as one language-modelling source, so the agentic
-    fine-tune keeps seeing what the base model was trained on."""
+    fine-tune keeps seeing what the base model was trained on. ``names`` are the
+    sub-directories of ``work / "corpus"`` to draw from (a loop-core corpus has other
+    names: see scripts/closed_loop_a100.sh)."""
     class _Both:
         # A class body does not see the enclosing function's names; bind them in __init__.
         def __init__(self) -> None:
             self.name = "replay"
             self.weight = weight
-            self.parts = [LocalTextSource.from_root(work / "corpus", n, 1.0) for n in ("prose", "code")]
+            self.parts = [LocalTextSource.from_root(work / "corpus", n, 1.0) for n in names]
         def n_documents(self) -> int:
             return sum(p.n_documents() for p in self.parts)
         def open(self, start: int):
@@ -152,14 +155,15 @@ def replay_source(work: Path, tokenizer: ProphetTokenizer, weight: float) -> Tok
     return TokenisedSource(_Both(), tokenizer, max_epochs=None)
 
 
-def heldout_bpb(work: Path, model, tokenizer: ProphetTokenizer, *, seq_len: int = 256, max_docs: int = 400) -> dict:
+def heldout_bpb(work: Path, model, tokenizer: ProphetTokenizer, *, seq_len: int = 256, max_docs: int = 400,
+                device: str = "cpu") -> dict:
     sys.path.insert(0, str(ROOT / "scripts"))
     from first_run_cpu import _batches
 
     docs = [json.loads(line)["text"] for line in (work / "benchmarks" / "heldout.jsonl").read_text().splitlines() if line.strip()][:max_docs]
     model.eval()
     with torch.no_grad():
-        r = evaluate_bpb(model, _batches(tokenizer, docs, seq_len=seq_len, batch_size=8))
+        r = evaluate_bpb(model, _batches(tokenizer, docs, seq_len=seq_len, batch_size=8), device=device)
     return {"bpb": r.bits_per_byte, "nats": r.nats_per_token, "docs": len(docs)}
 
 

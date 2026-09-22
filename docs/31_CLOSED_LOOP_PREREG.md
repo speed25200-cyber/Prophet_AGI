@@ -102,6 +102,28 @@ poids du programme docs/29 et n'est pas lancée avant.
 | Boucle d'agent, quarantaine, rendu, banc (existants) | `prophet/agent/`, `prophet/eval/agent_bench.py` | suite existante |
 | Poids de base 7 M | `scripts/first_run_cpu.py` | docs/09 |
 
+## 7. Lancement à l'échelle A100 (ajouté le 2026-09-22, après quatorze pilotes CPU)
+
+`scripts/closed_loop_a100.sh CORPUS LOOP_CORE_RUN configs/loop_core/lc_<bras>.json OUT`
+applique la recette de référence (docs/32 §0) à un checkpoint du programme docs/29 :
+
+1. **assemblage** du répertoire de travail attendu par `scripts/closed_loop.py` (docs/09) à
+   partir des pièces loop-core : tokenizer, checkpoints, `train/fineweb-edu` et
+   `train/composition` comme sources de rejeu (`--replay-names`), les premiers documents de
+   `validation/fineweb-edu` comme texte tenu à l'écart ;
+2. **calibration** famille par famille sur le succès canonique (amendements 16 et 20) le long
+   d'une échelle *N* / *S* (100 / 200, 50 / 100, 200 / 400 par défaut), tour 0 seul, avant tout
+   tour entraîné ; une famille saturée est jugée sur ce qu'elle garde ;
+3. **bras** `closed-clean` et `oracle` sur l'amorce retenue, 8 tours × 200 tâches par famille,
+   3 tentatives dont deux qui explorent (docs/32 §16), 300 pas au taux ÷ 4, banc 2 × 60 par
+   famille, BPB 400 documents ; chaque tour s'entraîne sur le bassin cumulé de toutes les
+   familles (docs/32 §19) ; `--device cuda`.
+
+Ce script n'a **pas encore tourné sur un GPU** : le chemin `--device` de `scripts/closed_loop.py`
+est couvert par des tests sur CPU (`tests/test_closed_loop.py`) et le lanceur par un passage à
+blanc (`DRY=1`) sur une disposition loop-core factice. La première session A100 est son test,
+et le protocole figé par run (`protocol.json`) en garde la trace.
+
 ## Amendement 1 — 2026-09-21, avant tout tour d'entraînement
 
 **Observation.** Le pilote CPU tel que pré-enregistré (famille `calc`, amorce 100 épisodes /

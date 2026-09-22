@@ -519,3 +519,46 @@ def test_copy_topk_explores_from_the_second_attempt_only(work, tmp_path, monkeyp
     run(work, tmp_path / "plain2", "frozen", rounds=0)
     assert "copy_boundaries" not in json.loads((tmp_path / "plain2" / "protocol.json").read_text())
     assert closed_loop.COPY_BOUNDARIES == "off"
+
+
+def test_device_and_replay_names_reach_the_trainer_and_the_protocol(work, tmp_path, monkeypatch):
+    """The A100 launcher passes --device cuda and the loop-core corpus names; the CPU
+    pilots never set either, and their protocol is unchanged."""
+    seen = {}
+    real_trainer = closed_loop.Trainer
+    real_replay = closed_loop.replay_source
+
+    class Spy(real_trainer):
+        def __init__(self, model, loader, tc, **kw):
+            seen.setdefault("devices", []).append(tc.device)
+            super().__init__(model, loader, tc, **kw)
+
+    def replay_spy(work_dir, tokenizer, weight, names=("prose", "code")):
+        seen.setdefault("names", []).append(tuple(names))
+        return real_replay(work_dir, tokenizer, weight, names=names)
+
+    monkeypatch.setattr(closed_loop, "Trainer", Spy)
+    monkeypatch.setattr(closed_loop, "replay_source", replay_spy)
+    out = tmp_path / "dev"
+    run(work, out, "oracle", rounds=1, device="cpu", replay_names="prose,code")
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert "device" not in protocol and "replay_names" not in protocol
+    assert set(seen["devices"]) == {"cpu"} and set(seen["names"]) == {("prose", "code")}
+    seen.clear()
+    (work / "corpus" / "other").mkdir(exist_ok=True)
+    for name in ("prose", "code"):
+        for path in (work / "corpus" / name).glob("*.jsonl"):
+            (work / "corpus" / "other" / f"{name}-{path.name}").write_text(path.read_text())
+    out2 = tmp_path / "names"
+    run(work, out2, "oracle", rounds=1, replay_names="other")
+    protocol = json.loads((out2 / "protocol.json").read_text())
+    assert protocol["replay_names"] == ["other"] and set(seen["names"]) == {("other",)}
+
+
+def test_cuda_is_refused_when_absent(work, tmp_path):
+    import torch
+
+    if torch.cuda.is_available():
+        pytest.skip("a CUDA device is present; the refusal cannot be exercised")
+    with pytest.raises(SystemExit):
+        run(work, tmp_path / "cuda", "frozen", rounds=0, device="cuda")

@@ -152,6 +152,8 @@ def train_rows(
     checkpoint_dir: Path,
     seed: int,
     lr_scale: float = 1.0,
+    device: str = "cpu",
+    replay_names: tuple[str, ...] = ("prose", "code"),
 ) -> dict:
     """``steps`` updates on ``rows`` mixed with the base corpus; a fresh schedule each call.
 
@@ -168,7 +170,7 @@ def train_rows(
         }
     sources = sources_from_iterables({"episodes": (1.0 - replay_fraction, rows)})
     if replay_fraction > 0:
-        sources.append(replay_source(work, tokenizer, replay_fraction))
+        sources.append(replay_source(work, tokenizer, replay_fraction, names=replay_names))
     loader = StreamingLoader(sources, seq_len=seq_len, batch_size=batch_size, seed=seed)
     tc = TrainConfig(
         total_steps=steps,
@@ -181,7 +183,7 @@ def train_rows(
         checkpoint_dir=str(checkpoint_dir),
         checkpoint_every=10**9,
         log_every=max(steps // 4, 1),
-        device="cpu",
+        device=device,
         mtp_weight=0.0,
         seed=seed,
     )
@@ -234,6 +236,7 @@ def evaluate(
     bench_tasks: int,
     bpb_docs: int,
     seq_len: int,
+    device: str = "cpu",
 ) -> dict:
     """The benches of every family (family-major, then the bench seeds), their mean, the
     mean per family, and the held-out bits per byte."""
@@ -254,7 +257,9 @@ def evaluate(
         for family in families
     }
     bpb = (
-        heldout_bpb(work, model, tokenizer, seq_len=min(seq_len, 256), max_docs=bpb_docs)
+        heldout_bpb(
+            work, model, tokenizer, seq_len=min(seq_len, 256), max_docs=bpb_docs, device=device
+        )
         if bpb_docs
         else None
     )
@@ -572,6 +577,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--temperature", type=float, default=0.7, help="sampling temperature during generation"
     )
+    ap.add_argument(
+        "--device",
+        choices=("cpu", "cuda"),
+        default="cpu",
+        help="where the model trains and decodes; the CPU pilots never set it",
+    )
+    ap.add_argument(
+        "--replay-names",
+        default="prose,code",
+        help="comma-separated sub-directories of WORK/corpus the replay draws from "
+        "(a loop-core corpus: fineweb-edu,composition)",
+    )
     ap.add_argument("--bench-tasks", type=int, default=40)
     ap.add_argument("--bpb-docs", type=int, default=200)
     ap.add_argument("--seq-len", type=int, default=512)
@@ -607,13 +624,16 @@ def main(argv: list[str] | None = None) -> int:
     if len(set(families)) != len(families) or len(set(bench_families)) != len(bench_families):
         ap.error("a family is named once")
     registries = {f: registry_for(f) for f in families}
+    replay_names = tuple(n for n in args.replay_names.split(",") if n)
+    if args.device == "cuda" and not torch.cuda.is_available():
+        ap.error("--device cuda but no CUDA device is available")
     began = time.time()
     args.out.mkdir(parents=True, exist_ok=True)
     tokenizer = ProphetTokenizer.load(args.work / "tokenizer.json")
     cfg = agent_config(ProphetConfig.from_json(args.config))
     cfg.validate()
     torch.manual_seed(args.seed)
-    model = ProphetModel(cfg)
+    model = ProphetModel(cfg).to(args.device)
     # One family writes the protocol as before this option existed, so a run in progress
     # resumes; several are joined with "+", the bench families only when they differ.
     protocol = {
@@ -659,6 +679,10 @@ def main(argv: list[str] | None = None) -> int:
             protocol["copy_explore"] = args.copy_explore
     if args.copy_boundaries != "off":
         protocol["copy_boundaries"] = args.copy_boundaries
+    if args.device != "cpu":
+        protocol["device"] = args.device
+    if replay_names != ("prose", "code"):
+        protocol["replay_names"] = list(replay_names)
     protocol_path = args.out / "protocol.json"
     if protocol_path.exists():
         if json.loads(protocol_path.read_text()) != json.loads(json.dumps(protocol)):
@@ -706,7 +730,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             seed_report = {"reused": str(seed_dir), **recorded}
         else:
-            base, meta = CheckpointManager(args.work / "checkpoints").load_latest()
+            base, meta = CheckpointManager(args.work / "checkpoints").load_latest(
+                map_location=args.device
+            )
             missing, unexpected = model.load_state_dict(base["model"], strict=False)
             seed_report = {
                 "from_step": meta.step,
@@ -734,6 +760,8 @@ def main(argv: list[str] | None = None) -> int:
                     replay_fraction=args.replay_fraction,
                     checkpoint_dir=seed_dir / "scratch",
                     seed=args.seed,
+                    device=args.device,
+                    replay_names=replay_names,
                 )
             seed_manager.save({"model": model.state_dict(), "step": 0}, 0)
             write_json(seed_dir / "seed.json", seed_report)
@@ -746,6 +774,7 @@ def main(argv: list[str] | None = None) -> int:
             bench_tasks=args.bench_tasks,
             bpb_docs=args.bpb_docs,
             seq_len=args.seq_len,
+            device=args.device,
         )
         manager.save({"model": model.state_dict(), "step": 0}, 0)
         record(
@@ -863,6 +892,8 @@ def main(argv: list[str] | None = None) -> int:
                     checkpoint_dir=args.out / "scratch",
                     seed=args.seed * 1_000 + r,
                     lr_scale=args.lr_scale,
+                    device=args.device,
+                    replay_names=replay_names,
                 ),
             }
         klpo = None
@@ -877,6 +908,7 @@ def main(argv: list[str] | None = None) -> int:
                 lr=args.klpo_lr,
                 batch_size=args.batch_size,
                 seed=args.seed * 1_000 + r,
+                device=args.device,
             )
             klpo["seconds"] = time.time() - klpo_started
         started = time.time()
@@ -888,6 +920,7 @@ def main(argv: list[str] | None = None) -> int:
             bench_tasks=args.bench_tasks,
             bpb_docs=args.bpb_docs,
             seq_len=args.seq_len,
+            device=args.device,
         )
         compute += generation["seconds"] + (train["seconds"] if train else 0.0)
         compute += klpo["seconds"] if klpo else 0.0
