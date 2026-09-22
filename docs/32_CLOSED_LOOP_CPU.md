@@ -894,3 +894,25 @@ Variable suivante (amendement 22, v10d) : le même bras mixte avec la reprise qu
 §16, la seule mécanique qui ait fait bouger `lookup` sur une graine bloquée. Si `lookup` y
 progresse alors que `files` reste gardé, la boucle multi-familles a sa recette ; sinon la
 graine 0 de `lookup` est hors de portée de la boucle fermée à 7 M, et on le dira.
+
+## 20. Pilote v14 : la troisième tentative seule
+
+Amendement 21 : v7 plus `--attempts 3`, sans exploration ; `files`, graines 1 et 0, amorces
+50 / 100, bras `closed-clean` seul.
+
+| Graine | Bras | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | Explorés | Jamais réussies | Promus |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | v14 (3 tentatives, sans exploration) | 0,783 | 0,767 | 0,883 | 0,867 | 0,850 | 0,883 | +0,100 [+0,017, +0,183] | +0,072 | — | 6 | 124 |
+| 1 | v12 / v13 (3 tentatives, exploration) | 0,783 | 0,783 / 0,900 | 0,983 / 0,967 | 1,000 | 1,000 | 1,000 | +0,217 [+0,117, +0,317] | +0,073 / +0,076 | 3 / 2 | 0 | 134 / 139 |
+| 1 | v7 (2 tentatives) | 0,783 | 0,833 | 0,900 | 0,883 | 0,900 | 0,900 | +0,117 [+0,033, +0,217] | +0,070 | — | 5 | 123 |
+| 0 | v14 | 0,850 | 0,817 | 0,833 | 0,817 | 0,867 | 0,850 | +0,000 [−0,050, +0,050] | +0,075 | — | 8 | 123 |
+
+**Verdict (H18).** **Échoue** : graine 1 +0,100, jamais 1,000 (critère : ≥ +0,200 et 1,000 au
+plus tard au tour 4). La troisième tentative seule fait ce que faisaient deux tentatives ;
+les deux runs qui ont atteint 1,000 au tour 3 (v12, v13) sont donc les deux runs avec
+exploration, à 2 et 3 épisodes explorés près. Trois runs contre deux, une mesure par
+condition : c'est compatible avec « ces deux ou trois épisodes contradictoires ont suffi »
+et avec la variance d'un banc de 60 tâches ; on ne tranche pas ici. Ce que ce pilote
+ferme, c'est l'explication la plus économe (le budget de reprise), et la ligne des pilotes
+CPU sur `files` : à ±0,1 par mesure, la question suivante coûte plus de graines que ce
+processeur n'en donne.
