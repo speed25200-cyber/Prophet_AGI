@@ -1,6 +1,6 @@
 # 35 — Carte des hypothèses : vers un modèle plus petit qui s'améliore lui-même
 
-**Statut : v0, 2026-09-22.** Relie chaque pari du dépôt au but, avec ce qui est établi,
+**Statut : v1, 2026-09-23.** Tous les tests CPU de la liste de §3 sont faits ou écartés avec leur raison ; ce qui reste tranche à l'A100. Relie chaque pari du dépôt au but, avec ce qui est établi,
 réfuté ou ouvert, et le test qui tranche. Chaque chiffre renvoie à sa section d'origine. Les
 chiffres marqués `[S]` viennent de résumés de recherche que les docs sources n'ont pas
 vérifiés sur le texte intégral. Ce document ne remplace aucun pré-enregistrement : il dit
@@ -153,8 +153,10 @@ retiré. Chaque fois qu'une courbe s'aplatit, le dépôt a nommé le mur. Aujour
    cœur du but, attendent l'A100.
 2. ~~Le `done` prématuré~~ : fait (H28, 32 §24). C'était un défaut de décodage ; l'option
    corrigée entre dans la recette A100 (31, amendement 25).
-3. **A4-0 à 7 M** : l'AUROC du désaccord entre profondeurs sur le banc, avec le premier run
-   bouclé (minutes). Il dirait si le signal existe déjà en petit.
+3. ~~A4-0 à 7 M~~ : **écarté**. Son protocole (docs/research/A4 §8) exige un point de
+   contrôle ≥ 350 M, où la récurrence sert ; à 7 M boucler n'achète rien (2,184 contre
+   2,179), un AUROC n'y dirait rien de l'échelle visée. Il tourne en minutes sur le
+   checkpoint du programme 1.
 
 **Sur A100, dès qu'une session est disponible** (docs/34 §9 pour le choix de la carte) :
 
