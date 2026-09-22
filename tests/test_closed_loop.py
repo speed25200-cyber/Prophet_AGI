@@ -744,6 +744,22 @@ def test_calibration_refuses_an_amorce_with_nothing_left_to_learn():
     assert "from closed_loop import calibration_verdict" in launcher.read_text()
 
 
+def test_a_gpu_run_records_its_card_so_a_resume_on_another_refuses(monkeypatch):
+    """docs/34 §9: Colab may hand out another card than the one a run started on. The
+    frozen protocol names the card, so the protocol check refuses such a resume; CPU runs
+    record nothing new and resume as before."""
+    import torch
+
+    from scripts.closed_loop import device_protocol
+
+    assert device_protocol("cpu") == {}
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda index=0: "NVIDIA A100-SXM4-80GB")
+    a100 = device_protocol("cuda")
+    assert a100 == {"device": "cuda", "device_name": "NVIDIA A100-SXM4-80GB"}
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda index=0: "NVIDIA H100 80GB HBM3")
+    assert device_protocol("cuda") != a100
+
+
 def test_proposals_are_promoted_only_when_solved_on_a_retry(work, tmp_path):
     from prophet.agent.propose import task_from_spec, validate
     from prophet.agent.quarantine import Quarantine as Q

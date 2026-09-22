@@ -657,6 +657,16 @@ def promote_proposals(
     return promoted
 
 
+def device_protocol(device: str) -> dict[str, str]:
+    """What the protocol records about the device: nothing on CPU (as before this option
+    existed, so CPU runs resume), and on a GPU the card's name as well. A Colab session can
+    hand out another card than the one a run started on; the name in the frozen protocol
+    makes such a resume refuse instead of silently mixing numerics (docs/34 §9)."""
+    if device == "cpu":
+        return {}
+    return {"device": device, "device_name": torch.cuda.get_device_name(0)}
+
+
 SATURATED = 0.95
 """A family that starts at or above this cannot gain: it is judged on what it keeps
 (docs/31 amendment 20)."""
@@ -944,8 +954,7 @@ def main(argv: list[str] | None = None) -> int:
         protocol["propose_copy"] = args.propose_copy
     if args.hard_bench:
         protocol["hard_bench"] = True
-    if args.device != "cpu":
-        protocol["device"] = args.device
+    protocol.update(device_protocol(args.device))
     if replay_names != ("prose", "code"):
         protocol["replay_names"] = list(replay_names)
     protocol_path = args.out / "protocol.json"
