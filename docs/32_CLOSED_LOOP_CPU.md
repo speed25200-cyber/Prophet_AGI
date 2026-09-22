@@ -6,7 +6,7 @@ retouché après coup.** Pré-enregistrement et amendements : docs/31. **Date :*
 Base de code : `claude/codex-results-analysis-5jz95y`. Poids de départ : le 7 M de docs/09
 (`prophet-cpu-first-run`, pas 1163), CPU 4 cœurs.
 
-## 0. Ce qu'on sait maintenant, en cinq lignes
+## 0. Ce qu'on sait maintenant, en six lignes
 
 1. **La boucle tourne de bout en bout** et se rejoue au bit près : tâches inédites →
    boucle d'agent → vérificateur exécutable → promotion → rendu → entraînement avec rejeu →
@@ -26,6 +26,12 @@ Base de code : `claude/codex-results-analysis-5jz95y`. Poids de départ : le 7 M
 5. **`calc` et deux graines sur cinq saturent à 100 % dès l'amorce** ; la marge de
    progression dépend de la famille et des 100 tâches tirées. **KLPO** n'a tenu cinq tours
    dans aucune de ses deux configurations (dérive à β = 0,1, oscillation à β = 1,0).
+6. **Le vérificateur filtre, il ne contredit pas** (v9, §14) : sur la graine dure de
+   `lookup`, le modèle amorce copie la valeur du *mauvais* champ sur 9 tâches de banc sur
+   30 ; ses propres succès ne contredisent jamais cette règle, et la boucle fermée reste à
+   +0,000 [−0,100, +0,100] là où l'oracle, qui reçoit aussi les tâches ratées, fait +0,300.
+   Le rendement d'une famille est borné par la part des tâches que le modèle ne réussit
+   jamais — 18 sur 60 ici.
 
 ## 1. Protocole tel qu'exécuté
 
@@ -562,3 +568,62 @@ départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la
 tour doit être mesurée sur l'oubli avant tout (un planning neuf à taux plein par tour est
 la cause du +0,44) ; le banc doit rapporter la part malformée à chaque tour, sans quoi les
 deux modes d'échec se confondent.
+
+## 14. Pilote v9 : la graine dure de `lookup` sous la recette de référence
+
+Amendement 13 : `lookup`, graine 2, amorce 100 / 200 réutilisée (celle de v3 à v5), bras
+`closed-clean` seul avec `no_repeat_action`, taux ÷ 4, grammaire compacte, `done` sans
+argument, promotion canonique ; comparé aux bras v5 de la même graine et de la même amorce.
+Le tour 0 diffère d'une tâche entre v9 et v5 (0,583 contre 0,567) parce que le banc v9
+décode sous `no_repeat_action`.
+
+| Bras | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | Malformées max | Heures |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| closed-clean v9 (référence) | 0,583 | 0,567 | 0,600 | 0,533 | 0,517 | 0,583 | **+0,000** [−0,100, +0,100] | +0,083 | 1 % | 0,28 |
+| closed-clean v5 | 0,567 | 0,550 | 0,567 | 0,583 | 0,667 | 0,667 | +0,100 [−0,033, +0,233] | +0,082 | 2 % | 0,29 |
+| oracle v5 | 0,567 | 0,667 | 0,833 | 0,867 | 0,850 | 0,867 | +0,300 [+0,167, +0,433] | +0,082 | 0 % | 0,25 |
+
+Génération v9, par tour : 18, 21, 22, 16, 21 tâches résolues sur 30 (43, 39, 38, 44, 39
+épisodes), sans tendance ; 98 épisodes promus en cinq tours, **tous canoniques** (aucune
+rétrogradation, tous en trois pas : `read_file` → `note` → `done`). Sur le banc, 28 tâches
+sur 60 réussissent à chaque tour, **18 n'y arrivent jamais**, 14 basculent ; entre le tour 0
+et le tour 5, 5 gagnées, 5 perdues.
+
+**Verdicts v9 (H13).**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H13 (i)** intervalle excluant zéro | **échoue** | +0,000 [−0,100, +0,100] |
+| **H13 (ii)** aucun tour sous 0,467 | passe | pire tour 0,517 |
+| **H13 (iii)** rendement contre l'oracle v5 ≥ 0,6 | **échoue** | 0,000 (+0,000 / +0,300) |
+| **H13** | **échoue** | |
+
+**Diagnostic, jeton par jeton** (banc 7, décodage glouton sous `no_repeat_action`, mêmes
+poids que le banc). Au tour 0, 14 échecs sur 30 : **9 notent la valeur de l'autre champ
+textuel** — `ripple` pour `city`, `Kyoto` pour `code`, jamais l'année (`{"city":…,"year":…,
+"code":…}`, ordre des clés constant) —, 5 sont la boucle sur `done` du mode (d) (`note`
+d'un fragment `done","args":{}}ver`). Au tour 5, 12 échecs : **11 mauvais champ, 1 boucle
+sur `done`**. La boucle a réduit le mode qu'elle réussit parfois ; elle n'a pas touché à
+celui qu'elle ne réussit jamais.
+
+Lecture — mode **(f)**, une erreur de *sélection* systématique. Le modèle amorcé applique
+sur ces tâches une règle qui n'est pas « la valeur de la clé nommée » ; les épisodes qu'il
+promeut sont exactement ceux où sa règle coïncide avec la clé nommée, et ils sont donc
+compatibles avec elle : rien dans le bassin promu ne la contredit, et 60 pas par tour sur ce
+bassin la confirment autant qu'ils enseignent la bonne. L'oracle reçoit à chaque tour les
+trajectoires parfaites des tâches *ratées* aussi, qui la contredisent : +0,300 en cinq
+tours à partir des mêmes poids. À température 0,7 et deux tentatives, le pointeur ne
+bascule pas (v8 l'avait montré pour le mode (e)), et le nombre de tâches résolues par tour
+ne monte pas.
+
+Ce qui en découle, au-delà de cette graine : **un vérificateur filtre, il ne contredit
+pas**. La boucle fermée corrige ce que le modèle réussit *parfois* (grammaire, boucle sur
+`note` ou sur `done`, dérive de contenu — les modes (a) à (d)) et ne peut pas corriger ce
+qu'il rate *toujours* sur un sous-ensemble (modes (e) et (f)). Le rendement contre l'oracle
+sur une famille est borné par 1 − (part des tâches jamais réussies) : 0,70 ici, 0,87 à 1,0
+pour l'oracle. Trois voies, aucune acquise : une exploration qui atteint l'autre champ
+(le pointeur tiré de v8 n'y arrivait pas), un signal négatif sur les épisodes ratés (le bras
+KLPO était cela et n'a pas tenu à 7 M), ou un curriculum où le sous-ensemble raté devient
+atteignable. Pour l'échelle A100 : rapporter à chaque tour l'ensemble des tâches de banc
+jamais réussies, en plus du gain — c'est lui qui dit si la boucle a encore quelque chose à
+apprendre d'elle-même.
