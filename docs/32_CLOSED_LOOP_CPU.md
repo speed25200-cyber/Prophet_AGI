@@ -480,6 +480,43 @@ vers `done`, ce que le budget de quatre pas transforme en échec. Les trajectoir
 ne contiennent jamais deux pas identiques ; le décodeur, lui, l'autorise. Même désaccord
 entraînement / décodage que les blancs (a) et le corps de `done` (c) : d'où l'amendement 11.
 
+## 12. Pilote v7 : pas de pas répété au décodage
+
+Amendement 11 : `AgentConfig.no_repeat_action`, la grammaire du pas *i* exclut le nom de
+l'action du pas *i − 1*. Mêmes amorces `files` 50 / 100 que v6, même recette pour le reste.
+
+**À poids égaux**, le modèle amorce de la graine 0 passe de 0,700 à **0,850** au tour 0 :
+neuf de ses dix-huit échecs étaient la boucle sur `note`. Celui de la graine 1 ne bouge pas
+(0,783) : ses échecs sont d'une autre nature (ci-dessous).
+
+| Bras | Graine | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | v6 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| closed-clean | 0 | 0,850 | 0,800 | 0,850 | 0,817 | 0,883 | 0,933 | **+0,083** [+0,017, +0,150] | +0,070 | 0,700 → 0,800 |
+| closed-clean | 1 | 0,783 | 0,833 | 0,900 | 0,883 | 0,900 | 0,900 | **+0,117** [+0,033, +0,217] | +0,070 | 0,783 → 0,867 |
+| oracle | 0 | 0,850 | 0,933 | 0,983 | 1,000 | 0,983 | 0,967 | +0,117 [+0,033, +0,217] | +0,066 | 0,700 → 0,967 |
+| oracle | 1 | 0,783 | 0,950 | 0,950 | 1,000 | 1,000 | 1,000 | +0,217 [+0,117, +0,317] | +0,065 | 0,783 → 0,950 |
+
+**Verdicts v7 (H11 = H10 sous v7).**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H11 (i)** intervalles excluant zéro | **passe** | [+0,017, +0,150] et [+0,033, +0,217] |
+| **H11 (ii)** rendement ≥ 0,6 | **passe**, à la limite | 0,600 (+0,100 / +0,167) |
+| **H11 (iii)** aucun tour sous t0 − 0,10 | **passe** | pires tours 0,800 (t0 0,850) et 0,783 (0,783) |
+| **H11** | **passe** | banc cumulé : 13 tâches gagnées, 1 perdues sur 120 |
+
+C'est la première hypothèse de généralité tenue : sur une seconde famille, la boucle
+fermée gagne sur chaque graine avec un intervalle qui exclut zéro, sans effondrement, à 60 %
+du rendement de l'oracle. Le diagnostic (banc 7, tour 5, la règle active) ne laisse que
+deux modes, tous deux hors de la boucle elle-même :
+
+- graine 0, 1 échec sur 30 : un argument de `grep` tronqué (`ir` pour `iris`) ;
+- graine 1, 4 échecs sur 30, **tous** un pointeur de copie en retard d'un jeton : `chor_0.txt`
+  pour `anchor_0.txt`, `antern_2.txt` pour `lantern_2.txt`. Le bon fichier est trouvé, sa
+  copie perd son premier jeton, `done` est refusé. C'est le mode **(e)** : une cible de copie
+  mal alignée à l'entraînement quand la valeur ouvre l'observation sans espace devant elle
+  (le défaut n° 11 de CLAUDE.md sous une autre forme), propre à l'amorce de la graine 1.
+
 Pour l'échelle A100 (docs/31 §3), trois choses sont acquises dès maintenant : la marge de
 départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la recette par
 tour doit être mesurée sur l'oubli avant tout (un planning neuf à taux plein par tour est
