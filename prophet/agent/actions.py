@@ -466,6 +466,38 @@ def _expect(s: str, i: int, ch: str) -> int | None:
     return i + 1
 
 
+_ESCAPES = frozenset('"\\/bfnrtu')
+_HEX = frozenset("0123456789abcdefABCDEF")
+
+
+def _escape_end(s: str, j: int) -> int | None:
+    """Index after the escape at ``s[j] == "\\"``, or ``None`` when the prefix ends inside it.
+
+    JSON admits eight one-letter escapes and ``\\uXXXX``; anything else makes a call that
+    ``json.loads`` refuses, so the prefix is dead (docs/33 amendment 8)."""
+    if j + 1 >= len(s):
+        return None
+    esc = s[j + 1]
+    if esc not in _ESCAPES:
+        raise _Dead(f"invalid escape \\{esc} in a string")
+    if esc != "u":
+        return j + 2
+    digits = s[j + 2 : j + 6]
+    if not all(h in _HEX for h in digits):
+        raise _Dead("invalid \\u escape in a string")
+    return j + 6 if len(digits) == 4 else None
+
+
+def _check_string_char(c: str) -> None:
+    """A raw control character (U+0000 to U+001F) inside a string: ``json.loads`` refuses
+    the finished call, so no continuation can complete it. The renderer never writes one
+    (``json.dumps`` escapes it); the decoder must not admit one either (docs/33
+    amendment 8 -- a sampled newline in a proposal kept a doomed span "viable" to the
+    end of its budget)."""
+    if c < " ":
+        raise _Dead(f"raw control character {c!r} in a string")
+
+
 def _scan_string(s: str, i: int) -> tuple[_Str | None, int]:
     if i >= len(s):
         return None, i
@@ -476,13 +508,15 @@ def _scan_string(s: str, i: int) -> tuple[_Str | None, int]:
     while j < len(s):
         c = s[j]
         if c == "\\":
-            if j + 1 >= len(s):
+            end = _escape_end(s, j)
+            if end is None:
                 return _Str("".join(out), False), j
             out.append(s[j + 1])
-            j += 2
+            j = end
             continue
         if c == '"':
             return _Str("".join(out), True), j + 1
+        _check_string_char(c)
         out.append(c)
         j += 1
     return _Str("".join(out), False), j
@@ -540,10 +574,15 @@ def _scan_container(s: str, i: int, open_ch: str, close_ch: str) -> tuple[bool, 
         c = s[j]
         if in_str:
             if c == "\\":
-                j += 2
+                end = _escape_end(s, j)
+                if end is None:
+                    return False, len(s)
+                j = end
                 continue
             if c == '"':
                 in_str = False
+            else:
+                _check_string_char(c)
         elif c == '"':
             in_str = True
         elif c in "[{":

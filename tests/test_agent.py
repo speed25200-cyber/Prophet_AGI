@@ -617,9 +617,65 @@ def test_grammar_rejects_whitespace_outside_strings_by_default():
     assert not g.check(' {"name"').viable
     assert not g.check('{"name": "read_file"').viable
     assert not g.check('{"name":"note","args": {').viable
-    assert g.check('{"name":"note","args":{"text":"a b\tc"}}').complete  # inside strings: data
+    # Inside strings, spaces are data; a tab is written escaped, as json.dumps does
+    # (a raw one is a call json.loads refuses: docs/33 amendment 8).
+    assert g.check('{"name":"note","args":{"text":"a b\\tc"}}').complete
     tolerant = ActionGrammar(registry(), compact=False)
     assert tolerant.check(' {"name"').viable and tolerant.check('{"name": "read_file"').viable
+
+
+def test_grammar_refuses_inside_strings_what_json_refuses():
+    """docs/33 amendment 8: a raw control character or an unknown escape inside a string
+    makes a call json.loads refuses, yet the grammar called such a prefix viable. A newline
+    sampled into a proposal's file name kept the span "viable" to the end of its budget:
+    27 of 30 proposals malformed at the first calibration rung. Viable must mean
+    completable."""
+    g = ActionGrammar(registry())
+    for tolerant in (False, True):
+        grammar = ActionGrammar(registry(), compact=not tolerant)
+        head = '{"name":"write_file","args":{"path":"a.py","text":"'
+        for bad in ("a\nb", "a\tb", "a\x00", "a\\y", "a\\u00zz"):
+            assert not grammar.check(head + bad).viable, repr(bad)
+            with pytest.raises(json.JSONDecodeError):
+                json.loads(head + bad + '"}}')
+        for good in ("a\\nb", "a\\tb", 'a\\"b', "a\\\\b", "a\\/b", "caf\\u00e9"):
+            full = head + good + '"}}'
+            assert grammar.check(full).complete and grammar.complete(full) is not None, good
+        for partial in ("a\\", "a\\u", "a\\u00", "a\\u00e"):  # ends inside an escape
+            state = grammar.check(head + partial)
+            assert state.viable and state.in_string, partial
+    # Keys go through the same scanner.
+    assert not g.check('{"name":"read_file","args":{"pa\nth').viable
+    # Inside an array or object value, the same rules.
+    nested = ActionGrammar(
+        ToolRegistry(
+            [
+                ToolSchema(
+                    "tag",
+                    "tag",
+                    {
+                        "type": "object",
+                        "properties": {"items": {"type": "array"}},
+                        "required": ["items"],
+                    },
+                )
+            ]
+        )
+    )
+    assert not nested.check('{"name":"tag","args":{"items":["a\nb').viable
+    assert not nested.check('{"name":"tag","args":{"items":["a\\qb').viable
+    assert nested.check('{"name":"tag","args":{"items":["a\\nb"]}}').complete
+    assert nested.check('{"name":"tag","args":{"items":["a\\u00').viable
+
+
+def test_the_decoder_refuses_a_newline_inside_a_string_value():
+    """The same defect as the decoder met it: a newline token inside an open string was a
+    viable candidate; it is now masked like any dead end."""
+    g = ActionGrammar(registry())
+    dec = ConstrainedDecoder(g, lambda t: TOK.decode([t]), end_id=TOK.special_id("<|/call|>"))
+    newline, letter = TOK.encode("\n")[0], TOK.encode("b")[0]
+    prefix = '{"name":"read_file","args":{"path":"a'
+    assert dec.allowed(prefix, [newline, letter]) == [letter]
 
 
 def test_constrained_decoder_cannot_open_a_call_with_whitespace():

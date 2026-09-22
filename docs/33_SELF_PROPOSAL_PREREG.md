@@ -272,3 +272,44 @@ deux arrête l'échelle et lance les trois bras de §2 sur la graine 0. Si aucun
 satisfait, le résultat est « le proposeur ne démarre pas à 7 M », écrit dans docs/32 §22
 avec les taux des quatre barreaux, et le CPU s'arrête pour les programmes 2 et 3
 (docs/34 §7).
+
+## Amendement 8 — 2026-09-22, échelle en cours, avant tout tour entraîné : la grammaire refusait ce que JSON refuse
+
+**Ce qui s'est passé.** Barreau 1 de l'amendement 7 (premier run reconstruit ; second temps
+50 pas, 50 propositions) : solveur **0,883** (canonique 0,883), banc hors distribution
+0,550 ; sonde : **30 malformées sur 30**. Les spans enregistrés (`samples`) disent
+pourquoi. Dans **27 sur 30**, la valeur `file` contient un retour à la ligne brut avant
+d'être fermée ; dans 21 sur 30, elle se prolonge par le gabarit du but du solveur
+(`… .json and note the value of the field year, then finish.`), des fragments de licences
+et de tableaux du corpus, jusqu'au bout du budget de 160 jetons.
+
+**Le défaut.** `ActionGrammar` déclarait viable un préfixe dont une chaîne contient un
+caractère de contrôle brut (U+0000 à U+001F) ou un échappement inconnu (`\y`), alors que
+`json.loads` refuse toujours l'appel terminé qui les contient. Dès ce jeton, le span était
+mort, et le décodeur contraint le poursuivait jusqu'à épuiser son budget. Le rendu n'en
+écrit jamais (`json.dumps` échappe les contrôles) : même famille que la grammaire
+tolérante aux blancs de docs/32 (mode a). Un test existant l'avait même consacré (une
+tabulation brute dans une valeur déclarée « complète »).
+
+**Correction, pré-enregistrée.** La grammaire refuse, dans toute chaîne (noms, clés,
+valeurs, et à l'intérieur des tableaux et objets), les caractères de contrôle bruts et
+les échappements hors des huit de JSON et de `\uXXXX` ; un préfixe qui s'arrête au milieu
+d'un échappement reste viable. Tests : chaque préfixe refusé l'est aussi par `json.loads`,
+chaque échappement valide se complète, le décodeur masque un retour à la ligne dans une
+valeur ouverte. Le banc et le solveur décodent sous la même grammaire : un span qui
+rencontrait un tel caractère était déjà perdu, la correction ne peut que lui offrir une
+autre suite. Les chiffres des pilotes passés sont laissés tels qu'enregistrés.
+
+**Mesure, une variable.** L'échelle de l'amendement 7 finit sous l'ancienne grammaire,
+sans modification, et est rapportée. Puis l'échelle est rejouée en entier sous la
+grammaire corrigée, sur une copie du **même** premier temps : l'entraînement ne décode
+rien, donc chaque barreau a les mêmes poids que dans l'échelle de l'amendement 7
+(vérifié par la perte finale du second temps). Seuls les bancs et la sonde changent :
+l'effet du défaut se lit barreau par barreau, à poids identiques. Comme aux amendements
+3 à 6, le verdict du programme 3 est celui de l'échelle rejouée ; la règle de
+l'amendement 1 est inchangée.
+
+**Ce que la correction ne règle pas.** Qu'un modèle de 7 M prolonge un nom de fichier par
+le but du solveur au lieu de fermer la valeur relève de l'entraînement du proposeur, pas
+du décodage. Si l'échelle rejouée échoue encore, le résultat reste « le proposeur ne
+démarre pas à 7 M », avec les taux des deux échelles.
