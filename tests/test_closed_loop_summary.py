@@ -322,3 +322,29 @@ def test_h14_is_not_reported_without_the_layout(tmp_path):
 
     shutil.rmtree(tmp_path / "closed-clean-files-seed0")
     assert "H14_multi_family" not in summarise(load_runs(tmp_path))["checks"]
+
+
+def test_task_sets_count_what_the_loop_never_solves(tmp_path):
+    """docs/32 §14: the never-solved set bounds what a loop can learn from itself."""
+    from scripts.summarize_closed_loop import task_sets
+
+    rounds = [
+        record(0, [True, True, False, False, False], bpb=2.0, compute=0, promoted=0),
+        record(1, [True, False, True, False, False], bpb=2.0, compute=1, promoted=1),
+        record(2, [True, True, True, False, False], bpb=2.0, compute=2, promoted=2),
+    ]
+    sets = task_sets(rounds)
+    assert sets == {"tasks": 5, "always": 1, "never": 2, "flip": 2, "reachable_bound": 0.6}
+    write(tmp_path, "closed", 0, rounds)
+    summary = summarise(load_runs(tmp_path))
+    assert summary["arms"]["closed"]["seeds"]["0"]["task_sets"]["never"] == 2
+    assert "| closed | 0 | 5 | 1 | 2 | 2 | 0.600 |" in markdown(summary)
+    multi_family_layout(tmp_path / "multi")
+    mixed = summarise(load_runs(tmp_path / "multi"))["arms"]["closed-clean"]["seeds"]["0"]
+    assert mixed["by_family"]["files"]["task_sets"] == {
+        "tasks": 10,
+        "always": 2,
+        "never": 4,
+        "flip": 4,
+        "reachable_bound": 0.6,
+    }

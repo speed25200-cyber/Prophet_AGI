@@ -74,6 +74,22 @@ def trained_families(rounds: list[dict]) -> list[str] | None:
     return None
 
 
+def task_sets(rounds: list[dict], family: str | None = None) -> dict:
+    """How the bench tasks behave across the rounds: always solved, never solved, or
+    flipping; and the bound the never-solved set puts on what the loop can still learn
+    from itself (docs/32 §14: a verifier filters, it does not contradict)."""
+    per_task = list(zip(*[outcomes(r, family) for r in rounds], strict=True))
+    always = sum(all(t) for t in per_task)
+    never = sum(not any(t) for t in per_task)
+    return {
+        "tasks": len(per_task),
+        "always": always,
+        "never": never,
+        "flip": len(per_task) - always - never,
+        "reachable_bound": 1 - never / len(per_task) if per_task else None,
+    }
+
+
 def family_success(round_record: dict, family: str) -> float:
     flags = outcomes(round_record, family)
     return sum(flags) / len(flags)
@@ -139,6 +155,7 @@ def summarise(runs: dict[str, dict[int, list[dict]]]) -> dict:
                 else None,
                 "final_success": last["success_mean"],
                 "compute_hours": last["compute_seconds"] / 3600,
+                "task_sets": task_sets(rounds),
             }
             measured = bench_families(first)
             if measured:
@@ -146,6 +163,7 @@ def summarise(runs: dict[str, dict[int, list[dict]]]) -> dict:
                     f: {
                         "curve": [family_success(r, f) for r in rounds],
                         "gain": paired_gain(first, last, family=f, seed=seed),
+                        "task_sets": task_sets(rounds, f),
                     }
                     for f in measured
                 }
@@ -325,6 +343,18 @@ def markdown(summary: dict) -> str:
             lines.append(
                 f"| {arm} | {seed} | {s['rounds']} | {first:.3f} → {s['final_success']:.3f} | "
                 f"{s['gain']['gain']:+.3f} [{low:+.3f}, {high:+.3f}] | {delta} | {s['compute_hours']:.2f} |"
+            )
+    lines.append("")
+    lines += [
+        "| Bras | Graine | Tâches | Toujours réussies | Jamais réussies | Basculent | Borne atteignable |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for arm, data in summary["arms"].items():
+        for seed, s in data["seeds"].items():
+            t = s["task_sets"]
+            lines.append(
+                f"| {arm} | {seed} | {t['tasks']} | {t['always']} | {t['never']} | {t['flip']} | "
+                f"{t['reachable_bound']:.3f} |"
             )
     lines.append("")
     if any("by_family" in s for data in summary["arms"].values() for s in data["seeds"].values()):
