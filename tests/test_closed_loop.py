@@ -703,6 +703,31 @@ def test_the_object_format_reaches_the_amorce_the_probe_and_the_protocol(work, m
     assert seen_params == [(propose_goal("lookup", "object"), ("file", "fields", "ask"))]
 
 
+def test_calibration_refuses_an_amorce_with_nothing_left_to_learn():
+    """The A100 launcher retained a rung as soon as every family succeeded canonically,
+    even when all of them were saturated: its eight rounds would then only have measured
+    retention. At least one family must start below 0.95 (docs/31 amendment 20)."""
+    from pathlib import Path
+
+    from scripts.closed_loop import calibration_verdict
+
+    def record(success, canonical):
+        return {"success_by_family": success, "canonical_by_family": canonical}
+
+    fam = ("calc", "lookup", "files")
+    saturated = record(dict.fromkeys(fam, 1.0), dict.fromkeys(fam, 1.0))
+    assert calibration_verdict(saturated) == (False, list(fam))
+    mixed = record({"calc": 1.0, "lookup": 0.4, "files": 0.97}, dict.fromkeys(fam, 0.3))
+    assert calibration_verdict(mixed) == (True, ["calc", "files"])
+    never = record({"calc": 0.5, "lookup": 0.0, "files": 0.5}, dict.fromkeys(fam, 0.3))
+    assert not calibration_verdict(never)[0]
+    uncanonical = record(dict.fromkeys(fam, 0.5), {"calc": 0.3, "lookup": 0.0, "files": 0.3})
+    assert not calibration_verdict(uncanonical)[0]
+    # The launcher delegates to this function rather than repeating the rule.
+    launcher = Path(__file__).resolve().parents[1] / "scripts" / "closed_loop_a100.sh"
+    assert "from closed_loop import calibration_verdict" in launcher.read_text()
+
+
 def test_proposals_are_promoted_only_when_solved_on_a_retry(work, tmp_path):
     from prophet.agent.propose import task_from_spec, validate
     from prophet.agent.quarantine import Quarantine as Q

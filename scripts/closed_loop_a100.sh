@@ -70,16 +70,19 @@ COMMON=(--work "$WORK" --config "$CONFIG" --device "$DEVICE" --replay-names fine
         --lr-scale "$LR_SCALE" --no-repeat-action "${EXPLORE_FLAGS[@]}")
 
 # 2. Calibration, family by family, on the canonical success (amendment 16): the first rung
-#    of the ladder where every family starts strictly in (0, 0.95) with a canonical success
-#    strictly positive is retained; a family already saturated is judged on retention
-#    (amendment 20) and reported as such.
+#    of the ladder where every family succeeds with a canonical success strictly positive,
+#    and at least one family starts below 0.95, is retained. A family already saturated is
+#    judged on retention (amendment 20) and reported as such; a rung where every family is
+#    saturated is refused, since its rounds could only measure retention
+#    (scripts/closed_loop.py calibration_verdict, tested).
 verdict() {
 python3 - "$1" <<'PY'
 import json, sys
+sys.path.insert(0, "scripts")
+from closed_loop import calibration_verdict
 r0 = [json.loads(l) for l in open(sys.argv[1])][0]
+ok, saturated = calibration_verdict(r0)
 by, can = r0["success_by_family"], r0["canonical_by_family"]
-ok = all(0 < by[f] and can[f] > 0 for f in by)
-saturated = [f for f in by if by[f] >= 0.95]
 print(("OK" if ok else "LADDER") + (" saturated=" + ",".join(saturated) if saturated else ""), json.dumps({"success": by, "canonical": can}))
 PY
 }

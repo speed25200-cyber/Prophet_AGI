@@ -653,6 +653,23 @@ def promote_proposals(
     return promoted
 
 
+SATURATED = 0.95
+"""A family that starts at or above this cannot gain: it is judged on what it keeps
+(docs/31 amendment 20)."""
+
+
+def calibration_verdict(record: dict) -> tuple[bool, list[str]]:
+    """Whether a round-0 record is a usable amorce (docs/31 amendments 16 and 20), and
+    which families are saturated. Every family must succeed sometimes, canonically; and at
+    least one must start below ``SATURATED``, or the loop has nothing left to learn and
+    its rounds would only measure retention (docs/35: a wall the A100 run must not pay
+    for)."""
+    success, canonical = record["success_by_family"], record["canonical_by_family"]
+    saturated = [f for f in success if success[f] >= SATURATED]
+    ok = all(success[f] > 0 and canonical[f] > 0 for f in success) and len(saturated) < len(success)
+    return ok, saturated
+
+
 def merge_generation(parts: dict[str, dict]) -> dict:
     """One round's generation record from the per-family records: the counts add up,
     ``attempts`` is common, and the parts stay under ``by_family``."""

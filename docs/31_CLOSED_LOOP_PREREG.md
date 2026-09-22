@@ -660,3 +660,21 @@ fait bouger `lookup` sur une graine bloquée (docs/32 §16).
 | **H19 (iii)** `files` est gardé | Le bassin mixte protège la famille saturée. | `files` ≥ 0,950 à chaque tour. |
 | **H19 (iv)** rendement | | gain union / gain union de l'oracle mixte v10c ≥ 0,6. |
 | **H19** | | les quatre, sinon échec ; rapportés séparément. Lancé après v14. |
+
+## Amendement 23 — 2026-09-22, avant tout run sur GPU : une amorce où tout est saturé est refusée
+
+**Ce qui s'est passé.** En relisant le lanceur A100 (`scripts/closed_loop_a100.sh`) pour la
+carte des hypothèses (docs/35), on voit que sa calibration retenait un barreau dès que
+chaque famille réussissait, canoniquement. Elle le faisait **même si toutes étaient
+saturées**, alors que son commentaire promettait « strictement entre 0 et 0,95 ».
+L'amendement 20 juge une famille saturée sur ce qu'elle garde ; il n'a jamais voulu dire
+qu'une amorce où **toutes** le sont soit utilisable. À 7 M, `calc` et `files` saturent dès
+l'amorce ; à 375 M, les trois familles le peuvent. Les huit tours du bras A100 n'auraient
+alors mesuré que de la rétention.
+
+**Règle, pré-enregistrée avant tout run sur GPU.** Un barreau est retenu si chaque famille
+réussit (succès > 0, canonique > 0) **et qu'au moins une famille démarre sous 0,95**. Les
+familles saturées sont signalées et jugées selon l'amendement 20. Sinon, l'échelle descend
+au barreau suivant (100 / 200, puis 50 / 100, puis 200 / 400). La règle vit dans
+`calibration_verdict` (`scripts/closed_loop.py`), que le lanceur appelle au lieu de la
+recopier (test). Aucun pilote CPU n'a utilisé ce lanceur : aucun chiffre publié ne change.
