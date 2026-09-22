@@ -53,6 +53,16 @@ from prophet.agent.loop import (
     AgentConfig,  # noqa: E402
     AgentLoop,  # noqa: E402
 )
+from prophet.agent.propose import (  # noqa: E402
+    PROPOSE_GOAL,
+    make_hard_lookup,
+    novel,
+    proposal_trajectory,
+    propose_registry,
+    spec_from_task,
+    task_from_spec,
+    validate,
+)
 from prophet.agent.quarantine import Entry, Provenance, Quarantine  # noqa: E402
 from prophet.agent.render import render_episode  # noqa: E402
 from prophet.agent.verify import Tier  # noqa: E402
@@ -75,8 +85,9 @@ from scripts.first_agent_run_cpu import (  # noqa: E402
 SAMPLE_COPY = False  # set by main() from --sample-copy; generation only (the bench is greedy)
 NO_REPEAT_ACTION = False  # set by main() from --no-repeat-action; read by generation_config callers
 COPY_BOUNDARIES = "off"  # set by main() from --copy-boundaries; bench and generation alike
-ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean")
+ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean", "closed-propose")
 BENCH_SEEDS = (7, 11)
+HARD_BENCH_SEEDS = (17, 19)  # the out-of-distribution bench of docs/33, never trained on
 SEED_TASK_BASE = 1_000
 ROUND_TASK_BASE = 10_000
 
@@ -201,8 +212,12 @@ def train_rows(
     }
 
 
-def bench_family(model, tokenizer, family: str, *, n_tasks: int, seed: int) -> dict:
-    tasks = task_families.make_tasks(n_tasks, family=family, seed=seed)
+def bench_family(model, tokenizer, family: str, *, n_tasks: int, seed: int, tasks=None) -> dict:
+    """The greedy bench on ``n_tasks`` generator tasks of ``family`` at ``seed``, or on
+    ``tasks`` when given (the out-of-distribution bench of docs/33)."""
+    tasks = (
+        tasks if tasks is not None else task_families.make_tasks(n_tasks, family=family, seed=seed)
+    )
     started = time.time()
     report = run_bench(
         model,
@@ -237,9 +252,11 @@ def evaluate(
     bpb_docs: int,
     seq_len: int,
     device: str = "cpu",
+    hard: bool = False,
 ) -> dict:
     """The benches of every family (family-major, then the bench seeds), their mean, the
-    mean per family, and the held-out bits per byte."""
+    mean per family, and the held-out bits per byte; with ``hard``, the out-of-distribution
+    lookup bench of docs/33 as well (``bench_hard``, ``success_hard``)."""
     model.eval()
     benches = [
         bench_family(model, tokenizer, family, n_tasks=bench_tasks, seed=s)
@@ -263,13 +280,28 @@ def evaluate(
         if bpb_docs
         else None
     )
-    return {
+    measured = {
         "bench": benches,
         "success_mean": mean,
         "success_by_family": by_family,
         "canonical_by_family": canonical_by_family,
         "bpb": bpb,
     }
+    if hard:
+        hard_benches = [
+            bench_family(
+                model,
+                tokenizer,
+                "lookup",
+                n_tasks=bench_tasks,
+                seed=s,
+                tasks=make_hard_lookup(bench_tasks, seed=s),
+            )
+            for s in HARD_BENCH_SEEDS
+        ]
+        measured["bench_hard"] = hard_benches
+        measured["success_hard"] = sum(b["success_rate"] for b in hard_benches) / len(hard_benches)
+    return measured
 
 
 def generate_round(
@@ -298,6 +330,7 @@ def generate_round(
     started = time.time()
     tokens = episodes = promoted_explored = 0
     solved = set()
+    solved_at: dict[str, int] = {}
     before = len(quarantine.promoted(family))
     for attempt in range(1, attempts + 1):
         if not remaining:
@@ -323,7 +356,10 @@ def generate_round(
         )
         tokens += sum(e.tokens for e in report.episodes)
         episodes += report.n
-        solved.update(e.task for e in report.episodes if e.verified)
+        for t, e in zip(remaining, report.episodes, strict=True):
+            if e.verified:
+                solved.add(t.name)
+                solved_at.setdefault(t.name, attempt)
         if exploring:
             promoted_explored += len(quarantine.promoted(family)) - before_attempt
         remaining = [t for t, e in zip(remaining, report.episodes, strict=True) if not e.verified]
@@ -332,6 +368,7 @@ def generate_round(
         "episodes": episodes,
         "attempts": attempts,
         "solved": len(solved),
+        "solved_at": solved_at,
         "promoted_new": len(quarantine.promoted(family)) - before,
         "promoted_explored": promoted_explored,
         "tokens": tokens,
@@ -472,6 +509,119 @@ def oracle_round(family: str, tasks, quarantine: Quarantine, *, round_index: int
     }
 
 
+def proposal_rows(
+    tokenizer: ProphetTokenizer, n: int, *, family: str, seed: int, seq_len: int
+) -> tuple[list[list[int]], list, dict]:
+    """``n`` perfect proposal episodes for the amorce (docs/33 §2): generator tasks turned
+    into the specification the model would have had to propose. Returns the rows, the
+    specifications (the amorce's distribution, for novelty) and the stats."""
+    registry = propose_registry(family)
+    specs = [spec_from_task(t) for t in task_families.make_tasks(n, family=family, seed=seed)]
+    rows, longest, truncated = [], 0, 0
+    for spec in specs:
+        text = render_episode(PROPOSE_GOAL[family], registry, proposal_trajectory(spec))
+        ids = [tokenizer.bos_id] + tokenizer.encode(text, parse_special=True)
+        longest = max(longest, len(ids))
+        if len(ids) > seq_len:
+            truncated += 1
+            ids = ids[:seq_len]
+        rows.append(ids + [tokenizer.pad_id] * (seq_len - len(ids)))
+    return rows, specs, {"rows": len(rows), "longest": longest, "truncated": truncated}
+
+
+def propose_round(
+    model,
+    tokenizer,
+    family: str,
+    n: int,
+    *,
+    seen: set[str],
+    amorce_specs: list,
+    temperature: float,
+    round_index: int,
+) -> tuple[list, dict]:
+    """``n`` proposal episodes (one step each, action span sampled), validated by the
+    rules; returns ``[(spec, task), ...]`` and the counts. ``seen`` holds the signatures
+    already proposed in this run, so a task is never proposed twice."""
+    cfg = generation_config(
+        family,
+        temperature=temperature,
+        verifier_version=f"round-{round_index}",
+        no_repeat_action=NO_REPEAT_ACTION,
+    )
+    cfg.max_steps = 1
+    cfg.sample_actions = True
+    registry = propose_registry(family)
+    counts = {
+        "emitted": n,
+        "malformed": 0,
+        "invalid": 0,
+        "duplicate": 0,
+        "valid": 0,
+        "novel": 0,
+        "n_fields": {},
+        "tokens": 0,
+    }
+    proposals = []
+    for i in range(n):
+        result = AgentLoop(model, tokenizer, registry, cfg).run(PROPOSE_GOAL[family])
+        counts["tokens"] += int(getattr(result, "tokens", 0))
+        action = result.steps[0].action if result.steps else None
+        if action is None or action.name != f"propose_{family}":
+            counts["malformed"] += 1
+            continue
+        verdict = validate(family, action.args)
+        if isinstance(verdict, str):
+            counts["invalid"] += 1
+            continue
+        if verdict.signature() in seen:
+            counts["duplicate"] += 1
+            continue
+        seen.add(verdict.signature())
+        counts["valid"] += 1
+        counts["novel"] += int(novel(verdict, amorce_specs))
+        counts["n_fields"][str(len(verdict.keys))] = (
+            counts["n_fields"].get(str(len(verdict.keys)), 0) + 1
+        )
+        proposals.append((verdict, task_from_spec(verdict, name=f"proposed-{round_index}-{i}")))
+    return proposals, counts
+
+
+def promote_proposals(
+    proposals: list,
+    solved_at: dict[str, int],
+    quarantine: Quarantine,
+    *,
+    family: str,
+    round_index: int,
+) -> int:
+    """The proposer's only reward (docs/33 §2): a proposal is promoted when its task was
+    solved on a retry and not at the first attempt -- at the edge of what the solver can
+    do. Returns how many were promoted."""
+    promoted = 0
+    for spec, task in proposals:
+        if solved_at.get(task.name, 0) < 2:
+            continue
+        quarantine.add(
+            Entry(
+                family=f"propose-{family}",
+                goal=PROPOSE_GOAL[family],
+                trajectory=proposal_trajectory(spec),
+                outcome_passed=True,
+                process_ok=True,
+                provenance=Provenance(
+                    tier=int(Tier.GROUND_TRUTH),
+                    verifier_version=f"round-{round_index}",
+                    p_correct=1.0,
+                    depth_disagreement=None,
+                    attempts=1,
+                ),
+            )
+        )
+        promoted += 1
+    return promoted
+
+
 def merge_generation(parts: dict[str, dict]) -> dict:
     """One round's generation record from the per-family records: the counts add up,
     ``attempts`` is common, and the parts stay under ``by_family``."""
@@ -482,6 +632,10 @@ def merge_generation(parts: dict[str, dict]) -> dict:
     for key in ("policy_tokens", "rewarded_episodes", "promoted_explored"):
         if all(key in part for part in parts.values()):
             merged[key] = sum(part[key] for part in parts.values())
+    if all("solved_at" in part for part in parts.values()):
+        merged["solved_at"] = {
+            k: v for part in parts.values() for k, v in part["solved_at"].items()
+        }
     merged["attempts"] = next(iter(parts.values()))["attempts"]
     merged["by_family"] = parts
     return merged
@@ -589,6 +743,23 @@ def main(argv: list[str] | None = None) -> int:
         help="comma-separated sub-directories of WORK/corpus the replay draws from "
         "(a loop-core corpus: fineweb-edu,composition)",
     )
+    ap.add_argument(
+        "--propose-n",
+        type=int,
+        default=None,
+        help="closed-propose: proposals per round (default: --tasks-per-round)",
+    )
+    ap.add_argument(
+        "--propose-amorce",
+        type=int,
+        default=0,
+        help="perfect proposal episodes added to the amorce, for every arm (docs/33 §2)",
+    )
+    ap.add_argument(
+        "--hard-bench",
+        action="store_true",
+        help="also measure the out-of-distribution lookup bench of docs/33 every round",
+    )
     ap.add_argument("--bench-tasks", type=int, default=40)
     ap.add_argument("--bpb-docs", type=int, default=200)
     ap.add_argument("--seq-len", type=int, default=512)
@@ -624,6 +795,14 @@ def main(argv: list[str] | None = None) -> int:
     if len(set(families)) != len(families) or len(set(bench_families)) != len(bench_families):
         ap.error("a family is named once")
     registries = {f: registry_for(f) for f in families}
+    if args.arm == "closed-propose" and families != ["lookup"]:
+        ap.error("closed-propose proposes lookup tasks only (docs/33 §5): --family lookup")
+    training_families = list(families)
+    if args.arm == "closed-propose":
+        for f in families:
+            training_families.append(f"propose-{f}")
+            registries[f"propose-{f}"] = propose_registry(f)
+    propose_n = args.propose_n if args.propose_n is not None else args.tasks_per_round
     replay_names = tuple(n for n in args.replay_names.split(",") if n)
     if args.device == "cuda" and not torch.cuda.is_available():
         ap.error("--device cuda but no CUDA device is available")
@@ -679,6 +858,12 @@ def main(argv: list[str] | None = None) -> int:
             protocol["copy_explore"] = args.copy_explore
     if args.copy_boundaries != "off":
         protocol["copy_boundaries"] = args.copy_boundaries
+    if args.arm == "closed-propose":
+        protocol["propose"] = {"n": propose_n}
+    if args.propose_amorce:
+        protocol["propose_amorce"] = args.propose_amorce
+    if args.hard_bench:
+        protocol["hard_bench"] = True
     if args.device != "cpu":
         protocol["device"] = args.device
     if replay_names != ("prose", "code"):
@@ -699,8 +884,9 @@ def main(argv: list[str] | None = None) -> int:
     manager = CheckpointManager(args.out / "checkpoints")
 
     def promoted_entries() -> list[Entry]:
-        """The promoted episodes of the round families, in the order they were admitted."""
-        return [e for e in quarantine.promoted() if e.family in families]
+        """The promoted episodes of the round families (and, for closed-propose, the
+        promoted proposals), in the order they were admitted."""
+        return [e for e in quarantine.promoted() if e.family in training_families]
 
     def record(entry: dict) -> None:
         rounds.append(entry)
@@ -710,6 +896,11 @@ def main(argv: list[str] | None = None) -> int:
         if len(bench_families) > 1:
             line["by_family"] = entry["success_by_family"]
             line["canonical"] = entry["canonical_by_family"]
+        if "success_hard" in entry:
+            line["hard"] = entry["success_hard"]
+        if (entry.get("generation") or {}).get("proposals"):
+            p = entry["generation"]["proposals"]
+            line["proposals"] = {k: p[k] for k in ("valid", "solved_retry", "promoted")}
         print("ROUND", json.dumps(line), flush=True)
 
     if manager.has_checkpoint():
@@ -748,6 +939,16 @@ def main(argv: list[str] | None = None) -> int:
                     families=families,
                 )
                 seed_report["episodes"] = stats
+                if args.propose_amorce:
+                    extra_rows, _, proposal_stats = proposal_rows(
+                        tokenizer,
+                        args.propose_amorce,
+                        family=families[0],
+                        seed=SEED_TASK_BASE + args.seed,
+                        seq_len=args.seq_len,
+                    )
+                    rows = rows + extra_rows
+                    seed_report["proposals"] = proposal_stats
                 seed_report["train"] = train_rows(
                     model,
                     cfg,
@@ -775,6 +976,7 @@ def main(argv: list[str] | None = None) -> int:
             bpb_docs=args.bpb_docs,
             seq_len=args.seq_len,
             device=args.device,
+            hard=args.hard_bench,
         )
         manager.save({"model": model.state_dict(), "step": 0}, 0)
         record(
@@ -790,6 +992,7 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
 
+    proposed_signatures: set[str] = set()
     done = max(r["round"] for r in rounds)
     # A crash between a round's generation and its record leaves that round's entries in
     # the quarantine; regenerating the round would then train on them twice. Entries are
@@ -810,7 +1013,74 @@ def main(argv: list[str] | None = None) -> int:
             for f in families
         }
         n_tasks = sum(len(t) for t in tasks_by_family.values())
-        if args.arm in ("closed", "closed-clean"):
+        if args.arm == "closed-propose":
+            family = families[0]
+            amorce_specs = [
+                spec_from_task(t)
+                for t in task_families.make_tasks(
+                    args.propose_amorce, family=family, seed=SEED_TASK_BASE + args.seed
+                )
+            ]
+            proposals, counts = propose_round(
+                model,
+                tokenizer,
+                family,
+                propose_n,
+                seen=proposed_signatures,
+                amorce_specs=amorce_specs,
+                temperature=args.temperature,
+                round_index=r,
+            )
+            proposed_tasks = [t for _, t in proposals]
+            if proposed_tasks:
+                generation = generate_round(
+                    model,
+                    tokenizer,
+                    family,
+                    proposed_tasks,
+                    quarantine,
+                    attempts=args.attempts,
+                    temperature=args.temperature,
+                    round_index=r,
+                    copy_topk=args.copy_topk,
+                    explore_from_attempt=args.explore_from_attempt,
+                    copy_explore=args.copy_explore,
+                )
+            else:
+                generation = {
+                    "tasks": 0,
+                    "episodes": 0,
+                    "attempts": args.attempts,
+                    "solved": 0,
+                    "solved_at": {},
+                    "promoted_new": 0,
+                    "promoted_explored": 0,
+                    "tokens": 0,
+                    "seconds": 0.0,
+                }
+            # Verified but sloppy solutions are not taught (docs/31 amendment 7).
+            demoted = quarantine.discard(
+                lambda e, r=r, family=family: (
+                    e.family == family
+                    and entry_round(e) == r
+                    and e.promoted
+                    and not clean_trajectory(e.trajectory)
+                )
+            )
+            generation["demoted_sloppy"] = demoted
+            generation["promoted_new"] -= demoted
+            solved_at = generation["solved_at"]
+            generation["proposals"] = {
+                **counts,
+                "solved_first": sum(1 for v in solved_at.values() if v == 1),
+                "solved_retry": sum(1 for v in solved_at.values() if v >= 2),
+                "unsolved": len(proposed_tasks) - len(solved_at),
+                "promoted": promote_proposals(
+                    proposals, solved_at, quarantine, family=family, round_index=r
+                ),
+            }
+            generation["tokens"] += counts["tokens"]
+        elif args.arm in ("closed", "closed-clean"):
             generation = merge_generation(
                 {
                     f: generate_round(
@@ -921,6 +1191,7 @@ def main(argv: list[str] | None = None) -> int:
             bpb_docs=args.bpb_docs,
             seq_len=args.seq_len,
             device=args.device,
+            hard=args.hard_bench,
         )
         compute += generation["seconds"] + (train["seconds"] if train else 0.0)
         compute += klpo["seconds"] if klpo else 0.0

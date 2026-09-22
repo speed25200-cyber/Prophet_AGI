@@ -24,6 +24,12 @@ COLLAPSE_ALLOWANCE = 0.10
 H8_BPB_ALLOWANCE = 0.02
 H3_ALLOWANCE = 0.05
 H14_YIELD = 0.6
+H20_VALID = 0.5  # docs/33: share of proposals the rules accept, every round
+H21_EDGE = (0.2, 0.8)  # solve rate of valid proposals that counts as "at the edge"
+H21_ROUNDS = 3  # on at least this many rounds
+H22_ALLOWANCE = 0.05
+H24_BPB_ALLOWANCE = 0.02
+H25_NOVEL = 0.5
 SATURATED = 0.95  # a family starting here or above is judged on retention, not gain
 SATURATION_LOSS = 0.05
 
@@ -97,11 +103,29 @@ def family_success(round_record: dict, family: str) -> float:
     return sum(flags) / len(flags)
 
 
+def hard_outcomes(round_record: dict) -> list[bool]:
+    """Per-task outcomes of the out-of-distribution bench (docs/33), in a fixed order."""
+    flags: list[bool] = []
+    for bench in round_record.get("bench_hard") or []:
+        flags.extend(bool(v) for v in bench["verified"])
+    return flags
+
+
 def paired_gain(
-    first: dict, last: dict, *, family: str | None = None, draws: int = 10_000, seed: int = 0
+    first: dict,
+    last: dict,
+    *,
+    family: str | None = None,
+    draws: int = 10_000,
+    seed: int = 0,
+    hard: bool = False,
 ) -> dict:
-    """Success(last) - success(first) on the same tasks, with a paired bootstrap interval."""
-    a, b = outcomes(first, family), outcomes(last, family)
+    """Success(last) - success(first) on the same tasks, with a paired bootstrap interval;
+    ``hard`` takes the out-of-distribution bench instead of the bench."""
+    if hard:
+        a, b = hard_outcomes(first), hard_outcomes(last)
+    else:
+        a, b = outcomes(first, family), outcomes(last, family)
     if len(a) != len(b) or not a:
         raise ValueError("bench outcomes are not paired")
     n = len(a)
@@ -159,6 +183,31 @@ def summarise(runs: dict[str, dict[int, list[dict]]]) -> dict:
                 "compute_hours": last["compute_seconds"] / 3600,
                 "task_sets": task_sets(rounds),
             }
+            if hard_outcomes(first):
+                seeds[str(seed)]["hard"] = {
+                    "curve": [r["success_hard"] for r in rounds],
+                    "gain": paired_gain(first, last, seed=seed, hard=True),
+                    "task_sets": {
+                        "tasks": len(hard_outcomes(first)),
+                        "never": sum(
+                            not any(t)
+                            for t in zip(*[hard_outcomes(r) for r in rounds], strict=True)
+                        ),
+                    },
+                }
+            proposals = [(r.get("generation") or {}).get("proposals") for r in rounds[1:]]
+            if proposals and all(proposals):
+                seeds[str(seed)]["proposals"] = {
+                    "per_round": proposals,
+                    "valid_share": [p["valid"] / max(p["emitted"], 1) for p in proposals],
+                    "solve_rate": [
+                        (p["solved_first"] + p["solved_retry"]) / p["valid"] if p["valid"] else None
+                        for p in proposals
+                    ],
+                    "novel_share": sum(p["novel"] for p in proposals)
+                    / max(sum(p["valid"] for p in proposals), 1),
+                    "promoted": sum(p["promoted"] for p in proposals),
+                }
             measured = bench_families(first)
             if measured:
                 seeds[str(seed)]["by_family"] = {
@@ -246,7 +295,81 @@ def summarise(runs: dict[str, dict[int, list[dict]]]) -> dict:
             "pass": bool(no_collapse and gain_ok and drift_ok),
         }
     checks.update(h14_multi_family(arms))
+    checks.update(self_proposal_checks(arms))
     return {"arms": arms, "checks": checks}
+
+
+def self_proposal_checks(arms: dict[str, dict]) -> dict[str, dict]:
+    """docs/33 §3: H20 to H25, when a closed-propose arm ran against the closed-clean
+    witness with the out-of-distribution bench on both. Absent that, nothing."""
+    propose, clean = arms.get("closed-propose"), arms.get("closed-clean")
+    if not propose or not clean:
+        return {}
+    seeds = sorted(set(propose["seeds"]) & set(clean["seeds"]), key=int)
+    if not seeds or any("proposals" not in propose["seeds"][s] for s in seeds):
+        return {}
+    if any("hard" not in propose["seeds"][s] or "hard" not in clean["seeds"][s] for s in seeds):
+        return {}
+    checks: dict[str, dict] = {}
+    valid_ok = all(
+        all(v >= H20_VALID for v in propose["seeds"][s]["proposals"]["valid_share"]) for s in seeds
+    )
+    checks["H20_validity"] = {
+        "valid_share": {s: propose["seeds"][s]["proposals"]["valid_share"] for s in seeds},
+        "pass": valid_ok,
+    }
+    edge_rounds = {
+        s: sum(
+            1
+            for v in propose["seeds"][s]["proposals"]["solve_rate"]
+            if v is not None and H21_EDGE[0] <= v <= H21_EDGE[1]
+        )
+        for s in seeds
+    }
+    checks["H21_edge"] = {
+        "solve_rate": {s: propose["seeds"][s]["proposals"]["solve_rate"] for s in seeds},
+        "edge_rounds": edge_rounds,
+        "pass": all(n >= H21_ROUNDS for n in edge_rounds.values()),
+    }
+    transfer = all(
+        propose["seeds"][s]["gain"]["gain"] >= clean["seeds"][s]["gain"]["gain"] - H22_ALLOWANCE
+        and propose["seeds"][s]["gain"]["interval_95"][0] > 0
+        for s in seeds
+    )
+    checks["H22_transfer"] = {
+        "propose_gain": {s: propose["seeds"][s]["gain"]["gain"] for s in seeds},
+        "clean_gain": {s: clean["seeds"][s]["gain"]["gain"] for s in seeds},
+        "pass": transfer,
+    }
+    reach = all(
+        propose["seeds"][s]["hard"]["gain"]["gain"] > clean["seeds"][s]["hard"]["gain"]["gain"]
+        and propose["seeds"][s]["hard"]["gain"]["interval_95"][0] > 0
+        for s in seeds
+    )
+    checks["H23_reach"] = {
+        "propose_hard_gain": {s: propose["seeds"][s]["hard"]["gain"] for s in seeds},
+        "clean_hard_gain": {s: clean["seeds"][s]["hard"]["gain"]["gain"] for s in seeds},
+        "pass": reach,
+    }
+    deltas_known = propose["mean_bpb_delta"] is not None and clean["mean_bpb_delta"] is not None
+    checks["H24_forgetting"] = {
+        "propose_bpb_delta": propose["mean_bpb_delta"],
+        "clean_bpb_delta": clean["mean_bpb_delta"],
+        "pass": bool(
+            deltas_known
+            and propose["mean_bpb_delta"] <= clean["mean_bpb_delta"] + H24_BPB_ALLOWANCE
+        ),
+    }
+    novel_share = {s: propose["seeds"][s]["proposals"]["novel_share"] for s in seeds}
+    checks["H25_novelty"] = {
+        "novel_share": novel_share,
+        "pass": all(v >= H25_NOVEL for v in novel_share.values()),
+    }
+    checks["programme_3"] = {
+        "pass": bool(valid_ok and transfer and reach),
+        "rule": "H20, H22 and H23 (docs/33 §3)",
+    }
+    return checks
 
 
 def h14_multi_family(arms: dict[str, dict]) -> dict[str, dict]:
@@ -367,6 +490,26 @@ def markdown(summary: dict) -> str:
                 f"{t['reachable_bound']:.3f} |"
             )
     lines.append("")
+    if any("hard" in s for data in summary["arms"].values() for s in data["seeds"].values()):
+        lines += [
+            "| Bras | Graine | Banc hors distribution 0 → R | Gain [IC 95 %] | Jamais réussies | Propositions valides / tour | Résolues à la reprise | Promues |",
+            "|---|---:|---:|---:|---:|---|---:|---:|",
+        ]
+        for arm, data in summary["arms"].items():
+            for seed, s in data["seeds"].items():
+                if "hard" not in s:
+                    continue
+                h = s["hard"]
+                low, high = h["gain"]["interval_95"]
+                p = s.get("proposals")
+                valid = ", ".join(str(r["valid"]) for r in p["per_round"]) if p else "—"
+                retry = sum(r["solved_retry"] for r in p["per_round"]) if p else "—"
+                lines.append(
+                    f"| {arm} | {seed} | {h['curve'][0]:.3f} → {h['curve'][-1]:.3f} | "
+                    f"{h['gain']['gain']:+.3f} [{low:+.3f}, {high:+.3f}] | {h['task_sets']['never']} | "
+                    f"{valid} | {retry} | {p['promoted'] if p else '—'} |"
+                )
+        lines.append("")
     if any("by_family" in s for data in summary["arms"].values() for s in data["seeds"].values()):
         lines += [
             "| Bras | Graine | Famille | Succès 0 → R | Gain [IC 95 %] | Pire tour |",

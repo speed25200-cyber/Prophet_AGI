@@ -562,3 +562,150 @@ def test_cuda_is_refused_when_absent(work, tmp_path):
         pytest.skip("a CUDA device is present; the refusal cannot be exercised")
     with pytest.raises(SystemExit):
         run(work, tmp_path / "cuda", "frozen", rounds=0, device="cuda")
+
+
+def test_proposal_rows_render_perfect_proposals_for_the_amorce(work):
+    from prophet.agent.propose import validate
+    from scripts.closed_loop import proposal_rows
+
+    tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
+    # The bare byte-level test tokenizer needs ~580 ids for a proposal row.
+    rows, specs, stats = proposal_rows(tokenizer, 3, family="lookup", seed=5, seq_len=768)
+    assert stats["rows"] == 3 and stats["truncated"] == 0 and all(len(r) == 768 for r in rows)
+    assert all(validate("lookup", s.as_args()) == s for s in specs)
+    text = tokenizer.decode(rows[0], skip_special=False)
+    assert "propose_lookup" in text and '"ask":"' in text
+
+
+def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkeypatch):
+    import types
+
+    from prophet.agent import loop as loop_module
+    from prophet.agent.actions import Action
+    from scripts.closed_loop import propose_round
+
+    good = {
+        "file": "orchid.json",
+        "keys": "city,year,code",
+        "values": "Lyon,1939,meadow",
+        "ask": "code",
+    }
+    scripted = iter(
+        [
+            Action("propose_lookup", good),
+            Action("propose_lookup", good),  # the same task again: a duplicate
+            Action("propose_lookup", {**good, "ask": "owner"}),  # refused by the rules
+            None,  # no call at all: malformed
+            Action(
+                "propose_lookup",
+                {**good, "keys": "city,owner", "values": "Lyon,ana", "ask": "owner"},
+            ),
+        ]
+    )
+
+    def fake_run(self, goal, **kw):
+        action = next(scripted)
+        step = types.SimpleNamespace(action=action, gated="")
+        return types.SimpleNamespace(steps=[step] if action is not None else [], tokens=7)
+
+    monkeypatch.setattr(loop_module.AgentLoop, "run", fake_run)
+    tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
+    model = ProphetModel(agent_tiny_config()).eval()
+    seen = set()
+    proposals, counts = propose_round(
+        model, tokenizer, "lookup", 5, seen=seen, amorce_specs=[], temperature=0.7, round_index=1
+    )
+    assert counts["valid"] == 2 and counts["duplicate"] == 1
+    assert counts["invalid"] == 1 and counts["malformed"] == 1 and counts["tokens"] == 35
+    assert counts["novel"] == 2 and counts["n_fields"] == {"3": 1, "2": 1}
+    assert [t.answer for _, t in proposals] == ["meadow", "ana"]
+    assert all(t.family == "lookup" and t.extra["proposed"] for _, t in proposals)
+    assert len(seen) == 2
+
+
+def test_proposals_are_promoted_only_when_solved_on_a_retry(work, tmp_path):
+    from prophet.agent.propose import task_from_spec, validate
+    from prophet.agent.quarantine import Quarantine as Q
+    from scripts.closed_loop import promote_proposals
+
+    specs = [
+        validate("lookup", {"file": f"f{i}.json", "keys": "a,b", "values": "x,y", "ask": "b"})
+        for i in range(3)
+    ]
+    proposals = [(s, task_from_spec(s, name=f"p{i}")) for i, s in enumerate(specs)]
+    q = Q(tmp_path / "q.json")
+    promoted = promote_proposals(
+        proposals, {"p0": 1, "p1": 2, "p2": 3}, q, family="lookup", round_index=4
+    )
+    assert promoted == 2
+    entries = q.promoted("propose-lookup")
+    assert len(entries) == 2 and all(e.promoted for e in entries)
+    assert entries[0].trajectory[0]["action"]["name"] == "propose_lookup"
+    assert entries[0].provenance.verifier_version == "round-4"
+    assert q.promoted("lookup") == []
+
+
+def test_closed_propose_arm_runs_with_a_proposal_amorce_and_the_hard_bench(work, tmp_path):
+    out = tmp_path / "propose"
+    argv = [
+        "--work",
+        str(work),
+        "--out",
+        str(out),
+        "--arm",
+        "closed-propose",
+        "--family",
+        "lookup",
+        "--config",
+        str(work / "tiny.json"),
+        "--seq-len",
+        str(SEQ_LEN),
+        "--batch-size",
+        "2",
+        "--rounds",
+        "1",
+        "--tasks-per-round",
+        "2",
+        "--propose-n",
+        "2",
+        "--propose-amorce",
+        "2",
+        "--hard-bench",
+        "--attempts",
+        "2",
+        "--steps-per-round",
+        "1",
+        "--seed-episodes",
+        "2",
+        "--seed-steps",
+        "1",
+        "--bench-tasks",
+        "2",
+        "--bpb-docs",
+        "2",
+    ]
+    assert main(argv) == 0
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["propose"] == {"n": 2} and protocol["propose_amorce"] == 2
+    assert protocol["hard_bench"] is True
+    seed = json.loads((out / "seed" / "seed.json").read_text())
+    assert seed["episodes"]["rows"] == 2 and seed["proposals"]["rows"] == 2
+    rounds = [json.loads(line) for line in (out / "rounds.jsonl").read_text().splitlines()]
+    for record in rounds:
+        assert [b["family"] for b in record["bench_hard"]] == ["lookup", "lookup"]
+        assert [b["seed"] for b in record["bench_hard"]] == [17, 19]
+        assert 0.0 <= record["success_hard"] <= 1.0
+    proposals = rounds[1]["generation"]["proposals"]
+    assert proposals["emitted"] == 2
+    assert (
+        proposals["valid"] + proposals["invalid"] + proposals["malformed"] + proposals["duplicate"]
+        == 2
+    )
+    assert (
+        proposals["solved_first"] + proposals["solved_retry"] + proposals["unsolved"]
+        == proposals["valid"]
+    )
+    assert proposals["promoted"] <= proposals["solved_retry"]
+    # A closed-propose arm refuses any other family.
+    with pytest.raises(SystemExit):
+        main([a if a != "lookup" else "calc" for a in argv])

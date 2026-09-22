@@ -408,3 +408,110 @@ def test_h14_judges_a_saturated_family_on_retention(tmp_path):
         )
         check = summarise(load_runs(root))["checks"]["H14_multi_family"]
         assert check["mixed_learns_both_every_seed"] is expected, files_final
+
+
+def proposal_record(round_index, verified, hard, *, proposals=None, bpb=2.0, compute=0):
+    rec = record(round_index, verified, bpb=bpb, compute=compute, promoted=3 * round_index)
+    half = len(hard) // 2
+    rec["bench_hard"] = [
+        {"family": "lookup", "seed": 17, "tasks": half, "verified": hard[:half]},
+        {"family": "lookup", "seed": 19, "tasks": len(hard) - half, "verified": hard[half:]},
+    ]
+    rec["success_hard"] = sum(hard) / len(hard)
+    if proposals is not None:
+        rec["generation"]["proposals"] = proposals
+    return rec
+
+
+def proposals(valid, solved_first, solved_retry, *, emitted=10, novel=None):
+    return {
+        "emitted": emitted,
+        "malformed": emitted - valid - 1,
+        "invalid": 1,
+        "duplicate": 0,
+        "valid": valid,
+        "novel": valid if novel is None else novel,
+        "n_fields": {"3": valid},
+        "tokens": 100,
+        "solved_first": solved_first,
+        "solved_retry": solved_retry,
+        "unsolved": valid - solved_first - solved_retry,
+        "promoted": solved_retry,
+    }
+
+
+def self_proposal_layout(root, *, propose_hard_final=14, valid=8, retry=3):
+    """closed-propose against closed-clean, both with the out-of-distribution bench."""
+    base_bench, base_hard = flags(4), flags(2, n=20)
+    write(
+        root,
+        "closed-propose",
+        0,
+        [
+            proposal_record(0, base_bench, base_hard),
+            proposal_record(
+                1, flags(6), flags(8, n=20), proposals=proposals(valid, 3, retry), compute=600
+            ),
+            proposal_record(
+                2,
+                flags(8),
+                flags(propose_hard_final, n=20),
+                proposals=proposals(valid, 4, retry),
+                compute=1200,
+            ),
+            proposal_record(
+                3,
+                flags(9),
+                flags(propose_hard_final, n=20),
+                proposals=proposals(valid, 5, retry),
+                compute=1800,
+            ),
+        ],
+    )
+    write(
+        root,
+        "closed-clean",
+        0,
+        [
+            proposal_record(0, base_bench, base_hard),
+            proposal_record(1, flags(7), flags(3, n=20), compute=500),
+            proposal_record(2, flags(8), flags(4, n=20), compute=1000),
+            proposal_record(3, flags(9), flags(4, n=20), compute=1500),
+        ],
+    )
+
+
+def test_programme_3_checks_pass_when_proposals_are_valid_transfer_and_reach(tmp_path):
+    self_proposal_layout(tmp_path)
+    summary = summarise(load_runs(tmp_path))
+    seed = summary["arms"]["closed-propose"]["seeds"]["0"]
+    assert seed["hard"]["curve"] == [0.1, 0.4, 0.7, 0.7]
+    assert seed["hard"]["gain"]["gain"] == pytest.approx(0.6)
+    assert seed["proposals"]["valid_share"] == [0.8, 0.8, 0.8]
+    assert seed["proposals"]["solve_rate"] == [pytest.approx(0.75), pytest.approx(0.875), 1.0]
+    assert seed["proposals"]["promoted"] == 9
+    checks = summary["checks"]
+    assert checks["H20_validity"]["pass"] is True
+    assert checks["H21_edge"]["edge_rounds"] == {"0": 1} and checks["H21_edge"]["pass"] is False
+    assert checks["H22_transfer"]["pass"] is True
+    assert checks["H23_reach"]["pass"] is True
+    assert checks["H24_forgetting"]["pass"] is True
+    assert checks["H25_novelty"]["pass"] is True
+    assert checks["programme_3"]["pass"] is True
+    text = markdown(summary)
+    assert "Banc hors distribution" in text and "| closed-propose | 0 | 0.100 → 0.700 |" in text
+
+
+def test_programme_3_fails_without_reach_or_without_valid_proposals(tmp_path):
+    self_proposal_layout(tmp_path / "noreach", propose_hard_final=5)
+    checks = summarise(load_runs(tmp_path / "noreach"))["checks"]
+    assert checks["H23_reach"]["pass"] is False and checks["programme_3"]["pass"] is False
+    self_proposal_layout(tmp_path / "invalid", valid=3, retry=1)
+    checks = summarise(load_runs(tmp_path / "invalid"))["checks"]
+    assert checks["H20_validity"]["pass"] is False and checks["programme_3"]["pass"] is False
+    # Without the closed-clean witness, nothing is reported.
+    self_proposal_layout(tmp_path / "alone")
+    import shutil
+
+    shutil.rmtree(tmp_path / "alone" / "closed-clean-seed0")
+    assert "H20_validity" not in summarise(load_runs(tmp_path / "alone"))["checks"]
