@@ -780,3 +780,46 @@ run — deux bancs de 30 tâches, une génération stochastique. On rapporte l'�
 tel quel et sans cause établie ; il dit surtout que sur `files` graine 1 la boucle
 fermée peut rejoindre l'oracle (1,000 dès le tour 3, aucune tâche jamais réussie), et
 que la mesure du rendement à ±0,1 demande plus de graines que ce processeur n'en donne.
+
+## 18. Pilote v13 : n'explorer que les débuts de mots
+
+Amendement 19 : v12 plus `--copy-boundaries explore` (le tirage exploratoire ne considère
+que les positions qui ouvrent un mot ou une observation) ; `files`, graines 0 et 1, mêmes
+amorces, bras `closed-clean` seul.
+
+| Graine | Bras | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | Explorés | Jamais réussies | Jetons |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | v13 | 0,850 | 0,817 | 0,867 | 0,800 | 0,850 | 0,900 | +0,050 [−0,017, +0,117] | +0,069 | **12** | 5 | 55,9 k |
+| 0 | v12 | 0,850 | 0,833 | 0,867 | 0,883 | 0,867 | 0,867 | +0,017 [+0,000, +0,050] | +0,073 | 8 | 6 | 51,6 k |
+| 0 | v7 | 0,850 | 0,800 | 0,850 | 0,817 | 0,883 | 0,933 | +0,083 [+0,017, +0,150] | +0,070 | — | 4 | 49,9 k |
+| 1 | v13 | 0,783 | 0,900 | 0,967 | 1,000 | 1,000 | 1,000 | +0,217 [+0,117, +0,317] | +0,076 | 2 | 0 | 48,0 k |
+| 1 | v12 | 0,783 | 0,783 | 0,983 | 1,000 | 1,000 | 1,000 | +0,217 [+0,117, +0,317] | +0,073 | 3 | 0 | 51,7 k |
+| 1 | v7 | 0,783 | 0,833 | 0,900 | 0,883 | 0,900 | 0,900 | +0,117 [+0,033, +0,217] | +0,070 | — | 5 | 49,3 k |
+
+**Verdicts v13 (H16 et H17).**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H16 (i)** explorés ≥ 10 par graine | **échoue** sur la graine 1 | 12 (graine 0, passe), 2 (graine 1) |
+| **H16 (ii)** gain ≥ v7, intervalle excluant zéro | **échoue** sur la graine 0 | +0,050 [−0,017, +0,117] contre +0,083 ; graine 1 : +0,217 contre +0,117, passe |
+| **H16 (iii)** rendement moyen ≥ 0,8 | passe, à la limite | 0,80 (+0,133 / +0,167) |
+| **H17** `beacon_0` et `beacon_2` réussies au tour 5 (banc 7) | **échoue** | `beacon_0` oui, `beacon_2` non (`acon_2.txt`) |
+| **H16**, **H17** | **échouent** | |
+
+**Diagnostic, graine 0, checkpoint final, banc 7.** Trois échecs : `arnet_2.txt` pour
+`garnet_2.txt`, `acon_2.txt` pour `beacon_2.txt`, une note vide. Sur les deux premiers, le
+bon départ est maintenant au **rang 2 et 3** du pointeur (p = 0,008 et 0,025 ; rang 1 et 2
+parmi les débuts de mots), contre 11 et 15 en v12 : les douze épisodes contradictoires
+l'ont fait remonter sans encore le faire passer devant `arnet_` (0,992) et `acon_` (0,836).
+Le mécanisme atteint le mode (e) ; cinq tours ne suffisent pas à le retourner sur cette
+graine. Le premier candidat *hors* observation parmi les débuts de mots est le mot du but
+(`saff`, 0,134) : restreindre l'argmax lui-même aux frontières (`always`) donnerait la
+mauvaise réponse ici ; ce n'est pas un a priori à adopter sans la restriction aux
+observations, et il n'est pas testé.
+
+**La graine 1 se répète.** v12 et v13, deux runs à une variable près, atteignent tous deux
+1,000 au tour 3 avec 2 et 3 épisodes explorés — v7, à deux tentatives, plafonnait à 0,900.
+L'exploration n'explique pas cet écart ; ce qui distingue ces deux runs de v7 est la
+**troisième tentative** : 30 épisodes promus par tour dès le tour 3 (tout le tour résolu)
+contre 25–27. Une hypothèse à une variable, pré-enregistrée à l'amendement 21 : la
+troisième tentative seule, sans exploration.

@@ -594,3 +594,23 @@ v13. Ce que ce pilote peut dire : si `lookup` progresse autant dans le bassin mi
 seul (interférence), si `files` tient à 1,0 quand la boucle tourne sur `lookup` seul (oubli
 par omission, mesuré cette fois sur une famille que l'amorce a bien apprise), et le
 rendement du bassin mixte contre l'oracle mixte.
+
+## Amendement 21 — 2026-09-22, après v13, avant tout run v14 : la troisième tentative seule
+
+**Pourquoi.** Sur `files` graine 1, v12 et v13 (trois tentatives, exploration ciblée) font
++0,217 et atteignent 1,000 au tour 3, avec 3 et 2 épisodes explorés seulement ; v7 (deux
+tentatives, sans exploration) faisait +0,117 et plafonnait à 0,900. Deux runs concordants
+écartent le bruit comme seule explication ; l'exploration, à 2 % des promus, n'en est pas
+une non plus. Reste la troisième tentative : plus de tâches résolues par tour, donc plus de
+lignes promues, à jetons presque égaux (+5 %).
+
+**Pilote v14, une seule variable par rapport à v7.** `files`, graines 0 et 1, mêmes amorces,
+recette de référence, `--attempts 3`, **sans** exploration ; bras `closed-clean` seul.
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H18** la reprise supplémentaire suffit | Trois tentatives sans exploration reproduisent v12 / v13 sur la graine 1. | graine 1 : gain ≥ +0,200 avec intervalle excluant zéro, et 1,000 atteint au plus tard au tour 4 ; graine 0 : rapportée sans critère. |
+
+Si H18 passe, le budget de reprise est un levier de la recette de référence, moins cher
+que l'exploration ; s'il échoue, les deux ou trois épisodes explorés de v12 / v13 pèsent
+plus que leur nombre. Lancé après v10c.
