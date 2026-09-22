@@ -218,3 +218,22 @@ proposition : les valeurs sont générées, jamais épissées (test). Les mots b
 relèvent de l'entraînement du proposeur, que l'échelle de l'amendement 1 (second temps à
 100 pas) mesure ; s'ils persistent à 100 pas, le résultat est « le proposeur ne démarre pas
 à 7 M », rapporté avec les taux. L'échelle repart au premier barreau avec cette correction.
+
+## Amendement 6 — 2026-09-22, échelle en cours, avant tout tour entraîné : les clés dans l'ordre du schéma, et un barreau de plus
+
+**Ce qui s'est passé.** Second temps à 100 pas : solveur à **0,733** (canonique 0,600), banc
+hors distribution 0,433 — les cent pas de plus ont aussi profité au solveur. Proposeur :
+30 propositions, **1** malformée, 29 invalides, 0 valide ; sous les amendements 4 et 5, les
+appels sont bien formés mais le contenu est mal *placé* : la liste `city,year,code` dans
+`ask`, un mot seul dans `keys`. Le modèle émet les clés dans un ordre libre (`file, ask,
+keys, values` ou `file, values, ask, keys`), que la grammaire accepte, alors que le rendu
+les écrit toujours dans l'ordre du schéma (`file, keys, values, ask`) : même écart que la
+grammaire tolérante aux blancs de docs/32 (mode a), qui avait coûté 0,233 contre 0,550.
+
+**Corrections, pré-enregistrées.** (1) `ActionGrammar(ordered=True)` : les clés d'un appel
+doivent suivre l'ordre du schéma, y compris en préfixe ; `AgentConfig.ordered_keys`, activé
+pour les épisodes de proposition seulement (test). (2) L'échelle de calibration de
+l'amendement 1 reçoit un barreau de plus, après « second temps 100 pas » : **100
+propositions, 200 pas**, puisque le passage de 50 à 100 pas a réduit les malformées de 30
+à 1 et relevé le solveur. Ordre des barreaux : 50 / 50, 100 / 50, 100 / 25, 200 / 100. La
+règle de calibration est inchangée.

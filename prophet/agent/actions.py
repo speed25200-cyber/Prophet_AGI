@@ -237,11 +237,17 @@ class ActionGrammar:
     wasted token, not a malformed call.
     """
 
-    def __init__(self, registry: ToolRegistry, *, compact: bool = True) -> None:
+    def __init__(self, registry: ToolRegistry, *, compact: bool = True,
+                 ordered: bool = False) -> None:
         self.registry = registry
         self.names = registry.names
         self._all_names = tuple(registry.names)
         self.compact = compact
+        self.ordered = ordered
+        """Require the argument keys in the schema's order (docs/33 amendment 6). The
+        renderer writes them in that order, so a model trained on rendered episodes has
+        never seen another; leaving the order free lets a small model put a list where
+        a word belongs."""
         """Reject whitespace outside strings. Calls are rendered compact
         (``separators=(",", ":")``), so a model trained on rendered episodes has never
         seen a space in a call; admitting one at decode let a drifting model open the
@@ -405,11 +411,20 @@ class ActionGrammar:
             if not key.done:
                 # A partial key must open a parameter not given yet: a prefix of a key
                 # already seen is a dead end the decoder would otherwise walk into.
-                if not any(k.startswith(key.value) and k not in seen for k in props):
+                candidates = [k for k in props if k.startswith(key.value) and k not in seen]
+                if self.ordered:
+                    order = list(props)
+                    last = max((order.index(k) for k in seen), default=-1)
+                    candidates = [k for k in candidates if order.index(k) > last]
+                if not candidates:
                     raise _Dead(f"no unseen parameter of {schema.name} starts with {key.value!r}")
                 return seen, i, False, None, False
             if key.value not in props:
                 raise _Dead(f"{schema.name} has no parameter {key.value!r}")
+            if self.ordered:
+                order = list(props)
+                if any(order.index(k) > order.index(key.value) for k in seen):
+                    raise _Dead(f"{schema.name}: parameter {key.value!r} out of schema order")
             if key.value in seen:
                 raise _Dead(f"duplicate parameter {key.value!r}")
             i = self._ws(s, i)

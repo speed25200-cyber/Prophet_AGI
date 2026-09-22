@@ -134,6 +134,9 @@ class AgentConfig:
     """Let the copy heads splice a span of the context into a value. Off for episodes
     whose values must be *invented* rather than read (proposals, docs/33 amendment 5):
     the gate otherwise copies fragments of the pinned prompt."""
+    ordered_keys: bool = False
+    """Require a call's argument keys in the schema's order, as the renderer writes
+    them (docs/33 amendment 6)."""
     record_sampling: bool = False
     """Record, for every token the model draws, the sampler's log-probability as used
     (grammar-masked, tempered) and ``mc_draws`` auxiliary draws with theirs, in
@@ -254,7 +257,7 @@ class AgentLoop:
         self.verifier_tool = verifier_tool
         """An executable check for the task (tests, a checklist). When present, ``done``
         is accepted only if it passes; when absent the confidence head decides."""
-        self.grammar = ActionGrammar(tools)
+        self.grammar = ActionGrammar(tools, ordered=cfg.ordered_keys)
         self.decoder = ConstrainedDecoder(
             self.grammar,
             lambda tid: self.tok.decode([tid]),

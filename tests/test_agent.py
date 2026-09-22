@@ -929,3 +929,38 @@ def test_copy_can_be_switched_off_for_episodes_that_invent_their_values(monkeypa
     off = AgentLoop(None, tok, reg, AgentConfig(allow_copy=False))
     off._ids = list(range(40))
     assert off._try_copy(prefix, out) is None and calls == [1]
+
+
+def test_ordered_grammar_requires_the_keys_in_schema_order():
+    """docs/33 amendment 6: the renderer writes argument keys in the schema's order; an
+    ordered grammar refuses any other, also as a partial key."""
+    reg = ToolRegistry()
+    reg.add(
+        ToolSchema(
+            "propose",
+            "P",
+            {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string"},
+                    "keys": {"type": "string"},
+                    "ask": {"type": "string"},
+                },
+            },
+        )
+    )
+    free, ordered = ActionGrammar(reg, compact=True), ActionGrammar(reg, compact=True, ordered=True)
+    in_order = '{"name":"propose","args":{"file":"a.json","keys":"x","ask":"x"}}'
+    out_of_order = '{"name":"propose","args":{"ask":"x","file":"a.json","keys":"x"}}'
+    assert free.check(in_order).complete and free.check(out_of_order).complete
+    assert ordered.check(in_order).complete
+    dead = ordered.check(out_of_order)
+    assert not dead.viable and "out of schema order" in dead.reason
+    # A partial key that could only be an earlier parameter is dead too; a later one lives.
+    assert not ordered.check('{"name":"propose","args":{"keys":"x","f').viable
+    assert ordered.check('{"name":"propose","args":{"keys":"x","a').viable
+    assert ordered.check('{"name":"propose","args":{"file":"a.json","k').viable
+    # The loop builds its grammar from the option.
+    tok = ProphetTokenizer(merges=[])
+    assert AgentLoop(None, tok, reg, AgentConfig(ordered_keys=True)).grammar.ordered
+    assert not AgentLoop(None, tok, reg, AgentConfig()).grammar.ordered
