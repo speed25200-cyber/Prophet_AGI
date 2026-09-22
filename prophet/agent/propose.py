@@ -7,9 +7,12 @@ judgement, and derives the task -- files, goal in the generator's own template, 
 so that the usual executable verifier applies. The model never supplies an answer: the
 rules compute it from the specification, the way the rules of a game score a position.
 
-One family for now, ``lookup``: ``{"file": "orchid.json", "keys": "city,year,code",
-"values": "Lyon,1939,meadow", "ask": "code"}``. Everything is a string so the action
-grammar and a small model see flat JSON.
+One family for now, ``lookup``, in two formats. ``lists`` (the default):
+``{"file": "orchid.json", "keys": "city,year,code", "values": "Lyon,1939,meadow",
+"ask": "code"}``, everything a string so the action grammar sees flat JSON. ``object``
+(docs/33 amendment 9): ``{"file": "orchid.json", "fields": {"city": "Lyon", "year":
+"1939", "code": "meadow"}, "ask": "code"}`` -- the fields in the very form the solver
+reads in the file, with no two lists to align by position.
 """
 
 from __future__ import annotations
@@ -25,7 +28,9 @@ from prophet.agent.actions import ToolRegistry, ToolSchema
 from prophet.agent.tasks import _WORDS, Task
 
 __all__ = [
+    "FORMATS",
     "Spec",
+    "propose_goal",
     "PROPOSE_GOAL",
     "propose_schema",
     "propose_registry",
@@ -38,6 +43,9 @@ __all__ = [
 ]
 
 FAMILIES = ("lookup",)
+FORMATS = ("lists", "object")
+"""How a proposal writes its fields: two comma-separated lists aligned by position, or
+one JSON object shaped like the file the task will hold (docs/33 amendment 9)."""
 MIN_FIELDS, MAX_FIELDS = 2, 6
 TOKEN = re.compile(r"^[A-Za-z0-9]{1,12}$")
 FILENAME = re.compile(r"^[A-Za-z0-9_]{1,12}\.json$")
@@ -53,6 +61,23 @@ PROPOSE_GOAL = {
         "(comma-separated), and the key to ask for."
     ),
 }
+PROPOSE_GOAL_OBJECT = {
+    "lookup": (
+        "Propose a new lookup task: a JSON file name, its fields as an object of keys and "
+        "values, and the key to ask for."
+    ),
+}
+
+
+def propose_goal(family: str, fmt: str = "lists") -> str:
+    """The goal of a proposal episode in format ``fmt``."""
+    _check_format(fmt)
+    return (PROPOSE_GOAL_OBJECT if fmt == "object" else PROPOSE_GOAL)[family]
+
+
+def _check_format(fmt: str) -> None:
+    if fmt not in FORMATS:
+        raise ValueError(f"proposal format {fmt!r} not in {FORMATS}")
 
 
 @dataclass(frozen=True)
@@ -65,7 +90,14 @@ class Spec:
     values: tuple[str, ...]
     ask: str
 
-    def as_args(self) -> dict[str, str]:
+    def as_args(self, fmt: str = "lists") -> dict[str, Any]:
+        _check_format(fmt)
+        if fmt == "object":
+            return {
+                "file": self.file,
+                "fields": dict(zip(self.keys, self.values, strict=True)),
+                "ask": self.ask,
+            }
         return {
             "file": self.file,
             "keys": ",".join(self.keys),
@@ -78,9 +110,24 @@ class Spec:
         return json.dumps([self.family, self.file, self.keys, self.values, self.ask])
 
 
-def propose_schema(family: str) -> ToolSchema:
+def propose_schema(family: str, fmt: str = "lists") -> ToolSchema:
     if family not in FAMILIES:
         raise KeyError(f"no proposal grammar for family {family!r}")
+    _check_format(fmt)
+    if fmt == "object":
+        return ToolSchema(
+            f"propose_{family}",
+            "Propose a lookup task: a file name, its fields as an object, the key to ask",
+            {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string"},
+                    "fields": {"type": "object"},
+                    "ask": {"type": "string"},
+                },
+                "required": ["file", "fields", "ask"],
+            },
+        )
     return ToolSchema(
         f"propose_{family}",
         "Propose a lookup task: a file name, comma-separated keys and values, the key to ask",
@@ -97,11 +144,11 @@ def propose_schema(family: str) -> ToolSchema:
     )
 
 
-def propose_registry(family: str) -> ToolRegistry:
+def propose_registry(family: str, fmt: str = "lists") -> ToolRegistry:
     """The one-tool registry a proposal episode runs with; the tool just acknowledges."""
     reg = ToolRegistry()
-    reg.add(propose_schema(family))
-    reg.bind(f"propose_{family}", lambda file, keys, values, ask: "ok")
+    reg.add(propose_schema(family, fmt))
+    reg.bind(f"propose_{family}", lambda **_: "ok")
     return reg
 
 
@@ -112,14 +159,26 @@ def validate(family: str, args: Any) -> Spec | str:
         return f"no proposal grammar for family {family!r}"
     if not isinstance(args, dict):
         return "arguments are not an object"
-    for key in ("file", "keys", "values", "ask"):
-        if not isinstance(args.get(key), str):
-            return f"missing or non-string {key}"
+    if "fields" in args:
+        # The object format (amendment 9): the same rules, read off the object.
+        for key in ("file", "ask"):
+            if not isinstance(args.get(key), str):
+                return f"missing or non-string {key}"
+        if not isinstance(args["fields"], dict):
+            return "fields is not an object"
+        if not all(isinstance(v, str) for v in args["fields"].values()):
+            return "a field value is not a string"
+        keys = tuple(k.strip() for k in args["fields"])
+        values = tuple(v.strip() for v in args["fields"].values())
+    else:
+        for key in ("file", "keys", "values", "ask"):
+            if not isinstance(args.get(key), str):
+                return f"missing or non-string {key}"
+        keys = tuple(k.strip() for k in args["keys"].split(","))
+        values = tuple(v.strip() for v in args["values"].split(","))
     file = args["file"].strip()
     if not FILENAME.match(file):
         return "file name must be alphanumeric and end in .json"
-    keys = tuple(k.strip() for k in args["keys"].split(","))
-    values = tuple(v.strip() for v in args["values"].split(","))
     if len(keys) != len(values):
         return "keys and values differ in number"
     if not MIN_FIELDS <= len(keys) <= MAX_FIELDS:
@@ -162,14 +221,14 @@ def spec_from_task(task: Task) -> Spec:
     )
 
 
-def proposal_trajectory(spec: Spec) -> list[dict[str, Any]]:
-    """The one-step episode that proposes ``spec``, in the shape the renderer and the
-    quarantine take."""
+def proposal_trajectory(spec: Spec, fmt: str = "lists") -> list[dict[str, Any]]:
+    """The one-step episode that proposes ``spec`` in format ``fmt``, in the shape the
+    renderer and the quarantine take."""
     return [
         {
             "step": 0,
             "think": "",
-            "action": {"name": f"propose_{spec.family}", "args": spec.as_args()},
+            "action": {"name": f"propose_{spec.family}", "args": spec.as_args(fmt)},
             "p_correct": None,
             "tier": None,
             "observation": "ok",

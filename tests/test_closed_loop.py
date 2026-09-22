@@ -655,6 +655,54 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
     assert set(scopes) == {("values", True, True, 5, False, True)}  # docs/33 amendments 2 to 6
 
 
+def test_the_object_format_reaches_the_amorce_the_probe_and_the_protocol(work, monkeypatch):
+    """docs/33 amendment 9: --propose-format object is read by the amorce rows, the
+    proposal episodes and the promotion, and is recorded in protocol.json only when it is
+    not the default."""
+    import types
+
+    from prophet.agent import loop as loop_module
+    from prophet.agent.actions import Action
+    from prophet.agent.propose import propose_goal
+    from scripts.closed_loop import proposal_rows, propose_round
+
+    tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
+    rows, specs, stats = proposal_rows(
+        tokenizer, 2, family="lookup", seed=3, seq_len=2048, fmt="object"
+    )
+    text = tokenizer.decode(rows[0], skip_special=False)
+    assert '"fields":{"' in text and '"keys":' not in text and stats["truncated"] == 0
+    lists_text = tokenizer.decode(
+        proposal_rows(tokenizer, 2, family="lookup", seed=3, seq_len=2048)[0][0],
+        skip_special=False,
+    )
+    assert '"keys":"' in lists_text and '"fields":' not in lists_text
+
+    seen_params = []
+
+    def fake_run(self, goal, **kw):
+        seen_params.append((goal, tuple(self.tools.schema("propose_lookup").properties)))
+        args = {"file": "orchid.json", "fields": {"city": "Lyon", "code": "ash"}, "ask": "code"}
+        step = types.SimpleNamespace(action=Action("propose_lookup", args), gated="")
+        return types.SimpleNamespace(steps=[step], tokens=5)
+
+    monkeypatch.setattr(loop_module.AgentLoop, "run", fake_run)
+    model = ProphetModel(agent_tiny_config()).eval()
+    proposals, counts = propose_round(
+        model,
+        tokenizer,
+        "lookup",
+        1,
+        seen=set(),
+        amorce_specs=specs,
+        temperature=0.7,
+        round_index=0,
+        fmt="object",
+    )
+    assert counts["valid"] == 1 and proposals[0][1].answer == "ash"
+    assert seen_params == [(propose_goal("lookup", "object"), ("file", "fields", "ask"))]
+
+
 def test_proposals_are_promoted_only_when_solved_on_a_retry(work, tmp_path):
     from prophet.agent.propose import task_from_spec, validate
     from prophet.agent.quarantine import Quarantine as Q
@@ -798,6 +846,7 @@ def test_two_stage_amorce_is_recorded_once_and_reused_and_the_probe_is_recorded(
     )
     protocol = json.loads((out / "protocol.json").read_text())
     assert protocol["propose_amorce_steps"] == 2
+    assert "propose_format" not in protocol  # the default leaves runs in progress resumable
     rounds = [json.loads(line) for line in (out / "rounds.jsonl").read_text().splitlines()]
     probe = rounds[0]["proposal_probe"]
     assert probe["emitted"] == 2 and "valid" in probe and "malformed" in probe
@@ -811,3 +860,22 @@ def test_two_stage_amorce_is_recorded_once_and_reused_and_the_probe_is_recorded(
     rounds2 = [json.loads(line) for line in (out2 / "rounds.jsonl").read_text().splitlines()]
     assert rounds2[0]["proposal_probe"] is None
     assert rounds2[0]["seed"]["proposal_stage"]["train"]["steps"] == 2
+    # An arm in the object format refuses the lists-format amorce of this seed directory,
+    # and records its own format when it trains one (docs/33 amendment 9).
+    argv3 = [a if a != str(out) else str(tmp_path / "third") for a in argv] + [
+        "--propose-format",
+        "object",
+    ]
+    with pytest.raises(ValueError, match="trained in format 'lists'"):
+        main(argv3)
+    fresh = tmp_path / "amorce-object" / "seed"
+    argv4 = [
+        a if a != str(seed_dir) else str(fresh)
+        for a in (a if a != str(out) else str(tmp_path / "fourth") for a in argv)
+    ] + ["--propose-format", "object"]
+    assert main(argv4) == 0
+    assert (
+        json.loads((tmp_path / "fourth" / "protocol.json").read_text())["propose_format"]
+        == "object"
+    )
+    assert json.loads((fresh / "seed.json").read_text())["proposal_stage"]["format"] == "object"

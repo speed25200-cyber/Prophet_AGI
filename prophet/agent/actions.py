@@ -435,10 +435,9 @@ class ActionGrammar:
             expected = props.get(key.value, {}).get("type")
             if i == len(s):
                 return seen, i, False, (key.value, expected), False
-            value_start = i
-            done, i = _scan_value(s, i, expected)
+            done, i, in_string = _scan_value(s, i, expected, self._ws)
             if not done:
-                return seen, i, False, None, s[value_start] == '"'
+                return seen, i, False, None, in_string
             seen.add(key.value)
 
 
@@ -522,14 +521,19 @@ def _scan_string(s: str, i: int) -> tuple[_Str | None, int]:
     return _Str("".join(out), False), j
 
 
-def _scan_value(s: str, i: int, expected: str | None) -> tuple[bool, int]:
-    """Scan one JSON value; return (complete, index_after)."""
+def _scan_value(
+    s: str, i: int, expected: str | None, ws: Callable[[str, int], int]
+) -> tuple[bool, int, bool]:
+    """Scan one JSON value; return (complete, index_after, ends_inside_a_string). The last
+    is true for an open string value and for an open string anywhere inside an array or
+    an object, which is where value-only sampling draws (docs/33 amendment 9)."""
     c = s[i]
     if c == '"':
         if expected not in (None, "string"):
             raise _Dead(f"expected {expected}, found a string")
         v, j = _scan_string(s, i)
-        return (v is not None and v.done), j
+        done = v is not None and v.done
+        return done, j, not done
     if c in "-0123456789":
         if expected not in (None, "integer", "number"):
             raise _Dead(f"expected {expected}, found a number")
@@ -539,7 +543,7 @@ def _scan_value(s: str, i: int, expected: str | None) -> tuple[bool, int]:
         if expected == "integer" and any(ch in s[i:j] for ch in ".eE"):
             raise _Dead("expected an integer")
         # A number is only known to be complete once a non-number character follows.
-        return (j < len(s)), j
+        return (j < len(s)), j, False
     if c in "tf":
         if expected not in (None, "boolean"):
             raise _Dead(f"expected {expected}, found a boolean")
@@ -547,52 +551,67 @@ def _scan_value(s: str, i: int, expected: str | None) -> tuple[bool, int]:
         frag = s[i:i + len(word)]
         if not word.startswith(frag):
             raise _Dead("malformed literal")
-        return (frag == word), i + len(frag)
+        return (frag == word), i + len(frag), False
     if c == "n":
         if expected not in (None, "null"):
             raise _Dead(f"expected {expected}, found null")
         frag = s[i:i + 4]
         if not "null".startswith(frag):
             raise _Dead("malformed literal")
-        return (frag == "null"), i + len(frag)
+        return (frag == "null"), i + len(frag), False
     if c == "[":
         if expected not in (None, "array"):
             raise _Dead(f"expected {expected}, found an array")
-        return _scan_container(s, i, "[", "]")
+        return _scan_container(s, i, "[", "]", ws)
     if c == "{":
         if expected not in (None, "object"):
             raise _Dead(f"expected {expected}, found an object")
-        return _scan_container(s, i, "{", "}")
+        return _scan_container(s, i, "{", "}", ws)
     raise _Dead(f"unexpected character {c!r}")
 
 
-def _scan_container(s: str, i: int, open_ch: str, close_ch: str) -> tuple[bool, int]:
-    depth = 0
-    in_str = False
-    j = i
-    while j < len(s):
-        c = s[j]
-        if in_str:
-            if c == "\\":
-                end = _escape_end(s, j)
-                if end is None:
-                    return False, len(s)
-                j = end
-                continue
-            if c == '"':
-                in_str = False
-            else:
-                _check_string_char(c)
-        elif c == '"':
-            in_str = True
-        elif c in "[{":
-            depth += 1
-        elif c in "]}":
-            depth -= 1
-            if depth == 0:
-                return True, j + 1
-        j += 1
-    return False, j
+def _scan_container(
+    s: str, i: int, open_ch: str, close_ch: str, ws: Callable[[str, int], int]
+) -> tuple[bool, int, bool]:
+    """Scan an array or an object as strict JSON: members separated by commas, an object's
+    keys as strings followed by a colon, nested values recursively, whitespace as ``ws``
+    says. The former scanner only counted brackets and strings, so ``{"a""b"}`` or
+    ``[1 2]`` were "complete" calls that ``json.loads`` refuses; viable must mean
+    completable (docs/33 amendment 9). Returns (complete, index_after, ends_inside_a_string)."""
+    j = i + 1
+    first = True
+    while True:
+        j = ws(s, j)
+        if j == len(s):
+            return False, j, False
+        if s[j] == close_ch and first:
+            return True, j + 1, False
+        if not first:
+            if s[j] == close_ch:
+                return True, j + 1, False
+            if s[j] != ",":
+                raise _Dead(f"expected ',' or {close_ch!r} at {j}, found {s[j]!r}")
+            j = ws(s, j + 1)
+            if j == len(s):
+                return False, j, False
+        if open_ch == "{":
+            key, j = _scan_string(s, j)
+            if key is None:
+                return False, j, False
+            if not key.done:
+                return False, j, True
+            j = ws(s, j)
+            if j == len(s):
+                return False, j, False
+            if s[j] != ":":
+                raise _Dead(f"expected ':' at {j}, found {s[j]!r}")
+            j = ws(s, j + 1)
+            if j == len(s):
+                return False, j, False
+        done, j, in_string = _scan_value(s, j, None, ws)
+        if not done:
+            return False, j, in_string
+        first = False
 
 
 # --------------------------------------------------------------------------------------

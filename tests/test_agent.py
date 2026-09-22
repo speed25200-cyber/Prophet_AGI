@@ -668,6 +668,45 @@ def test_grammar_refuses_inside_strings_what_json_refuses():
     assert nested.check('{"name":"tag","args":{"items":["a\\u00').viable
 
 
+def test_nested_arrays_and_objects_are_scanned_as_strict_json():
+    """docs/33 amendment 9: the container scanner only counted brackets and strings, so
+    {"a""b"}, [1 2] or a mismatched bracket were "complete" calls json.loads refuses.
+    Nested values now follow JSON exactly, and value-only sampling sees the open strings
+    inside them (the object proposal format draws its keys and values there)."""
+    nested = ActionGrammar(
+        ToolRegistry(
+            [
+                ToolSchema(
+                    "put",
+                    "put",
+                    {
+                        "type": "object",
+                        "properties": {"obj": {"type": "object"}, "arr": {"type": "array"}},
+                        "required": ["obj", "arr"],
+                    },
+                )
+            ]
+        )
+    )
+    head = '{"name":"put","args":{"obj":'
+    for bad in ('{"a""b"}', '{"a":"b",}', '{"a":"b"]', '{"a":[1 2]}', "{1:2}"):
+        assert not nested.check(head + bad).viable, bad
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(head + bad + ',"arr":[]}}')
+    # Whitespace JSON would allow is refused in the compact grammar, as everywhere else.
+    assert not nested.check(head + '{"a" :1}').viable
+    assert ActionGrammar(nested.registry, compact=False).check(head + '{"a" :1}').viable
+    good = head + '{"a":"b","c":{"d":[1,"x",true,null]}},"arr":[{},[],"y"]}}'
+    assert nested.check(good).complete and nested.complete(good) is not None
+    assert nested.check(head + "{}").viable and nested.check(head + '{"a":').viable
+    assert nested.check(head + '{"a":"b"').viable  # a comma or a brace may follow
+    # Where value-only sampling draws: inside keys and values of the object, not between.
+    assert nested.check(head + '{"ke').in_string
+    assert nested.check(head + '{"key":"va').in_string
+    assert not nested.check(head + '{"key":"value"').in_string
+    assert not nested.check(head + '{"key":').in_string
+
+
 def test_the_decoder_refuses_a_newline_inside_a_string_value():
     """The same defect as the decoder met it: a newline token inside an open string was a
     viable candidate; it is now masked like any dead end."""

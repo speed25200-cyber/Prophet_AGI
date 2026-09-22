@@ -313,3 +313,39 @@ l'amendement 1 est inchangée.
 le but du solveur au lieu de fermer la valeur relève de l'entraînement du proposeur, pas
 du décodage. Si l'échelle rejouée échoue encore, le résultat reste « le proposeur ne
 démarre pas à 7 M », avec les taux des deux échelles.
+
+## Amendement 9 — 2026-09-22, après l'échelle épuisée (docs/32 §22), avant tout tour entraîné : les champs en objet (H26)
+
+**Ce qui s'est passé.** Sous le format des amendements 1 à 8, le proposeur ne démarre pas à
+7 M : au mieux 9 propositions valides sur 30, et les erreurs restantes sont aux bords des
+deux listes alignées par position (`jasper.json`, `year,`). Or §2 spécifiait les champs
+comme un **objet** (`"fields": {"<clé>": "<valeur>", …}`) ; l'implémentation les avait
+aplatis en deux listes séparées par des virgules « pour que la grammaire et un petit
+modèle voient du JSON plat ». Cet écart à §2 n'avait jamais été écrit en amendement : il
+l'est ici.
+
+**H26 (format).** Avec les champs sous la forme exacte du fichier que le solveur lit
+(`{"file":"orchid.json","fields":{"city":"Lyon","year":"1939","code":"meadow"},"ask":"code"}`),
+sans deux listes à aligner, le proposeur démarre à 7 M. **Critère** : la règle de
+l'amendement 1, inchangée, sur la même échelle (copie du même premier temps, mêmes quatre
+barreaux 50 / 50, 100 / 50, 100 / 25, 200 / 100, graine 0). H26 passe si un barreau
+satisfait les deux conditions. Rapporté aussi : la validité barreau par barreau contre
+l'échelle de l'amendement 8. Le second temps s'entraîne désormais sur des propositions en
+objet : les poids des barreaux diffèrent de l'échelle en listes, et les bancs du solveur
+sont remesurés.
+
+**Mécanique**, chaque pièce lue par le code et testée dans le même commit :
+1. `--propose-format object`, écrit dans `protocol.json` seulement s'il n'est pas le
+   défaut, et dans `seed.json`. Un répertoire d'amorce entraîné dans un autre format est
+   refusé : sinon un bras réutiliserait sans le dire une amorce qu'il ne sait pas lire.
+2. L'échantillonnage des valeurs atteint les chaînes **à l'intérieur** de l'objet : clés
+   et valeurs sont tirées, la structure reste gloutonne.
+3. Les tableaux et objets imbriqués sont lus en JSON strict. L'ancien scanner ne comptait
+   que les crochets et les chaînes : `{"a""b"}` ou `[1 2]` passaient pour complets. C'est
+   la même famille que l'amendement 8. Aucun effet sur les pilotes du programme 2, dont
+   tous les paramètres d'outil sont des chaînes.
+
+**Suite.** Si un barreau passe : les trois bras de §2 (`closed-propose`, `closed-clean`,
+`oracle`), cinq tours, graine 0, en format objet, avec H20 à H25 inchangées. Sinon, le
+résultat est « le format n'était pas le verrou à 7 M », rapporté avec les taux, et le CPU
+s'arrête pour le programme 3.

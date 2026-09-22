@@ -54,10 +54,11 @@ from prophet.agent.loop import (
     AgentLoop,  # noqa: E402
 )
 from prophet.agent.propose import (  # noqa: E402
-    PROPOSE_GOAL,
+    FORMATS,
     make_hard_lookup,
     novel,
     proposal_trajectory,
+    propose_goal,
     propose_registry,
     spec_from_task,
     task_from_spec,
@@ -512,16 +513,23 @@ def oracle_round(family: str, tasks, quarantine: Quarantine, *, round_index: int
 
 
 def proposal_rows(
-    tokenizer: ProphetTokenizer, n: int, *, family: str, seed: int, seq_len: int
+    tokenizer: ProphetTokenizer,
+    n: int,
+    *,
+    family: str,
+    seed: int,
+    seq_len: int,
+    fmt: str = "lists",
 ) -> tuple[list[list[int]], list, dict]:
     """``n`` perfect proposal episodes for the amorce (docs/33 §2): generator tasks turned
     into the specification the model would have had to propose. Returns the rows, the
-    specifications (the amorce's distribution, for novelty) and the stats."""
-    registry = propose_registry(family)
+    specifications (the amorce's distribution, for novelty) and the stats; ``fmt`` is the
+    proposal format (docs/33 amendment 9)."""
+    registry = propose_registry(family, fmt)
     specs = [spec_from_task(t) for t in task_families.make_tasks(n, family=family, seed=seed)]
     rows, longest, truncated = [], 0, 0
     for spec in specs:
-        text = render_episode(PROPOSE_GOAL[family], registry, proposal_trajectory(spec))
+        text = render_episode(propose_goal(family, fmt), registry, proposal_trajectory(spec, fmt))
         ids = [tokenizer.bos_id] + tokenizer.encode(text, parse_special=True)
         longest = max(longest, len(ids))
         if len(ids) > seq_len:
@@ -541,6 +549,7 @@ def propose_round(
     amorce_specs: list,
     temperature: float,
     round_index: int,
+    fmt: str = "lists",
 ) -> tuple[list, dict]:
     """``n`` proposal episodes (one step each, action span sampled), validated by the
     rules; returns ``[(spec, task), ...]`` and the counts. ``seen`` holds the signatures
@@ -561,7 +570,7 @@ def propose_round(
     # A proposal call is ~60 tokens; the bench's 64-token action budget cut nearly every
     # sampled one (docs/33 amendment 1).
     cfg.action_budget = max(cfg.action_budget, PROPOSE_ACTION_BUDGET)
-    registry = propose_registry(family)
+    registry = propose_registry(family, fmt)
     counts = {
         "emitted": n,
         "malformed": 0,
@@ -579,7 +588,7 @@ def propose_round(
     samples = counts["samples"]
     proposals = []
     for i in range(n):
-        result = AgentLoop(model, tokenizer, registry, cfg).run(PROPOSE_GOAL[family])
+        result = AgentLoop(model, tokenizer, registry, cfg).run(propose_goal(family, fmt))
         counts["tokens"] += int(getattr(result, "tokens", 0))
         step = result.steps[0] if result.steps else None
         action = step.action if step is not None else None
@@ -615,6 +624,7 @@ def promote_proposals(
     *,
     family: str,
     round_index: int,
+    fmt: str = "lists",
 ) -> int:
     """The proposer's only reward (docs/33 §2): a proposal is promoted when its task was
     solved on a retry and not at the first attempt -- at the edge of what the solver can
@@ -626,8 +636,8 @@ def promote_proposals(
         quarantine.add(
             Entry(
                 family=f"propose-{family}",
-                goal=PROPOSE_GOAL[family],
-                trajectory=proposal_trajectory(spec),
+                goal=propose_goal(family, fmt),
+                trajectory=proposal_trajectory(spec, fmt),
                 outcome_passed=True,
                 process_ok=True,
                 provenance=Provenance(
@@ -785,6 +795,13 @@ def main(argv: list[str] | None = None) -> int:
         "solver amorce; 0 mixes the proposals into the single-stage amorce instead",
     )
     ap.add_argument(
+        "--propose-format",
+        choices=FORMATS,
+        default="lists",
+        help="how a proposal writes its fields: two comma-separated lists aligned by "
+        "position, or one JSON object shaped like the file (docs/33 amendment 9)",
+    )
+    ap.add_argument(
         "--hard-bench",
         action="store_true",
         help="also measure the out-of-distribution lookup bench of docs/33 every round",
@@ -830,7 +847,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.arm == "closed-propose":
         for f in families:
             training_families.append(f"propose-{f}")
-            registries[f"propose-{f}"] = propose_registry(f)
+            registries[f"propose-{f}"] = propose_registry(f, args.propose_format)
     propose_n = args.propose_n if args.propose_n is not None else args.tasks_per_round
     replay_names = tuple(n for n in args.replay_names.split(",") if n)
     if args.device == "cuda" and not torch.cuda.is_available():
@@ -893,6 +910,8 @@ def main(argv: list[str] | None = None) -> int:
         protocol["propose_amorce"] = args.propose_amorce
     if args.propose_amorce_steps:
         protocol["propose_amorce_steps"] = args.propose_amorce_steps
+    if args.propose_format != "lists":
+        protocol["propose_format"] = args.propose_format
     if args.hard_bench:
         protocol["hard_bench"] = True
     if args.device != "cpu":
@@ -977,8 +996,11 @@ def main(argv: list[str] | None = None) -> int:
                         family=families[0],
                         seed=SEED_TASK_BASE + args.seed,
                         seq_len=args.seq_len,
+                        fmt=args.propose_format,
                     )
                     rows = rows + extra_rows
+                    if args.propose_format != "lists":
+                        proposal_stats["format"] = args.propose_format
                     seed_report["proposals"] = proposal_stats
                 seed_report["train"] = train_rows(
                     model,
@@ -1002,6 +1024,19 @@ def main(argv: list[str] | None = None) -> int:
             if (seed_dir / "seed.json").exists()
             else {}
         )
+        # A shared seed directory holds one proposer amorce; an arm in another format
+        # would reuse it silently and propose in a form it never saw (amendment 9).
+        trained = recorded.get("proposal_stage") or recorded.get("proposals")
+        if (
+            args.propose_amorce
+            and trained is not None
+            and trained.get("format", "lists") != args.propose_format
+        ):
+            raise ValueError(
+                f"{seed_dir}: the proposer amorce was trained in format "
+                f"{trained.get('format', 'lists')!r}, not {args.propose_format!r}; "
+                "use a fresh seed directory"
+            )
         if args.propose_amorce_steps and "proposal_stage" not in recorded:
             # Second amorce stage (docs/33 amendment 1): the proposer learns its form while
             # the solver sees its own again; recorded in the shared seed directory once.
@@ -1011,6 +1046,7 @@ def main(argv: list[str] | None = None) -> int:
                 family=families[0],
                 seed=SEED_TASK_BASE + args.seed,
                 seq_len=args.seq_len,
+                fmt=args.propose_format,
             )
             solver_rows, _ = build_rows(
                 tokenizer,
@@ -1039,6 +1075,8 @@ def main(argv: list[str] | None = None) -> int:
                     replay_names=replay_names,
                 ),
             }
+            if args.propose_format != "lists":
+                recorded["proposal_stage"]["format"] = args.propose_format
             seed_manager.save({"model": model.state_dict(), "step": 0}, 0)
             write_json(seed_dir / "seed.json", recorded)
             seed_report = {**seed_report, "proposal_stage": recorded["proposal_stage"]}
@@ -1072,6 +1110,7 @@ def main(argv: list[str] | None = None) -> int:
                 ],
                 temperature=args.temperature,
                 round_index=0,
+                fmt=args.propose_format,
             )
         record(
             {
@@ -1125,6 +1164,7 @@ def main(argv: list[str] | None = None) -> int:
                 amorce_specs=amorce_specs,
                 temperature=args.temperature,
                 round_index=r,
+                fmt=args.propose_format,
             )
             proposed_tasks = [t for _, t in proposals]
             if proposed_tasks:
@@ -1171,7 +1211,12 @@ def main(argv: list[str] | None = None) -> int:
                 "solved_retry": sum(1 for v in solved_at.values() if v >= 2),
                 "unsolved": len(proposed_tasks) - len(solved_at),
                 "promoted": promote_proposals(
-                    proposals, solved_at, quarantine, family=family, round_index=r
+                    proposals,
+                    solved_at,
+                    quarantine,
+                    family=family,
+                    round_index=r,
+                    fmt=args.propose_format,
                 ),
             }
             generation["tokens"] += counts["tokens"]

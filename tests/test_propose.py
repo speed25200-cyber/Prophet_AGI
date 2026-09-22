@@ -8,6 +8,7 @@ import pytest
 from prophet.agent import tasks as task_families
 from prophet.agent.actions import Action, ActionGrammar
 from prophet.agent.propose import (
+    FORMATS,
     GENERATOR_KEYS,
     HARD_KEYS,
     PROPOSE_GOAL,
@@ -15,6 +16,7 @@ from prophet.agent.propose import (
     make_hard_lookup,
     novel,
     proposal_trajectory,
+    propose_goal,
     propose_registry,
     spec_from_task,
     task_from_spec,
@@ -91,6 +93,60 @@ def test_a_proposal_renders_as_a_call_the_compact_grammar_accepts():
     state = grammar.check(body)
     assert state.viable and state.complete
     assert reg.run(Action.parse(body)) == "ok"
+
+
+def test_object_format_round_trips_and_renders_as_a_call_the_ordered_grammar_accepts():
+    """docs/33 amendment 9: the fields as one JSON object, shaped like the file the task
+    will hold, instead of two lists aligned by position. Same specification, same rules,
+    and the rendered call is exactly what the grammar the proposer decodes with accepts."""
+    assert FORMATS == ("lists", "object")
+    spec = validate("lookup", GOOD)
+    args = spec.as_args("object")
+    assert args == {
+        "file": "orchid.json",
+        "fields": {"city": "Lyon", "year": "1939", "code": "meadow"},
+        "ask": "code",
+    }
+    assert validate("lookup", args) == spec
+    for task in task_families.make_tasks(10, family="lookup", seed=5):
+        s = spec_from_task(task)
+        assert validate("lookup", s.as_args("object")) == s
+        # The object is the file's own content: what the solver reads is what is proposed.
+        assert (
+            json.dumps(s.as_args("object")["fields"], separators=(",", ":")) in task.files.values()
+        )
+    reg = propose_registry("lookup", "object")
+    assert propose_goal("lookup", "object") != propose_goal("lookup") == PROPOSE_GOAL["lookup"]
+    text = render_episode(
+        propose_goal("lookup", "object"), reg, proposal_trajectory(spec, "object")
+    )
+    body = text.split("<|call|>")[1].split("<|/call|>")[0]
+    assert json.loads(body) == {"name": "propose_lookup", "args": args}
+    grammar = ActionGrammar(reg, compact=True, ordered=True)
+    assert grammar.check(body).complete
+    assert reg.run(Action.parse(body)) == "ok"
+    # The lists grammar does not admit the object call, nor the object grammar the lists one.
+    assert not ActionGrammar(propose_registry("lookup"), ordered=True).check(body).viable
+    with pytest.raises(ValueError):
+        propose_registry("lookup", "pairs")
+
+
+@pytest.mark.parametrize(
+    "fields, reason",
+    [
+        ("city", "fields is not an object"),
+        ({"city": "Lyon", "year": 1939}, "a field value is not a string"),
+        ({"city": "Lyon"}, "between 2 and 6 fields"),
+        ({"city": "Lyon", "year": "19 39"}, "is not a short alphanumeric token"),
+    ],
+)
+def test_object_format_is_held_to_the_same_rules(fields, reason):
+    verdict = validate("lookup", {"file": "orchid.json", "fields": fields, "ask": "city"})
+    assert isinstance(verdict, str) and reason in verdict
+    missing = validate(
+        "lookup", {"file": "orchid.json", "fields": {"a": "b", "c": "d"}, "ask": "e"}
+    )
+    assert missing == "ask is not one of the keys"
 
 
 def test_novelty_is_a_field_count_or_a_key_the_amorce_never_had():
