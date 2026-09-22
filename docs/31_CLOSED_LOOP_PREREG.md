@@ -535,3 +535,10 @@ oracle +0,117 / +0,217, tâches jamais réussies à compter depuis les enregistr
 | **H16 (ii)** gain | Le gain dépasse v7 avec certitude. | sur chaque graine : gain ≥ gain v7 de la même graine, intervalle excluant zéro. |
 | **H16 (iii)** rendement | La boucle rejoint l'oracle. | gain moyen / gain moyen oracle v7 ≥ 0,8 (v7 : 0,60). |
 | **H16** | | les trois, sinon échec ; rapportés séparément. |
+
+**Note à l'amendement 16 (2026-09-22, après la calibration v10b, graine 0).** À 100 / 200
+par famille, la graine 0 démarre à `lookup` 0,90 (canonique 0,75) et `files` **1,00** :
+`files` sature, la graine n'est pas retenue à ce barreau. L'échelle se poursuit comme à
+l'amendement 9 : graines 1 puis 2 à 100 / 200, puis un barreau intermédiaire 75 / 150 sur
+la graine 0 (50 / 100 a donné 0 succès canonique sur `files`, 100 / 200 la saturation). La
+première graine retenue reçoit les quatre bras ; v12 passe avant.
