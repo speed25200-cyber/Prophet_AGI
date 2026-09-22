@@ -361,3 +361,19 @@ le début.
 **Pilote v8, une seule variable.** `files` 50 / 100, graines 0 et 1, recette v7 plus
 `sample_copy`. Critère **H12** : H11 réévaluée sous v8, plus (iv) sur la graine 1, gain ≥
 celui de v7 (+0,117) et au plus 1 échec de copie décalée sur les 30 tâches du banc 7.
+
+## Amendement 13 — 2026-09-22, après v8, avant tout run v9 : la graine dure de `lookup` sous la recette de référence
+
+**Pourquoi.** La recette de référence est désormais celle de v7 (taux ÷ 4, grammaire
+compacte, `done` sans argument, promotion canonique, pas de pas répété ; `sample_copy`
+écarté par v8). Sur `lookup`, la graine 2 (départ 0,567) est la seule où le bras fermé n'a
+jamais eu d'intervalle excluant zéro : +0,000 (v1), +0,033 (v2), +0,117 (v3), +0,267 (v4),
++0,100 (v5). Elle n'a pas été rejouée depuis l'amendement 11.
+
+**Pilote v9, une seule variable.** `lookup`, graine 2, amorce 100 / 200 réutilisée (celle
+de v3 à v5), bras `closed-clean` seul avec `no_repeat_action`, comparé à l'oracle v5 de la
+même graine (+0,300) et au bras `closed-clean` v5 (+0,100 [−0,033, +0,233]).
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H13 graine dure** | La recette de référence fait passer la graine 2 au-dessus de zéro avec certitude. | (i) gain > 0 avec intervalle excluant zéro ; (ii) aucun tour sous 0,467 ; (iii) rendement contre l'oracle v5 ≥ 0,6. Les trois, sinon échec. |
