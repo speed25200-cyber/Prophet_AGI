@@ -1031,3 +1031,81 @@ des spécifications : piste à pré-enregistrer, non mesurée ici. Le programme 
 l'A100 après le programme 2 à 375 M, comme prévu par docs/33 §4, avec la même règle de
 calibration ; la correction de la grammaire vaut pour tout décodage. **Fin des pilotes CPU
 des programmes 2 et 3** (docs/34 §7).
+
+## 23. Programme 3 : le format objet (H26) et la clé copiée (H27), fin du CPU
+
+Pré-enregistrement : docs/33, amendements 9 et 10. **Date :** 2026-09-22. Mêmes poids de
+départ et même premier temps que §22 : banc 0,667, remesuré à l'identique sous chaque
+nouveau code. Graine 0.
+
+**H26, les champs en objet** (`--propose-format object`) : quatre barreaux, le second temps
+réentraîné sur des propositions en objet.
+
+| Second temps (pas / propositions) | Solveur (canonique) | Hors distribution | Sonde : malformées / invalides / **valides** |
+|---|---:|---:|---:|
+| 50 / 50 | 0,950 (0,950) | 0,600 | 12 / 18 / **0** |
+| 100 / 50 | 0,783 (0,750) | 0,450 | 1 / 29 / **0** |
+| 100 / 25 | 0,900 (0,867) | 0,517 | 1 / 29 / **0** |
+| 200 / 100 | **0,933** (0,900) | 0,483 | 0 / 18 / **12** |
+
+**H26 échoue sur son critère** : au mieux 12 valides sur 30 (0,40 < 0,5). Au dernier
+barreau, pourtant, le solveur est **dans** la fenêtre (0,933 < 0,95, canonique 0,900) :
+seule la validité manque. Le détail champ par champ, sur les appels qui se lisent :
+
+| Barreau | Champ | Listes (§22) | Objet |
+|---|---|---:|---:|
+| 100 / 50 | champs justes | 0 / 21 | **23 / 29** |
+| 100 / 50 | `file` juste | 0 / 21 | 0 / 29 |
+| 200 / 100 | `file` juste | 30 / 30 | 30 / 30 |
+| 200 / 100 | champs justes | 14 / 30 | **30 / 30** |
+| 200 / 100 | `ask` parmi les clés | — | **12 / 30** |
+
+Le format objet lève le verrou des champs, que le format en listes ne levait pas. Au
+dernier barreau, les 18 invalides n'échouent **que** sur `ask` (`yearbor`, `harbor`,
+`cinder`, `}}`). Aux barreaux intermédiaires, le nom de fichier commence par la fermeture du
+schéma d'outil qui précède l'appel (`]}}`, 24 sur 29 au barreau 2). À 50 pas, l'objet
+`fields` recopie le schéma JSON d'un outil (`{"type":"object","properties":…}`), l'objet que
+le modèle voit le plus souvent.
+
+**H27, la clé demandée copiée** (`--propose-copy ask`, sans aucun entraînement : les quatre
+points de contrôle d'H26 re-sondés). Les bancs du solveur sont identiques, barreau par
+barreau (0,950, 0,783, 0,900, 0,933), comme attendu d'un changement qui ne touche que la
+sonde.
+
+| Barreau | Sonde sans copie (H26) | Sonde avec copie de `ask` (H27) |
+|---|---:|---:|
+| 50 / 50 | 12 / 18 / 0 | 20 / 10 / 0 |
+| 100 / 50 | 1 / 29 / 0 | 0 / 30 / 0 |
+| 100 / 25 | 1 / 29 / 0 | 3 / 27 / 0 |
+| 200 / 100 | 0 / 18 / **12** | 0 / 24 / **6** |
+
+**H27 échoue** et fait pire : 6 valides au lieu de 12. Le pointeur copie la **valeur** d'un
+champ au lieu de sa clé (`"ask":"violet"` 8 fois, `delta`, `cinder`, `orchid`), parfois un
+morceau de l'appel ou du but. C'est l'habitude qu'il a prise sur les épisodes du solveur :
+copier la valeur qu'il vient de lire. Le mode (f) de §14 réapparaît, dans l'autre sens.
+
+**Verdict, règle pré-enregistrée (amendement 10).** **Le proposeur ne démarre pas à 7 M**,
+après trois échelles et deux formats : au mieux 12 propositions valides sur 30, aucune
+nouvelle (H25), alors que le solveur est dans sa fenêtre. **Le CPU s'arrête pour le
+programme 3.**
+
+**Ce que cette ligne a établi, et qui vaut à toute échelle.**
+
+1. **Deux défauts silencieux du décodage contraint**, corrigés pour tout décodage : les
+   caractères de contrôle bruts et les échappements inconnus dans une chaîne
+   (amendement 8), et des tableaux et objets imbriqués lus sans leur syntaxe
+   (amendement 9). La règle qui en sort : **viable doit vouloir dire complétable**.
+2. **La forme d'une spécification décide de ce qu'un petit modèle apprend.** À dose égale,
+   les champs en objet, dans la forme que le solveur lit, passent de 0 à 23 justes sur 29 ;
+   deux listes alignées par position restent à 0.
+3. **Chaque champ à inventer hérite du contexte qui le précède** : la fin du schéma d'outil
+   (`]}}`), le gabarit du but, l'objet le plus fréquent du prompt. Plus un proposeur est
+   petit, plus ses premiers jetons appartiennent au prompt plutôt qu'à la tâche.
+4. **Une référence n'est ni une valeur à tirer ni une valeur à copier telle quelle.**
+   Tirée, la clé dérive (`yearbor`) ; copiée, le pointeur prend la valeur voisine. Le
+   pointeur n'a jamais appris à désigner une *clé* : ses cibles d'entraînement sont des
+   valeurs, lues puis notées. Cibler des clés à l'entraînement est une piste pour l'échelle
+   A100 ; elle n'est pas mesurée ici.
+5. **La validité monte avec la dose d'entraînement du proposeur** (listes : 0, 0, 0, 9 ;
+   objet : 0, 0, 0, 12), et le solveur monte avec elle vers le haut de sa fenêtre. À 7 M,
+   les deux conditions de la règle ne se recouvrent qu'à peine, au dernier barreau.

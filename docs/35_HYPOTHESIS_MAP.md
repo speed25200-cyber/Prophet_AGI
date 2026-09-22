@@ -95,7 +95,8 @@ Il n'a jamais tourné sur GPU.
 |---|---|---|---|
 | H20 : le modèle amorcé propose des tâches valides (≥ 50 %), format en deux listes | **réfuté à 7 M** | au mieux **9 sur 30** (0,30), solveur à 0,950 | 32 §22 |
 | Le décodage admettait ce que JSON refuse | **défaut trouvé et corrigé** | 27 malformées sur 30 au premier barreau à cause de lui | 33 amend. 8 |
-| H26 : les champs en objet, dans la forme que le solveur lit | **en cours** | — | 33 amend. 9 |
+| H26 : les champs en objet, dans la forme que le solveur lit | **réfuté sur le critère**, verrou des champs levé | 12 valides sur 30 (0,40), solveur 0,933 dans la fenêtre ; champs justes 0 → 23 sur 29 à dose égale | 32 §23 |
+| H27 : la clé demandée copiée par le pointeur | **réfuté** | 6 valides sur 30 : le pointeur copie la valeur au lieu de la clé | 32 §23 |
 | H21–H25 : bord de compétence, transfert, **portée hors distribution**, oubli, nouveauté | **jamais lancées** | la calibration n'est jamais passée | 33 §3 |
 
 H23 est celle qui compte pour le but. **Proposer va plus loin que le générateur** sur un
@@ -138,7 +139,7 @@ retiré. Chaque fois qu'une courbe s'aplatit, le dépôt a nommé le mur. Aujour
 | **Amorçage** : il faut déjà réussir parfois | `calc` passe de 0 à 100 % entre 40/80 et 100/200 (31 §2) | une amorce calibrée famille par famille (fait) |
 | **Vérificateur** : il filtre, il ne contredit pas | graine dure : +0,000 (32 §14) | la reprise qui explore (+0,233, 32 §16) ; un curriculum (non testé) |
 | **Étape absente** : `done` prématuré | 32 §21 | un a priori de décodage (à mesurer) |
-| **Proposeur** : il ne démarre pas | 0,30 de validité (32 §22) | le format objet (H26, en cours) ; l'échelle 375 M |
+| **Proposeur** : il ne démarre pas | 0,40 de validité au mieux (32 §22–23) | le format objet a levé les champs ; reste `ask`, une référence : cibler des clés à l'entraînement du pointeur, l'échelle 375 M |
 | **Familles écrites par un humain** | 33 §5 | des tâches-programmes jugées par un exécuteur (non testé) |
 | **Capacité** : 7 M ne boucle pas utilement | 10 §3a | le programme 1 (375 M, A100) |
 
@@ -146,9 +147,9 @@ retiré. Chaque fois qu'une courbe s'aplatit, le dépôt a nommé le mur. Aujour
 
 **Sur CPU, maintenant, gratuit :**
 
-1. **H26, le format objet** : la même échelle de calibration, ≈ 45 min, en cours. Si un
-   barreau passe, les trois bras du programme 3 tournent (≈ 1,5 à 2,5 h). Ce serait la
-   **première mesure de H21 à H25**, et donc de H23, le cœur du but.
+1. ~~H26, le format objet, puis H27, la clé copiée~~ : faits (32 §23). Le proposeur ne
+   démarre pas à 7 M ; le CPU s'arrête pour le programme 3. H21 à H25, et donc H23, le
+   cœur du but, attendent l'A100.
 2. **Le `done` prématuré** : un a priori de décodage, une variable, sur l'amorce de v10d
    (≈ 30 min).
 3. **A4-0 à 7 M** : l'AUROC du désaccord entre profondeurs sur le banc, avec le premier run
