@@ -88,6 +88,7 @@ COPY_BOUNDARIES = "off"  # set by main() from --copy-boundaries; bench and gener
 ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean", "closed-propose")
 BENCH_SEEDS = (7, 11)
 HARD_BENCH_SEEDS = (17, 19)  # the out-of-distribution bench of docs/33, never trained on
+PROPOSE_ACTION_BUDGET = 160  # tokens for a proposal call (docs/33 amendment 1)
 SEED_TASK_BASE = 1_000
 ROUND_TASK_BASE = 10_000
 
@@ -551,6 +552,9 @@ def propose_round(
     )
     cfg.max_steps = 1
     cfg.sample_actions = True
+    # A proposal call is ~60 tokens; the bench's 64-token action budget cut nearly every
+    # sampled one (docs/33 amendment 1).
+    cfg.action_budget = max(cfg.action_budget, PROPOSE_ACTION_BUDGET)
     registry = propose_registry(family)
     counts = {
         "emitted": n,
@@ -756,6 +760,14 @@ def main(argv: list[str] | None = None) -> int:
         help="perfect proposal episodes added to the amorce, for every arm (docs/33 §2)",
     )
     ap.add_argument(
+        "--propose-amorce-steps",
+        type=int,
+        default=0,
+        help="second amorce stage (docs/33 amendment 1): --propose-amorce perfect proposals "
+        "and as many perfect trajectories, this many steps at --lr-scale, after the "
+        "solver amorce; 0 mixes the proposals into the single-stage amorce instead",
+    )
+    ap.add_argument(
         "--hard-bench",
         action="store_true",
         help="also measure the out-of-distribution lookup bench of docs/33 every round",
@@ -862,6 +874,8 @@ def main(argv: list[str] | None = None) -> int:
         protocol["propose"] = {"n": propose_n}
     if args.propose_amorce:
         protocol["propose_amorce"] = args.propose_amorce
+    if args.propose_amorce_steps:
+        protocol["propose_amorce_steps"] = args.propose_amorce_steps
     if args.hard_bench:
         protocol["hard_bench"] = True
     if args.device != "cpu":
@@ -939,7 +953,7 @@ def main(argv: list[str] | None = None) -> int:
                     families=families,
                 )
                 seed_report["episodes"] = stats
-                if args.propose_amorce:
+                if args.propose_amorce and not args.propose_amorce_steps:
                     extra_rows, _, proposal_stats = proposal_rows(
                         tokenizer,
                         args.propose_amorce,
@@ -966,6 +980,51 @@ def main(argv: list[str] | None = None) -> int:
                 )
             seed_manager.save({"model": model.state_dict(), "step": 0}, 0)
             write_json(seed_dir / "seed.json", seed_report)
+        recorded = (
+            json.loads((seed_dir / "seed.json").read_text())
+            if (seed_dir / "seed.json").exists()
+            else {}
+        )
+        if args.propose_amorce_steps and "proposal_stage" not in recorded:
+            # Second amorce stage (docs/33 amendment 1): the proposer learns its form while
+            # the solver sees its own again; recorded in the shared seed directory once.
+            extra_rows, _, proposal_stats = proposal_rows(
+                tokenizer,
+                args.propose_amorce,
+                family=families[0],
+                seed=SEED_TASK_BASE + args.seed,
+                seq_len=args.seq_len,
+            )
+            solver_rows, _ = build_rows(
+                tokenizer,
+                args.propose_amorce,
+                seed=SEED_TASK_BASE + args.seed,
+                seq_len=args.seq_len,
+                families=families,
+            )
+            recorded["proposal_stage"] = {
+                "proposals": proposal_stats,
+                "solver_rows": len(solver_rows),
+                "train": train_rows(
+                    model,
+                    cfg,
+                    tokenizer,
+                    extra_rows + solver_rows,
+                    work=args.work,
+                    steps=args.propose_amorce_steps,
+                    seq_len=args.seq_len,
+                    batch_size=args.batch_size,
+                    replay_fraction=args.replay_fraction,
+                    checkpoint_dir=seed_dir / "scratch2",
+                    seed=args.seed + 1,
+                    lr_scale=args.lr_scale,
+                    device=args.device,
+                    replay_names=replay_names,
+                ),
+            }
+            seed_manager.save({"model": model.state_dict(), "step": 0}, 0)
+            write_json(seed_dir / "seed.json", recorded)
+            seed_report = {**seed_report, "proposal_stage": recorded["proposal_stage"]}
         started = time.time()
         measured = evaluate(
             model,
@@ -979,10 +1038,29 @@ def main(argv: list[str] | None = None) -> int:
             hard=args.hard_bench,
         )
         manager.save({"model": model.state_dict(), "step": 0}, 0)
+        probe = None
+        if args.arm == "closed-propose":
+            # H20 at round 0 (docs/33 amendment 1): what the amorce proposes, unsolved.
+            _, probe = propose_round(
+                model,
+                tokenizer,
+                families[0],
+                propose_n,
+                seen=set(),
+                amorce_specs=[
+                    spec_from_task(t)
+                    for t in task_families.make_tasks(
+                        args.propose_amorce, family=families[0], seed=SEED_TASK_BASE + args.seed
+                    )
+                ],
+                temperature=args.temperature,
+                round_index=0,
+            )
         record(
             {
                 "round": 0,
                 "seed": seed_report,
+                "proposal_probe": probe,
                 **measured,
                 "eval_seconds": time.time() - started,
                 "promoted_total": len(promoted_entries()),

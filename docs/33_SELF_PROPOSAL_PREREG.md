@@ -121,3 +121,31 @@ proposées, et les deux bancs. Échelle A100 : `scripts/closed_loop_a100.sh` ave
 | Épisodes de proposition : outil, rendu, amorce parfaite | `prophet/agent/propose.py`, `scripts/closed_loop.py` | idem |
 | Bras `closed-propose`, comptes des propositions, second banc | `scripts/closed_loop.py` | `tests/test_closed_loop.py` |
 | Résumé : H20–H25 depuis les enregistrements | `scripts/summarize_closed_loop.py` | `tests/test_closed_loop_summary.py` |
+
+## Amendement 1 — 2026-09-22, après la calibration du premier pilote, avant tout tour entraîné
+
+**Ce qui s'est passé.** Amorce « 100 trajectoires + 50 propositions, 200 pas », graine 0 :
+banc du générateur **0,067** (l'amorce solveur seule donnait ≈ 0,6 sur cette graine en
+v3–v5), banc hors distribution 0,000. Diagnostic : 27 échecs sur 30, tous `read_file` puis
+`done` refusé trois fois — les épisodes de proposition (un appel, puis fin) ont appris au
+solveur « un appel, puis `done` ». Sonde de 30 propositions sur cette amorce : **30
+malformées sur 30**. Cause mécanique : un appel `propose_lookup` fait 60 jetons et le
+budget de la boucle pour un span d'action est de 64 (docs/09) ; la moindre variation
+échantillonnée dépasse le budget. Le pilote est arrêté avant tout tour ; rien n'est
+comptabilisé.
+
+**Deux corrections, pré-enregistrées.**
+
+1. **Budget d'action des épisodes de proposition** porté à 160 jetons (`propose_round`) ; le
+   banc et le solveur gardent 64.
+2. **Amorce en deux temps.** Premier temps : l'amorce du programme 2 (100 trajectoires
+   parfaites, 200 pas), inchangée. Second temps : *P* = 50 propositions parfaites **et** 50
+   trajectoires parfaites du solveur, 50 pas au taux ÷ 4 avec rejeu 0,5 du corpus ; le
+   solveur revoit sa forme pendant que le proposeur apprend la sienne. Enregistré dans
+   `seed.json` du répertoire d'amorce, partagé par les trois bras.
+
+**Règle de calibration du programme 3**, avant tout tour : sur le banc du générateur,
+départ strictement entre 0,30 et 0,95 avec succès canonique > 0 ; sur une sonde de 30
+propositions échantillonnées (tour 0, enregistrée), validité ≥ 0,5 (H20 au tour 0).
+Sinon, échelle : second temps à 100 pas, puis *P* = 25 ; si aucune amorce ne satisfait
+les deux, le résultat est « le proposeur ne démarre pas à 7 M », rapporté avec les taux.

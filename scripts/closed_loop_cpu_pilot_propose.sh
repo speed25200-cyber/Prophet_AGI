@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Programme 3 on CPU (docs/33 §4): the model proposes its own lookup tasks. One amorce per
-# seed (100 perfect trajectories + P perfect proposals, 200 steps) shared by the three
-# arms, every arm measured on the generator's bench and on the out-of-distribution bench.
+# Programme 3 on CPU (docs/33 §4, amendment 1): the model proposes its own lookup tasks.
+# One amorce per seed in two stages (100 perfect trajectories, 200 steps; then P perfect
+# proposals with P perfect trajectories, PROPOSE_AMORCE_STEPS steps at LR_SCALE), shared
+# by the three arms, every arm measured on the generator's bench and on the
+# out-of-distribution bench. The first arm records a proposal probe at round 0.
 #
 #   scripts/closed_loop_cpu_pilot_propose.sh FIRST_RUN_DIR OUT_DIR
 #
@@ -14,6 +16,7 @@ SEEDS="${SEEDS:-0}"
 ROUNDS="${ROUNDS:-5}"
 PROPOSE_N="${PROPOSE_N:-30}"
 PROPOSE_AMORCE="${PROPOSE_AMORCE:-50}"
+PROPOSE_AMORCE_STEPS="${PROPOSE_AMORCE_STEPS:-50}"  # second amorce stage (docs/33 amendment 1)
 SEED_EPISODES="${SEED_EPISODES:-100}"
 SEED_STEPS="${SEED_STEPS:-200}"
 LR_SCALE="${LR_SCALE:-0.25}"
@@ -22,7 +25,7 @@ COMMON=(--work "$WORK" --family lookup --tasks-per-round 30 --attempts 3
         --steps-per-round 60 --seed-episodes "$SEED_EPISODES" --seed-steps "$SEED_STEPS" --replay-fraction 0.5
         --bench-tasks 30 --bpb-docs 200 --seq-len 512 --batch-size 8 --minutes 600
         --lr-scale "$LR_SCALE" --no-repeat-action --copy-topk 3 --copy-explore observations
-        --propose-amorce "$PROPOSE_AMORCE" --hard-bench)
+        --propose-amorce "$PROPOSE_AMORCE" --propose-amorce-steps "$PROPOSE_AMORCE_STEPS" --hard-bench)
 for SEED in $SEEDS; do
   SEED_DIR="$OUT/amorce-seed$SEED/seed"
   for ARM in $ARMS; do

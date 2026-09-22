@@ -603,7 +603,10 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
         ]
     )
 
+    budgets = []
+
     def fake_run(self, goal, **kw):
+        budgets.append(self.cfg.action_budget)
         action = next(scripted)
         step = types.SimpleNamespace(action=action, gated="")
         return types.SimpleNamespace(steps=[step] if action is not None else [], tokens=7)
@@ -621,6 +624,9 @@ def test_propose_round_counts_malformed_invalid_duplicate_and_valid(work, monkey
     assert [t.answer for _, t in proposals] == ["meadow", "ana"]
     assert all(t.family == "lookup" and t.extra["proposed"] for _, t in proposals)
     assert len(seen) == 2
+    # A proposal call is ~60 tokens: the loop's 64-token action budget is raised for it
+    # (docs/33 amendment 1).
+    assert budgets and all(b >= 160 for b in budgets)
 
 
 def test_proposals_are_promoted_only_when_solved_on_a_retry(work, tmp_path):
@@ -709,3 +715,73 @@ def test_closed_propose_arm_runs_with_a_proposal_amorce_and_the_hard_bench(work,
     # A closed-propose arm refuses any other family.
     with pytest.raises(SystemExit):
         main([a if a != "lookup" else "calc" for a in argv])
+
+
+def test_two_stage_amorce_is_recorded_once_and_reused_and_the_probe_is_recorded(work, tmp_path):
+    """docs/33 amendment 1: the second amorce stage trains proposals with solver rows,
+    is recorded in the shared seed directory, and a later arm reuses it; the
+    closed-propose arm records a proposal probe at round 0."""
+    seed_dir = tmp_path / "amorce" / "seed"
+    common = dict(
+        rounds=0, propose_amorce=2, propose_amorce_steps=2, seed_dir=str(seed_dir), hard_bench=""
+    )
+    out = tmp_path / "first"
+    argv_extra = []
+    for key, value in common.items():
+        argv_extra += [f"--{key.replace('_', '-')}"] + ([str(value)] if value != "" else [])
+    argv = [
+        "--work",
+        str(work),
+        "--out",
+        str(out),
+        "--arm",
+        "closed-propose",
+        "--family",
+        "lookup",
+        "--config",
+        str(work / "tiny.json"),
+        "--seq-len",
+        str(SEQ_LEN),
+        "--batch-size",
+        "2",
+        "--tasks-per-round",
+        "2",
+        "--propose-n",
+        "2",
+        "--attempts",
+        "1",
+        "--steps-per-round",
+        "1",
+        "--seed-episodes",
+        "2",
+        "--seed-steps",
+        "1",
+        "--bench-tasks",
+        "2",
+        "--bpb-docs",
+        "2",
+    ] + argv_extra
+    assert main(argv) == 0
+    recorded = json.loads((seed_dir / "seed.json").read_text())
+    assert recorded["episodes"]["rows"] == 2 and "proposals" not in recorded
+    stage = recorded["proposal_stage"]
+    assert (
+        stage["proposals"]["rows"] == 2
+        and stage["solver_rows"] == 2
+        and stage["train"]["steps"] == 2
+    )
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["propose_amorce_steps"] == 2
+    rounds = [json.loads(line) for line in (out / "rounds.jsonl").read_text().splitlines()]
+    probe = rounds[0]["proposal_probe"]
+    assert probe["emitted"] == 2 and "valid" in probe and "malformed" in probe
+    # A second arm on the same seed directory does not retrain the stage.
+    stamp = (seed_dir / "seed.json").stat().st_mtime_ns
+    out2 = tmp_path / "second"
+    argv2 = [a if a != str(out) else str(out2) for a in argv]
+    argv2[argv2.index("closed-propose")] = "frozen"
+    assert main(argv2) == 0
+    assert (seed_dir / "seed.json").stat().st_mtime_ns == stamp
+    rounds2 = [json.loads(line) for line in (out2 / "rounds.jsonl").read_text().splitlines()]
+    assert rounds2[0]["proposal_probe"] is None
+    assert rounds2[0]["seed"]["proposal_stage"]["train"]["steps"] == 2
