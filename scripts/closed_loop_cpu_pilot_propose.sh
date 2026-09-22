@@ -10,7 +10,8 @@
 # ARMS in order (default "closed-propose closed-clean oracle"); the first arm trains the
 # amorce at OUT/amorce-seedN/seed, the others reuse it. PROPOSE_FORMAT (default "lists")
 # is the proposal format of every arm's amorce (docs/33 amendment 9); a seed directory
-# trained in another format is refused by scripts/closed_loop.py.
+# trained in another format is refused by scripts/closed_loop.py. PROPOSE_COPY (default
+# "none") is what the copy pointer may fill in a proposal (docs/33 amendment 10).
 set -euo pipefail
 WORK="${1:?first run directory}"
 OUT="${2:?output directory}"
@@ -24,12 +25,13 @@ SEED_STEPS="${SEED_STEPS:-200}"
 LR_SCALE="${LR_SCALE:-0.25}"
 ARMS="${ARMS:-closed-propose closed-clean oracle}"
 PROPOSE_FORMAT="${PROPOSE_FORMAT:-lists}"
+PROPOSE_COPY="${PROPOSE_COPY:-none}"
 COMMON=(--work "$WORK" --family lookup --tasks-per-round 30 --attempts 3
         --steps-per-round 60 --seed-episodes "$SEED_EPISODES" --seed-steps "$SEED_STEPS" --replay-fraction 0.5
         --bench-tasks 30 --bpb-docs 200 --seq-len 512 --batch-size 8 --minutes 600
         --lr-scale "$LR_SCALE" --no-repeat-action --copy-topk 3 --copy-explore observations
         --propose-amorce "$PROPOSE_AMORCE" --propose-amorce-steps "$PROPOSE_AMORCE_STEPS" --hard-bench
-        --propose-format "$PROPOSE_FORMAT")
+        --propose-format "$PROPOSE_FORMAT" --propose-copy "$PROPOSE_COPY")
 for SEED in $SEEDS; do
   SEED_DIR="$OUT/amorce-seed$SEED/seed"
   for ARM in $ARMS; do
