@@ -132,6 +132,11 @@ class AgentConfig:
     """Forbid, at step *i*, the action name of step *i - 1* (docs/31 amendment 11). Canonical
     trajectories never repeat a step; without this the decoder could loop on ``note``
     and never reach ``done`` within the step budget."""
+    copy_topk: int = 0
+    """Draw the copy pointer's start uniformly among its ``copy_topk`` best positions
+    (docs/31 amendment 15); 0 keeps the argmax (or the tempered draw of ``sample_copy``).
+    On the tasks a checkpoint always fails, the right value was the pointer's *second*
+    choice with a probability its softmax never reaches (docs/32 §14)."""
 
 
 @dataclass
@@ -175,12 +180,18 @@ class EpisodeResult:
 
 
 def choose_copy_span(
-    s_logits: torch.Tensor, e_logits: torch.Tensor, *, temperature: float
+    s_logits: torch.Tensor, e_logits: torch.Tensor, *, temperature: float, topk: int = 0
 ) -> tuple[int, int]:
     """Start and end indices of the copy span among the key positions. ``temperature``
     zero (or negative) takes the argmax of each pointer; otherwise both are sampled from
-    their tempered softmax, the end restricted to positions at or after the start."""
-    if temperature > 0:
+    their tempered softmax, the end restricted to positions at or after the start.
+    ``topk`` > 0 draws the start uniformly among the ``topk`` highest-scoring positions
+    instead (docs/31 amendment 15): a confident pointer's second choice is then reached
+    as often as its first, which no temperature achieves."""
+    if topk > 0:
+        candidates = torch.topk(s_logits, min(topk, s_logits.numel())).indices
+        start_i = int(candidates[torch.randint(candidates.numel(), (1,))].item())
+    elif temperature > 0:
         start_i = int(torch.multinomial(torch.softmax(s_logits / temperature, -1), 1).item())
     else:
         start_i = int(s_logits.argmax())
@@ -400,6 +411,7 @@ class AgentLoop:
             s_logits,
             e_logits,
             temperature=self.cfg.sample_temperature if self.cfg.sample_copy else 0.0,
+            topk=self.cfg.copy_topk,
         )
         start, end = int(key_pos[start_i]), int(key_pos[end_i])
         if end < start or end >= len(self._ids):

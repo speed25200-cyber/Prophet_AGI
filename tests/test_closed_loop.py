@@ -449,3 +449,56 @@ def test_a_single_family_writes_the_protocol_as_before(work, tmp_path):
     assert protocol["family"] == "calc" and "bench_families" not in protocol
     assert [b["family"] for b in rounds[0]["bench"]] == ["calc", "calc"]
     assert rounds[0]["success_by_family"] == {"calc": rounds[0]["success_mean"]}
+
+
+def test_copy_topk_explores_from_the_second_attempt_only(work, tmp_path, monkeypatch):
+    """docs/31 amendment 15: the first attempt keeps the policy's pointer, the retries
+    draw it among the best K positions; the protocol records the option only when set."""
+    from prophet.agent import tasks as task_families
+    from prophet.agent.quarantine import Quarantine as Q
+    from scripts.closed_loop import generate_round
+
+    seen = []
+    real = closed_loop.run_bench
+
+    def spy(model, tokenizer, tasks, cfg, **kw):
+        seen.append(cfg.copy_topk)
+        return real(model, tokenizer, tasks, cfg, **kw)
+
+    monkeypatch.setattr(closed_loop, "run_bench", spy)
+    tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
+    model = ProphetModel(agent_tiny_config()).eval()
+    tasks = task_families.make_tasks(2, family="calc", seed=5)
+    generation = generate_round(
+        model,
+        tokenizer,
+        "calc",
+        tasks,
+        Q(tmp_path / "q.json"),
+        round_index=1,
+        attempts=3,
+        temperature=0.7,
+        copy_topk=3,
+    )
+    assert seen[:1] == [0] and all(k == 3 for k in seen[1:]) and len(seen) >= 1
+    assert generation["promoted_explored"] >= 0
+    seen.clear()
+    generate_round(
+        model,
+        tokenizer,
+        "calc",
+        tasks,
+        Q(tmp_path / "q2.json"),
+        round_index=1,
+        attempts=2,
+        temperature=0.7,
+        copy_topk=3,
+        explore_from_attempt=1,
+    )
+    assert seen[:1] == [3]
+    out = tmp_path / "topk"
+    run(work, out, "frozen", rounds=0, copy_topk=3)
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["copy_topk"] == 3 and protocol["explore_from_attempt"] == 2
+    run(work, tmp_path / "plain", "frozen", rounds=0)
+    assert "copy_topk" not in json.loads((tmp_path / "plain" / "protocol.json").read_text())

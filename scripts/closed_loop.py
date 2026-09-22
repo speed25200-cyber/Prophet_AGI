@@ -87,6 +87,7 @@ def generation_config(
     verifier_version: str = "prior-0",
     no_repeat_action: bool = False,
     sample_copy: bool = False,
+    copy_topk: int = 0,
 ) -> AgentConfig:
     """The bench's loop settings (docs/09), with the family named so the quarantine
     files the episodes under it and a temperature the caller chooses: sampled for
@@ -105,6 +106,7 @@ def generation_config(
         verifier_version=verifier_version,
         no_repeat_action=no_repeat_action,
         sample_copy=sample_copy,
+        copy_topk=copy_topk,
     )
 
 
@@ -258,17 +260,27 @@ def generate_round(
     round_index: int,
     attempts: int,
     temperature: float,
+    copy_topk: int = 0,
+    explore_from_attempt: int = 2,
 ) -> dict:
     """Run the loop on every task, up to ``attempts`` times each; verified successes
-    enter the quarantine through the loop itself (tier 0, promoted)."""
+    enter the quarantine through the loop itself (tier 0, promoted).
+
+    ``copy_topk`` > 0 makes the attempts from ``explore_from_attempt`` on draw the copy
+    pointer's start among its best ``copy_topk`` positions (docs/31 amendment 15): the
+    first attempt keeps the policy, the retries explore where it failed.
+    ``promoted_explored`` counts what those retries verified.
+    """
     remaining = list(tasks)
     started = time.time()
-    tokens = episodes = 0
+    tokens = episodes = promoted_explored = 0
     solved = set()
     before = len(quarantine.promoted(family))
-    for _attempt in range(attempts):
+    for attempt in range(1, attempts + 1):
         if not remaining:
             break
+        exploring = copy_topk > 0 and attempt >= explore_from_attempt
+        before_attempt = len(quarantine.promoted(family))
         report = run_bench(
             model,
             tokenizer,
@@ -279,6 +291,7 @@ def generate_round(
                 verifier_version=f"round-{round_index}",
                 no_repeat_action=NO_REPEAT_ACTION,
                 sample_copy=SAMPLE_COPY,
+                copy_topk=copy_topk if exploring else 0,
             ),
             quarantine=quarantine,
             tools_for=task_families.tools_for,
@@ -287,6 +300,8 @@ def generate_round(
         tokens += sum(e.tokens for e in report.episodes)
         episodes += report.n
         solved.update(e.task for e in report.episodes if e.verified)
+        if exploring:
+            promoted_explored += len(quarantine.promoted(family)) - before_attempt
         remaining = [t for t, e in zip(remaining, report.episodes, strict=True) if not e.verified]
     return {
         "tasks": len(tasks),
@@ -294,6 +309,7 @@ def generate_round(
         "attempts": attempts,
         "solved": len(solved),
         "promoted_new": len(quarantine.promoted(family)) - before,
+        "promoted_explored": promoted_explored,
         "tokens": tokens,
         "seconds": time.time() - started,
     }
@@ -439,7 +455,7 @@ def merge_generation(parts: dict[str, dict]) -> dict:
         key: sum(part[key] for part in parts.values())
         for key in ("tasks", "episodes", "solved", "promoted_new", "tokens", "seconds")
     }
-    for key in ("policy_tokens", "rewarded_episodes"):
+    for key in ("policy_tokens", "rewarded_episodes", "promoted_explored"):
         if all(key in part for part in parts.values()):
             merged[key] = sum(part[key] for part in parts.values())
     merged["attempts"] = next(iter(parts.values()))["attempts"]
@@ -500,6 +516,19 @@ def main(argv: list[str] | None = None) -> int:
         "--no-repeat-action",
         action="store_true",
         help="forbid at each step the action name of the previous step (docs/31 amendment 11)",
+    )
+    ap.add_argument(
+        "--copy-topk",
+        type=int,
+        default=0,
+        help="retries draw the copy pointer's start among its best K positions "
+        "(docs/31 amendment 15); 0 keeps the argmax",
+    )
+    ap.add_argument(
+        "--explore-from-attempt",
+        type=int,
+        default=2,
+        help="first attempt that explores with --copy-topk (1 = every attempt)",
     )
     ap.add_argument(
         "--lr-scale",
@@ -587,6 +616,11 @@ def main(argv: list[str] | None = None) -> int:
     }
     if bench_families != families:
         protocol["bench_families"] = "+".join(bench_families)
+    if args.copy_topk < 0 or args.explore_from_attempt < 1:
+        ap.error("copy-topk >= 0, explore-from-attempt >= 1")
+    if args.copy_topk:
+        protocol["copy_topk"] = args.copy_topk
+        protocol["explore_from_attempt"] = args.explore_from_attempt
     protocol_path = args.out / "protocol.json"
     if protocol_path.exists():
         if json.loads(protocol_path.read_text()) != json.loads(json.dumps(protocol)):
@@ -720,6 +754,8 @@ def main(argv: list[str] | None = None) -> int:
                         attempts=args.attempts,
                         temperature=args.temperature,
                         round_index=r,
+                        copy_topk=args.copy_topk,
+                        explore_from_attempt=args.explore_from_attempt,
                     )
                     for f, tasks in tasks_by_family.items()
                 }

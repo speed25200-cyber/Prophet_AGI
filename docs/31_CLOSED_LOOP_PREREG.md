@@ -429,3 +429,34 @@ qu'il n'entraîne pas ; chaque tour tire ses tâches famille par famille, la qua
 classe chaque épisode sous sa famille, le rendu utilise le registre d'outils de la famille
 de l'épisode, le banc rapporte le succès par famille. `scripts/summarize_closed_loop.py`
 calcule les gains par famille et H14 depuis les enregistrements de tours seuls.
+
+## Amendement 15 — 2026-09-22, après v9, pendant v10, avant tout run v11 : la reprise explore le pointeur
+
+**Pourquoi.** v9 (docs/32 §14) : sur la graine dure de `lookup`, 18 tâches de banc sur 60 ne
+sont jamais réussies, et sur 11 des 12 échecs diagnostiqués le modèle note la valeur de
+l'*autre* champ textuel. Ses propres succès ne contredisent jamais cette règle ; l'oracle,
+qui reçoit les trajectoires des tâches ratées, fait +0,300. Le pointeur est confiant : sur
+ces 12 échecs, la bonne valeur est son **second** choix dans 8 cas, avec une probabilité
+médiane de 0,03 (0,000 à 0,466) que la softmax à 0,7 (v8) n'atteint presque jamais. Un
+tirage **uniforme parmi les k meilleurs départs** l'atteint une fois sur k, quelle que soit
+la confiance ; appliqué à la reprise seulement (deuxième tentative, sur les tâches ratées
+par la politique), il ne coûte rien aux tâches que la politique réussit du premier coup.
+
+**Mécanique** (`AgentConfig.copy_topk`, `--copy-topk K --explore-from-attempt 2`) : à la
+tentative 2, le départ du span copié est tiré uniformément parmi les K meilleures
+positions du pointeur, la fin reste l'argmax ; la tentative 1 et le banc (glouton) sont
+inchangés. Chaque tour rapporte `promoted_explored`, le nombre d'épisodes vérifiés issus des
+tentatives qui explorent : ce sont les épisodes qui contredisent la règle du modèle.
+
+**Pilote v11, une seule variable.** `lookup`, graine 2, amorce 100 / 200 de v3–v9, recette
+de référence (v7) plus `--copy-topk 3`, bras `closed-clean` seul ; comparé à v9 (+0,000,
+18 jamais réussies) et à l'oracle v5 (+0,300). Attendu, si le mécanisme fonctionne : ≈ 10
+tâches ratées par tour dont ≈ 8 ont la bonne valeur en second ; à ε = 1 sur la reprise et
+1/3 de bon tirage, ≈ 3 épisodes contradictoires par tour.
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H15 (i)** mécanisme | La reprise exploratoire produit des épisodes vérifiés sur des tâches que la politique rate. | `promoted_explored` ≥ 10 sur 5 tours (≥ 2 par tour en moyenne). |
+| **H15 (ii)** la boucle apprend d'eux | Le banc progresse avec certitude. | gain > 0, intervalle excluant zéro. |
+| **H15 (iii)** l'ensemble jamais réussi rétrécit | Les tâches jamais réussies passent sous les deux tiers de v9. | jamais réussies ≤ 12 sur 60 (v9 : 18). |
+| **H15** | | les trois, sinon échec ; (i) seul dit si l'exploration atteint la valeur, (ii) et (iii) si la boucle en apprend. |

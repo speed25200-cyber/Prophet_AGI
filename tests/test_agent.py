@@ -683,3 +683,22 @@ def test_choose_copy_span_is_argmax_when_greedy_and_explores_when_sampled():
     for _ in range(50):
         st, en = choose_copy_span(s, e, temperature=1.0)
         assert en >= st  # the end never precedes the start
+
+
+def test_choose_copy_span_topk_reaches_every_top_candidate_equally():
+    """docs/31 amendment 15: a confident pointer's second choice is drawn as often as
+    its first, which a tempered softmax never does."""
+    import torch as _t
+
+    s = _t.tensor([0.0, 6.0, -1.0, -50.0])  # the softmax at 0.7 puts ~1e-4 on position 0
+    e = _t.tensor([0.0, 0.0, 3.0, 0.0])
+    assert choose_copy_span(s, e, temperature=0.0, topk=1) == (1, 2)
+    _t.manual_seed(0)
+    draws = [choose_copy_span(s, e, temperature=0.0, topk=3)[0] for _ in range(300)]
+    counts = {i: draws.count(i) for i in set(draws)}
+    assert set(counts) == {0, 1, 2}, counts  # the three best, never the -50
+    assert all(60 <= c <= 140 for c in counts.values()), counts  # roughly uniform
+    for st, en in (choose_copy_span(s, e, temperature=0.0, topk=3) for _ in range(50)):
+        assert en >= st
+    # The loop reads the option: a config with copy_topk set changes the choice.
+    assert AgentConfig(copy_topk=3).copy_topk == 3 and AgentConfig().copy_topk == 0
