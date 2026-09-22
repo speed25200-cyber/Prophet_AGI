@@ -301,3 +301,18 @@ tel quel avec le taux de départ.
 | Hypothèse | Énoncé mesurable | Critère |
 |---|---|---|
 | **H10 généralité** | La recette qui marche sur `lookup` fait démarrer et progresser la boucle sur `files`. | (i) gain(closed-clean) > 0 avec un intervalle excluant zéro sur chaque graine retenue ; (ii) rendement gain(closed-clean) / gain(oracle) ≥ 0,6 ; (iii) aucun tour sous succès(tour 0) − 0,10. Les trois, sinon échec, et le taux de départ est rapporté. |
+
+## Amendement 10 — 2026-09-22, calibration `files` : saturée à l'amorce
+
+**Observation.** Avec la recette v5 (grammaire compacte, `done` sans argument), l'amorce de
+100 trajectoires parfaites / 200 pas donne sur `files` un départ de **1,000 / 0,983 / 1,000**
+(graines 0, 1, 2 ; banc 2 × 30). Les 7 % de docs/09 tenaient aux deux défauts de décodage
+depuis corrigés. La calibration est arrêtée là : la règle « strictement entre 0 et 1 »
+retiendrait la graine 1 avec une tâche de marge sur soixante, ce qui ne teste rien.
+
+**Échelle d'amorce, pré-enregistrée.** Calibration du tour 0 sur les graines 0, 1, 2 pour
+`files` à 50 / 100 et 25 / 50 (épisodes / pas), puis `count` à 100 / 200. Le pilote v6
+tourne sur la **première** combinaison (famille, amorce) de cette liste où au moins deux
+graines démarrent entre 0,10 et 0,90 ; les graines retenues sont celles-là. Si aucune
+combinaison ne convient, le résultat est « à 7 M, aucune de ces familles n'offre de marge
+à cette amorce », rapporté avec le tableau des départs. H10 reste tel qu'écrit.
