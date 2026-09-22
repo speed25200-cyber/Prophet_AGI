@@ -123,6 +123,11 @@ class AgentConfig:
     (grammar-masked, tempered) and ``mc_draws`` auxiliary draws with theirs, in
     ``EpisodeResult.sampled``; the exact token stream goes to ``EpisodeResult.ids``."""
     mc_draws: int = 8
+    sample_copy: bool = False
+    """Sample the copy pointer's start and end from their softmax at ``sample_temperature``
+    instead of taking the argmax (docs/31 amendment 12). Without it the pointer never
+    explores, so a systematically misplaced copy can never yield a verified episode and
+    the closed loop cannot correct it. Greedy (temperature 0) keeps the argmax."""
     no_repeat_action: bool = False
     """Forbid, at step *i*, the action name of step *i - 1* (docs/31 amendment 11). Canonical
     trajectories never repeat a step; without this the decoder could loop on ``note``
@@ -167,6 +172,24 @@ class EpisodeResult:
     sampled: list[dict[str, Any]] | None = None
     """With ``record_sampling``: one record per token the sampler drew --
     ``position`` in ``ids``, ``token``, ``logq``, ``mc_ids``, ``mc_logq``."""
+
+
+def choose_copy_span(
+    s_logits: torch.Tensor, e_logits: torch.Tensor, *, temperature: float
+) -> tuple[int, int]:
+    """Start and end indices of the copy span among the key positions. ``temperature``
+    zero (or negative) takes the argmax of each pointer; otherwise both are sampled from
+    their tempered softmax, the end restricted to positions at or after the start."""
+    if temperature > 0:
+        start_i = int(torch.multinomial(torch.softmax(s_logits / temperature, -1), 1).item())
+    else:
+        start_i = int(s_logits.argmax())
+    e_logits = e_logits.masked_fill(torch.arange(e_logits.numel()) < start_i, float("-inf"))
+    if temperature > 0:
+        end_i = int(torch.multinomial(torch.softmax(e_logits / temperature, -1), 1).item())
+    else:
+        end_i = int(e_logits.argmax())
+    return start_i, end_i
 
 
 class AgentLoop:
@@ -373,9 +396,11 @@ class AgentLoop:
         if float(gate[0, -1]) <= 0.0:
             return None
         s_logits, e_logits = starts[0, -1].float(), ends[0, -1].float()
-        start_i = int(s_logits.argmax())
-        e_logits = e_logits.masked_fill(torch.arange(e_logits.numel()) < start_i, float("-inf"))
-        end_i = int(e_logits.argmax())
+        start_i, end_i = choose_copy_span(
+            s_logits,
+            e_logits,
+            temperature=self.cfg.sample_temperature if self.cfg.sample_copy else 0.0,
+        )
         start, end = int(key_pos[start_i]), int(key_pos[end_i])
         if end < start or end >= len(self._ids):
             return None
@@ -499,9 +524,7 @@ class AgentLoop:
                 if previous is not None:
                     exclude = frozenset({previous["name"]})
             if selected is not None and self.cfg.use_selection_head:
-                self.grammar.restrict(
-                    set() if selected == "none" else {selected}, exclude=exclude
-                )
+                self.grammar.restrict(set() if selected == "none" else {selected}, exclude=exclude)
             elif exclude:
                 self.grammar.restrict(None, exclude=exclude)
             try:

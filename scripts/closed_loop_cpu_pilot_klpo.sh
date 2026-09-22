@@ -14,10 +14,11 @@ LR_SCALE="${LR_SCALE:-1.0}"  # per-round peak-rate multiplier (docs/31, amendmen
 SEED_EPISODES="${SEED_EPISODES:-100}"  # amorce size; a lighter amorce leaves a family its margin (docs/31, amendment 10)
 SEED_STEPS="${SEED_STEPS:-200}"
 NO_REPEAT="${NO_REPEAT:-0}"  # 1 = --no-repeat-action (docs/31, amendment 11)
+SAMPLE_COPY="${SAMPLE_COPY:-0}"  # 1 = --sample-copy at generation (docs/31, amendment 12)
 COMMON=(--work "$WORK" --family "$FAMILY" --tasks-per-round 30 --attempts 2
         --steps-per-round 60 --seed-episodes "$SEED_EPISODES" --seed-steps "$SEED_STEPS" --replay-fraction 0.5
         --bench-tasks 30 --bpb-docs 200 --seq-len 512 --batch-size 8 --minutes 600
-        --lr-scale "$LR_SCALE" $([ "$NO_REPEAT" = 1 ] && echo --no-repeat-action)
+        --lr-scale "$LR_SCALE" $([ "$NO_REPEAT" = 1 ] && echo --no-repeat-action) $([ "$SAMPLE_COPY" = 1 ] && echo --sample-copy)
         --klpo-steps "${KLPO_STEPS:-60}" --klpo-beta "${KLPO_BETA:-0.1}" --klpo-lr 5e-4 --klpo-draws 8 --klpo-temperature 1.0)
 for SEED in $SEEDS; do
   SEED_DIR="$OUT/oracle-seed$SEED/seed"

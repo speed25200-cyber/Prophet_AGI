@@ -339,3 +339,25 @@ Test : la boucle avec l'option ne peut pas enchaîner deux `note`.
 **Pilote v7, une seule variable.** `files`, amorce 50 / 100, graines 0 et 1 (les mêmes
 poids d'amorce), recette v6 plus `no_repeat_action`. Critère **H11** : H10 réévaluée sous
 v7 ((i) intervalles excluant zéro, (ii) rendement ≥ 0,6, (iii) aucun tour sous t0 − 0,10).
+
+## Amendement 12 — 2026-09-22, après v7, avant tout run v8 : le pointeur de copie explore
+
+**Observation.** H11 tient (v7), et les 4 échecs restants de la graine 1 sur `files` sont
+tous un pointeur de copie en retard d'un jeton (`chor_0.txt` pour `anchor_0.txt`). Les
+cibles d'entraînement sont vérifiées justes (0 cible mal alignée sur 60 valeurs de
+trajectoires parfaites rendues) : c'est le pointeur **appris** de cette amorce qui est
+biaisé. Or, à la génération, la boucle prend l'**argmax** des deux pointeurs quelle que
+soit la température : un pointeur systématiquement décalé ne produit jamais d'épisode
+vérifié, et la boucle fermée ne peut pas corriger ce qu'elle ne réussit jamais. Le mur
+d'amorçage de §2, au jeton près.
+
+**Correctif, génération seulement, activable.** `AgentConfig.sample_copy` (défaut
+`False`) : à la génération (température 0,7), le début et la fin du span copié sont tirés
+de leur softmax tempérée au lieu de l'argmax ; le banc reste glouton. `--sample-copy` dans
+le protocole, `SAMPLE_COPY=1` dans les scripts. Test : la fonction de choix est l'argmax à
+température nulle et explore les candidats proches sinon, sans jamais mettre la fin avant
+le début.
+
+**Pilote v8, une seule variable.** `files` 50 / 100, graines 0 et 1, recette v7 plus
+`sample_copy`. Critère **H12** : H11 réévaluée sous v8, plus (iv) sur la graine 1, gain ≥
+celui de v7 (+0,117) et au plus 1 échec de copie décalée sur les 30 tâches du banc 7.

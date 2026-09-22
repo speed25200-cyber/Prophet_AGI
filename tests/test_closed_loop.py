@@ -310,10 +310,18 @@ def test_no_repeat_action_flag_reaches_the_protocol_and_the_generation_config(wo
         "--bpb-docs",
         "2",
         "--no-repeat-action",
+        "--sample-copy",
     ]
     assert main(argv) == 0
-    assert json.loads((out / "protocol.json").read_text())["no_repeat_action"] is True
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["no_repeat_action"] is True
     assert closed_loop.NO_REPEAT_ACTION is True
+    assert protocol["sample_copy"] is True and closed_loop.SAMPLE_COPY is True
+    assert closed_loop.generation_config("calc", temperature=0.7, sample_copy=True).sample_copy
+    assert not closed_loop.generation_config(
+        "calc", temperature=0.0
+    ).sample_copy  # the bench stays greedy
+    closed_loop.SAMPLE_COPY = False
     assert closed_loop.generation_config(
         "calc", temperature=0.0, no_repeat_action=closed_loop.NO_REPEAT_ACTION
     ).no_repeat_action

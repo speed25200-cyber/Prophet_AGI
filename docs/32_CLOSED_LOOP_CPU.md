@@ -515,7 +515,11 @@ deux modes, tous deux hors de la boucle elle-même :
   pour `anchor_0.txt`, `antern_2.txt` pour `lantern_2.txt`. Le bon fichier est trouvé, sa
   copie perd son premier jeton, `done` est refusé. C'est le mode **(e)** : une cible de copie
   mal alignée à l'entraînement quand la valeur ouvre l'observation sans espace devant elle
-  (le défaut n° 11 de CLAUDE.md sous une autre forme), propre à l'amorce de la graine 1.
+  propre à l'amorce de la graine 1. Vérification faite : les cibles de copie des
+  trajectoires parfaites rendues sont justes (0 sur 60 mal alignées), c'est le pointeur
+  **appris** qui est décalé. Et la boucle ne peut pas le corriger : à la génération, le
+  pointeur prend l'argmax quelle que soit la température, donc les tâches qu'il rate ne
+  donnent jamais d'épisode vérifié. D'où l'amendement 12 (le pointeur explore).
 
 Pour l'échelle A100 (docs/31 §3), trois choses sont acquises dès maintenant : la marge de
 départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la recette par

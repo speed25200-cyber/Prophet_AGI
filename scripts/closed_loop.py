@@ -66,6 +66,7 @@ from scripts.first_agent_run_cpu import (  # noqa: E402
     replay_source,
 )
 
+SAMPLE_COPY = False  # set by main() from --sample-copy; generation only (the bench is greedy)
 NO_REPEAT_ACTION = False  # set by main() from --no-repeat-action; read by generation_config callers
 ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean")
 BENCH_SEEDS = (7, 11)
@@ -79,6 +80,7 @@ def generation_config(
     temperature: float,
     verifier_version: str = "prior-0",
     no_repeat_action: bool = False,
+    sample_copy: bool = False,
 ) -> AgentConfig:
     """The bench's loop settings (docs/09), with the family named so the quarantine
     files the episodes under it and a temperature the caller chooses: sampled for
@@ -96,6 +98,7 @@ def generation_config(
         family=family,
         verifier_version=verifier_version,
         no_repeat_action=no_repeat_action,
+        sample_copy=sample_copy,
     )
 
 
@@ -246,6 +249,7 @@ def generate_round(
                 temperature=temperature,
                 verifier_version=f"round-{round_index}",
                 no_repeat_action=NO_REPEAT_ACTION,
+                sample_copy=SAMPLE_COPY,
             ),
             quarantine=quarantine,
             tools_for=task_families.tools_for,
@@ -286,6 +290,7 @@ def generate_round_klpo(
         temperature=temperature,
         verifier_version=f"round-{round_index}",
         no_repeat_action=NO_REPEAT_ACTION,
+        sample_copy=SAMPLE_COPY,
     )
     cfg.sample_actions = True
     cfg.record_sampling = True
@@ -430,6 +435,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--replay-fraction", type=float, default=0.5)
     ap.add_argument(
+        "--sample-copy",
+        action="store_true",
+        help="sample the copy pointer at generation instead of its argmax (docs/31 amendment 12)",
+    )
+    ap.add_argument(
         "--no-repeat-action",
         action="store_true",
         help="forbid at each step the action name of the previous step (docs/31 amendment 11)",
@@ -465,8 +475,9 @@ def main(argv: list[str] | None = None) -> int:
         "--klpo-temperature", type=float, default=1.0, help="sampling temperature of the KLPO arm"
     )
     args = ap.parse_args(argv)
-    global NO_REPEAT_ACTION
+    global NO_REPEAT_ACTION, SAMPLE_COPY
     NO_REPEAT_ACTION = bool(args.no_repeat_action)
+    SAMPLE_COPY = bool(args.sample_copy)
     if args.rounds < 0 or args.tasks_per_round < 1 or args.attempts < 1 or args.steps_per_round < 0:
         ap.error("rounds >= 0, tasks and attempts >= 1, steps >= 0")
     if not 0 <= args.replay_fraction < 1:
@@ -492,6 +503,7 @@ def main(argv: list[str] | None = None) -> int:
         "replay_fraction": args.replay_fraction,
         "lr_scale": args.lr_scale,
         "no_repeat_action": args.no_repeat_action,
+        "sample_copy": args.sample_copy,
         "temperature": args.temperature,
         "bench_tasks": args.bench_tasks,
         "bench_seeds": list(BENCH_SEEDS),

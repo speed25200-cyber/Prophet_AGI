@@ -24,7 +24,7 @@ from prophet.agent.actions import (
     ToolRegistry,
     ToolSchema,
 )
-from prophet.agent.loop import AgentConfig, AgentLoop
+from prophet.agent.loop import AgentConfig, AgentLoop, choose_copy_span
 from prophet.agent.quarantine import Entry, Provenance, Quarantine
 from prophet.agent.state import AgentState, Observation, snapshot_cache
 from prophet.agent.verify import (
@@ -669,3 +669,17 @@ def test_restrict_can_exclude_a_reserved_action_for_no_repeat():
     assert "note" in g.names and "done" not in g.names
     g.restrict(None)
     assert "note" in g.names and "done" in g.names
+
+
+def test_choose_copy_span_is_argmax_when_greedy_and_explores_when_sampled():
+    import torch as _t
+
+    s = _t.tensor([0.0, 0.1, 0.0, -50.0])  # start: two close candidates, 1 and 0
+    e = _t.tensor([0.0, 0.0, 3.0, 0.0])  # end: 2 preferred
+    assert choose_copy_span(s, e, temperature=0.0) == (1, 2)
+    _t.manual_seed(0)
+    starts = {choose_copy_span(s, e, temperature=1.0)[0] for _ in range(200)}
+    assert starts >= {0, 1} and 3 not in starts  # explores the close pair, never the -50
+    for _ in range(50):
+        st, en = choose_copy_span(s, e, temperature=1.0)
+        assert en >= st  # the end never precedes the start

@@ -14,10 +14,11 @@ LR_SCALE="${LR_SCALE:-1.0}"
 SEED_EPISODES="${SEED_EPISODES:-100}"  # amorce size; a lighter amorce leaves a family its margin (docs/31, amendment 10)
 SEED_STEPS="${SEED_STEPS:-200}"
 NO_REPEAT="${NO_REPEAT:-0}"  # 1 = --no-repeat-action (docs/31, amendment 11)
+SAMPLE_COPY="${SAMPLE_COPY:-0}"  # 1 = --sample-copy at generation (docs/31, amendment 12)
 COMMON=(--work "$WORK" --family "$FAMILY" --tasks-per-round 30 --attempts 2
         --steps-per-round 60 --seed-episodes "$SEED_EPISODES" --seed-steps "$SEED_STEPS" --replay-fraction 0.5
         --bench-tasks 30 --bpb-docs 200 --seq-len 512 --batch-size 8 --minutes 600
-        --lr-scale "$LR_SCALE" ${NO_REPEAT:+$([ "$NO_REPEAT" = 1 ] && echo --no-repeat-action)})
+        --lr-scale "$LR_SCALE" ${NO_REPEAT:+$([ "$NO_REPEAT" = 1 ] && echo --no-repeat-action) $([ "$SAMPLE_COPY" = 1 ] && echo --sample-copy)})
 for SEED in $SEEDS; do
   SEED_DIR="$OUT/oracle-seed$SEED/seed"
   [ -d "$SEED_DIR" ] || { echo "missing $SEED_DIR: run closed_loop_cpu_pilot.sh first"; exit 1; }
