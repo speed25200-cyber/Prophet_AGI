@@ -542,3 +542,28 @@ par famille, la graine 0 démarre à `lookup` 0,90 (canonique 0,75) et `files` *
 l'amendement 9 : graines 1 puis 2 à 100 / 200, puis un barreau intermédiaire 75 / 150 sur
 la graine 0 (50 / 100 a donné 0 succès canonique sur `files`, 100 / 200 la saturation). La
 première graine retenue reçoit les quatre bras ; v12 passe avant.
+
+## Amendement 19 — 2026-09-22, pendant v12 (graine 1), avant tout run v13 : n'explorer que les débuts de mots
+
+**Pourquoi.** v12, graine 0 (`files`, exploration ciblée de l'amendement 17) : 8 épisodes
+explorés en cinq tours, banc 0,850 → 0,867, 6 tâches jamais réussies (v7 : 4). Diagnostic
+sur le checkpoint final (banc 7) : les échecs sont le mode (e) — `con_0.txt` et
+`acon_2.txt` notés pour `beacon_0.txt` et `beacon_2.txt` — et le bon départ (`be`, après
+le saut de ligne) est au **rang 11 et 15** du pointeur, derrière `con`, `a`, `":`,
+`"list_f` : un tirage parmi les 3 meilleurs ne l'atteint jamais. Le pointeur met sa masse
+*à l'intérieur* du nom. Une valeur copiée est un mot ou un champ entier : un départ au
+milieu d'un mot n'est jamais juste.
+
+**Mécanique** (`AgentConfig.copy_boundaries`, `--copy-boundaries explore | always`) : les
+positions candidates sont restreintes aux débuts de mots — premier jeton d'une observation,
+ou jeton dont le prédécesseur se termine par un blanc, un guillemet ou une ponctuation —
+pour le tirage exploratoire seulement (`explore`), ou aussi pour l'argmax (`always`).
+`explore` ne change pas la politique, seulement ce que la reprise essaie ; `always` est un
+a priori de décodage, comme la grammaire compacte, à mesurer avant adoption.
+
+**Pilote v13, une seule variable par rapport à v12.** `files`, graines 0 et 1, mêmes
+amorces, recette de référence, `--copy-topk 3 --copy-explore observations --attempts 3
+--copy-boundaries explore` ; bras `closed-clean` seul. Critères H16 inchangés (explorés
+≥ 10 par graine ; gain ≥ v7 par graine avec intervalle excluant zéro ; rendement moyen
+≥ 0,8), plus **H17 (mode e)** : sur la graine 0, les deux tâches `beacon_*.txt` du banc 7
+sont réussies au tour 5. Lancé après l'échelle de calibration v10b.
