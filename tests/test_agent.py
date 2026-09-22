@@ -442,6 +442,38 @@ def test_done_is_accepted_only_when_the_verifier_passes():
     assert result.steps[0].gated == "refused_done"
 
 
+def test_a_refused_done_is_not_emitted_again_at_once_with_no_repeat_emitted():
+    """docs/31 amendment 24: a refused done is logged as the verify that replaced it, so
+    no_repeat_action forbade verify and let the model emit done again, refused again. With
+    no_repeat_emitted the name forbidden is the one emitted: done cannot follow a refused
+    done, and the step goes to another action."""
+    script = script_for(
+        "<|/think|>",
+        call({"name": "done"}),
+        "<|/think|>",
+        call({"name": "done"}),
+        "<|/think|>",
+        call({"name": "done"}),
+    )
+    base = dict(max_steps=3, think_budget=4, action_budget=64, halt_threshold=None)
+    legacy = _loop(
+        script,
+        confidence=-5.0,
+        cfg=AgentConfig(**base, no_repeat_action=True),
+        verifier_tool=lambda s: False,
+    ).run("finish")
+    assert [r.gated for r in legacy.steps] == ["refused_done"] * 3
+    fixed = _loop(
+        script,
+        confidence=-5.0,
+        cfg=AgentConfig(**base, no_repeat_action=True, no_repeat_emitted=True),
+        verifier_tool=lambda s: False,
+    ).run("finish")
+    assert fixed.steps[0].gated == "refused_done"
+    assert fixed.steps[1].gated != "refused_done"
+    assert fixed.steps[1].action is None or fixed.steps[1].action.name != "done"
+
+
 def test_irreversible_action_below_threshold_is_verified_first():
     loop = _loop(
         script_for(

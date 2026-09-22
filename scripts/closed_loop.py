@@ -85,6 +85,7 @@ from scripts.first_agent_run_cpu import (  # noqa: E402
 
 SAMPLE_COPY = False  # set by main() from --sample-copy; generation only (the bench is greedy)
 NO_REPEAT_ACTION = False  # set by main() from --no-repeat-action; read by generation_config callers
+NO_REPEAT_EMITTED = False  # set by main() from --no-repeat-emitted; bench and generation alike
 COPY_BOUNDARIES = "off"  # set by main() from --copy-boundaries; bench and generation alike
 ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean", "closed-propose")
 BENCH_SEEDS = (7, 11)
@@ -126,6 +127,7 @@ def generation_config(
         copy_topk=copy_topk,
         copy_explore=copy_explore,
         copy_boundaries=COPY_BOUNDARIES if copy_boundaries is None else copy_boundaries,
+        no_repeat_emitted=NO_REPEAT_EMITTED,
     )
 
 
@@ -833,6 +835,12 @@ def main(argv: list[str] | None = None) -> int:
         "position, or one JSON object shaped like the file (docs/33 amendment 9)",
     )
     ap.add_argument(
+        "--no-repeat-emitted",
+        action="store_true",
+        help="with --no-repeat-action, forbid the action the model emitted at the previous "
+        "step, not the one logged (a refused done is logged as verify; docs/31 amendment 24)",
+    )
+    ap.add_argument(
         "--propose-copy",
         choices=("none", "ask"),
         default="none",
@@ -866,8 +874,11 @@ def main(argv: list[str] | None = None) -> int:
         "--klpo-temperature", type=float, default=1.0, help="sampling temperature of the KLPO arm"
     )
     args = ap.parse_args(argv)
-    global NO_REPEAT_ACTION, SAMPLE_COPY, COPY_BOUNDARIES
+    global NO_REPEAT_ACTION, NO_REPEAT_EMITTED, SAMPLE_COPY, COPY_BOUNDARIES
     NO_REPEAT_ACTION = bool(args.no_repeat_action)
+    NO_REPEAT_EMITTED = bool(args.no_repeat_emitted)
+    if NO_REPEAT_EMITTED and not NO_REPEAT_ACTION:
+        ap.error("--no-repeat-emitted refines --no-repeat-action; pass both")
     SAMPLE_COPY = bool(args.sample_copy)
     COPY_BOUNDARIES = args.copy_boundaries
     if args.rounds < 0 or args.tasks_per_round < 1 or args.attempts < 1 or args.steps_per_round < 0:
@@ -952,6 +963,8 @@ def main(argv: list[str] | None = None) -> int:
         protocol["propose_format"] = args.propose_format
     if args.propose_copy != "none":
         protocol["propose_copy"] = args.propose_copy
+    if args.no_repeat_emitted:
+        protocol["no_repeat_emitted"] = True
     if args.hard_bench:
         protocol["hard_bench"] = True
     protocol.update(device_protocol(args.device))

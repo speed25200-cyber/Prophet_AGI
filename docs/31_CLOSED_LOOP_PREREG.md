@@ -678,3 +678,30 @@ familles saturées sont signalées et jugées selon l'amendement 20. Sinon, l'é
 au barreau suivant (100 / 200, puis 50 / 100, puis 200 / 400). La règle vit dans
 `calibration_verdict` (`scripts/closed_loop.py`), que le lanceur appelle au lieu de la
 recopier (test). Aucun pilote CPU n'a utilisé ce lanceur : aucun chiffre publié ne change.
+
+## Amendement 24 — 2026-09-22, avant toute mesure : `no_repeat_action` exclut l'action émise (H28)
+
+**Ce qui s'est passé.** Sur le premier temps de l'amorce reconstruite (docs/32 §22, banc
+`lookup` 0,667), un diagnostic en lecture seule du banc glouton classe les 20 échecs :
+**16 sont le mode « `done` prématuré »** de docs/32 §21 (`read_file`, puis `done` refusé
+trois fois, sans note), 2 sont une mauvaise note et 2 une note juste arrivée trop tard.
+
+La cause est mécanique. Quand la porte refuse un `done`, la boucle le remplace par une
+action `verify` et inscrit ce substitut dans la trajectoire. `no_repeat_action`
+(amendement 11) interdit au pas suivant le nom inscrit, donc `verify`. Le modèle, qui
+avait émis `done`, peut réémettre `done`, et se faire refuser encore. Or un `done` refusé
+ne peut pas passer au pas suivant : rien n'a changé qui puisse faire passer le
+vérificateur. Même famille que les défauts de docs/32 §4 : un interrupteur dont
+l'intention (« pas de pas répété ») n'est pas ce que le code lit.
+
+**H28.** Interdire au pas *i* le nom de l'action **émise** au pas *i − 1*, avant toute
+substitution (`AgentConfig.no_repeat_emitted`, `--no-repeat-emitted`, écrit dans
+`protocol.json` s'il est actif ; tests). L'option reste désactivée par défaut, pour que les
+chiffres des pilotes restent reproductibles à leur commit.
+
+**Mesure, à poids égaux, décodage seulement.** Le point de contrôle du premier temps est
+remesuré par le bras `frozen` à zéro tour, avec `--no-repeat-emitted`, sur les deux bancs,
+et le même diagnostic reclasse les échecs. **Critère** : succès au banc `lookup` ≥ 0,667 +
+0,10, et moins de 16 échecs « `done` prématuré ». Rapporté aussi : le succès canonique et
+le banc hors distribution. Si H28 passe, l'option entre dans la recette de référence
+proposée pour l'A100 (`scripts/closed_loop_a100.sh`), par un amendement séparé.

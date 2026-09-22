@@ -310,11 +310,16 @@ def test_no_repeat_action_flag_reaches_the_protocol_and_the_generation_config(wo
         "--bpb-docs",
         "2",
         "--no-repeat-action",
+        "--no-repeat-emitted",
         "--sample-copy",
     ]
     assert main(argv) == 0
     protocol = json.loads((out / "protocol.json").read_text())
     assert protocol["no_repeat_action"] is True
+    # docs/31 amendment 24: the refinement is recorded and reaches bench and generation.
+    assert protocol["no_repeat_emitted"] is True and closed_loop.NO_REPEAT_EMITTED is True
+    assert closed_loop.generation_config("calc", temperature=0.0).no_repeat_emitted
+    closed_loop.NO_REPEAT_EMITTED = False
     assert closed_loop.NO_REPEAT_ACTION is True
     assert protocol["sample_copy"] is True and closed_loop.SAMPLE_COPY is True
     assert closed_loop.generation_config("calc", temperature=0.7, sample_copy=True).sample_copy
@@ -326,6 +331,10 @@ def test_no_repeat_action_flag_reaches_the_protocol_and_the_generation_config(wo
         "calc", temperature=0.0, no_repeat_action=closed_loop.NO_REPEAT_ACTION
     ).no_repeat_action
     closed_loop.NO_REPEAT_ACTION = False
+    # The refinement alone is refused: it says which name no_repeat_action forbids.
+    with pytest.raises(SystemExit):
+        main([a for a in argv if a != "--no-repeat-action"])
+    closed_loop.NO_REPEAT_ACTION = closed_loop.NO_REPEAT_EMITTED = False
 
 
 def test_two_families_share_one_loop_and_are_benched_apart(work, tmp_path):

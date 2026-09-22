@@ -155,6 +155,12 @@ class AgentConfig:
     """Forbid, at step *i*, the action name of step *i - 1* (docs/31 amendment 11). Canonical
     trajectories never repeat a step; without this the decoder could loop on ``note``
     and never reach ``done`` within the step budget."""
+    no_repeat_emitted: bool = False
+    """With ``no_repeat_action``, the name forbidden is the one the model *emitted* at step
+    *i - 1*, not the one the trajectory logged. A refused ``done`` is logged as the
+    ``verify`` that replaced it, so the model could emit ``done`` again, be refused again,
+    to the end of its budget -- though nothing had changed that could make it pass
+    (docs/31 amendment 24). Off by default: the pilots' figures stay reproducible."""
     copy_topk: int = 0
     """Draw the copy pointer's start uniformly among its ``copy_topk`` best positions
     (docs/31 amendment 15); 0 keeps the argmax (or the tempered draw of ``sample_copy``).
@@ -559,6 +565,7 @@ class AgentLoop:
         self._ids = []
         self._sampled = []
         self._observation_spans = []
+        self._last_emitted: str | None = None
         fingerprint = (
             model_fingerprint(self.model)
             if isinstance(self.model, torch.nn.Module) and hasattr(self.model, "cfg")
@@ -633,7 +640,9 @@ class AgentLoop:
                 previous = next(
                     (t["action"] for t in reversed(state.trajectory) if t.get("action")), None
                 )
-                if previous is not None:
+                if self.cfg.no_repeat_emitted and self._last_emitted is not None:
+                    exclude = frozenset({self._last_emitted})
+                elif previous is not None:
                     exclude = frozenset({previous["name"]})
             if selected is not None and self.cfg.use_selection_head:
                 self.grammar.restrict(set() if selected == "none" else {selected}, exclude=exclude)
@@ -652,6 +661,8 @@ class AgentLoop:
             finally:
                 self.grammar.restrict(None)
             action = self.grammar.complete(text)
+            if action is not None:
+                self._last_emitted = action.name  # before any gate substitutes it
             if action is None:
                 # The grammar guarantees viability, not completion within budget.
                 records.append(
