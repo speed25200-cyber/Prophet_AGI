@@ -1,0 +1,21 @@
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights:   0%|          | 1/311 [00:00<01:03,  4.89it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 1031.91it/s]
+step    2030  loss  3.5185  lr 2.62e-05  decay        4.16M tok    1.63s  loss/donor_kl=1.592  loss/mtp=9.526  loss/total=2.555  train/grad_norm=2.016
+step    2031  loss  4.0483  lr 2.48e-05  decay        4.16M tok    1.12s  loss/donor_kl=1.303  loss/mtp=9.029  loss/total=2.675  train/grad_norm=1.539
+step    2032  loss  4.6143  lr 2.34e-05  decay        4.16M tok    1.13s  loss/donor_kl=1.474  loss/mtp=9.304  loss/total=3.044  train/grad_norm=1.669
+step    2033  loss  4.9021  lr 2.20e-05  decay        4.16M tok    1.10s  loss/donor_kl=1.463  loss/mtp=9.436  loss/total=3.183  train/grad_norm=1.597
+step    2034  loss  4.6772  lr 2.06e-05  decay        4.17M tok    1.11s  loss/donor_kl=1.423  loss/mtp=9.41  loss/total=3.05  train/grad_norm=1.643
+step    2035  loss  4.1299  lr 1.92e-05  decay        4.17M tok    1.10s  loss/donor_kl=1.478  loss/mtp=9.073  loss/total=2.804  train/grad_norm=2.129
+step    2036  loss  4.5011  lr 1.78e-05  decay        4.17M tok    1.11s  loss/donor_kl=1.461  loss/mtp=9.555  loss/total=2.981  train/grad_norm=1.717
+step    2037  loss  3.9531  lr 1.64e-05  decay        4.17M tok    1.11s  loss/donor_kl=1.458  loss/mtp=9.055  loss/total=2.705  train/grad_norm=1.741
+step    2038  loss  4.5149  lr 1.51e-05  decay        4.17M tok    1.12s  loss/donor_kl=1.384  loss/mtp=8.966  loss/total=2.949  train/grad_norm=1.558
+step    2039  loss  5.1560  lr 1.37e-05  decay        4.18M tok    1.11s  loss/donor_kl=1.524  loss/mtp=9.407  loss/total=3.34  train/grad_norm=1.749
+step    2040  loss  4.2799  lr 1.23e-05  decay        4.18M tok    1.12s  loss/donor_kl=1.463  loss/mtp=9.261  loss/total=2.872  train/grad_norm=1.821
+step    2041  loss  4.4628  lr 1.09e-05  decay        4.18M tok    1.10s  loss/donor_kl=1.303  loss/mtp=9.249  loss/total=2.883  train/grad_norm=1.825
+step    2042  loss  4.0828  lr 9.56e-06  decay        4.18M tok    1.12s  loss/donor_kl=1.401  loss/mtp=9.254  loss/total=2.742  train/grad_norm=1.523
+step    2043  loss  4.4532  lr 8.19e-06  decay        4.18M tok    1.11s  loss/donor_kl=1.592  loss/mtp=9.52  loss/total=3.023  train/grad_norm=1.777
+step    2044  loss  4.1231  lr 6.82e-06  decay        4.19M tok    1.13s  loss/donor_kl=1.346  loss/mtp=9.373  loss/total=2.734  train/grad_norm=1.565
+step    2045  loss  3.7686  lr 5.45e-06  decay        4.19M tok    1.10s  loss/donor_kl=1.282  loss/mtp=9.034  loss/total=2.525  train/grad_norm=1.818
+step    2046  loss  4.0724  lr 4.08e-06  decay        4.19M tok    1.10s  loss/donor_kl=1.474  loss/mtp=9.175  loss/total=2.773  train/grad_norm=1.799
+step    2047  loss  3.8000  lr 2.72e-06  decay        4.19M tok    1.11s  loss/donor_kl=1.199  loss/mtp=8.809  loss/total=2.499  train/grad_norm=1.861
+step    2048  loss  4.3773  lr 1.36e-06  decay        4.19M tok    1.11s  loss/donor_kl=1.356  loss/mtp=8.968  loss/total=2.866  train/grad_norm=1.646
+RECOVERY_SESSION_COMPLETE 2048 4.296796569353524

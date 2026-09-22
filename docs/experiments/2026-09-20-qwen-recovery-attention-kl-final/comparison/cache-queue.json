@@ -1,0 +1,78 @@
+{
+  "status": "all_passed",
+  "revision": "ed72c867d5f90fc614e82aca1866a9aad5f3dcfe",
+  "results": {
+    "hybrid-ce": {
+      "passed": true,
+      "report": "/content/prophet-recovery/recovered-cache-final-suite/chunk64.json",
+      "sha256": "542f5c1cf56c17db2abc319eaeb4bebcfa5458d902fbe7c5d4a0e64965ea3b33",
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "9d511123800d71cac0ed4399546ab152e1d70f5b31b4655aa6661ec92da242f8",
+        "bytes": 3707786649,
+        "extra": {}
+      },
+      "reused_existing_verified_report": true
+    },
+    "attention-ce": {
+      "passed": true,
+      "exit_code": 0,
+      "report": "/content/prophet-recovery/recovery-comparisons-v1/attention-ce-cache.json",
+      "sha256": "f5f10b39cca64884e5df7691402f640be4e5378c041efab5f37fd7a5ca2c622c",
+      "checkpoint": {
+        "step": 2048,
+        "slot": 1,
+        "sha256": "428a6dd7414054b93d4861535b643a19389b40dd4641de2e0dd03f80bd76527d",
+        "bytes": 3503292889,
+        "extra": {}
+      }
+    },
+    "hybrid-kl": {
+      "passed": true,
+      "exit_code": 0,
+      "report": "/content/prophet-recovery/recovery-comparisons-v1/hybrid-kl-cache.json",
+      "sha256": "6cb07e1281a463bb82611f6c166a26fe1f8fdec46d842c9c9c8f89221e19da6f",
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "d2b8cc68424da4e3d1ee030fed2ffec4a088e1a14ced9e377965092a7c95d118",
+        "bytes": 3707789145,
+        "extra": {}
+      }
+    },
+    "attention-kl": {
+      "passed": true,
+      "exit_code": 0,
+      "report": "/content/prophet-recovery/recovery-comparisons-v1/attention-kl-cache.json",
+      "sha256": "db17e7e918581e4153b0fac247f54742eef24e880983e4305549314480617f88",
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "4f79c0db8c12540449117a6c33a4d71d3ce4dcd38ffe6d1d07e3eeb61a014abf",
+        "bytes": 3503296025,
+        "extra": {}
+      }
+    }
+  },
+  "pid": 153716,
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "/content/prophet-recovery/checkpoint-analysis-ed72c86/scripts/audit_recovery_cache_suite.py",
+    "--run",
+    "/content/prophet-recovery/recovery-fp32-v1/attention-kl-seed0",
+    "--step",
+    "2048",
+    "--source",
+    "/content/prophet-recovery/source",
+    "--validation",
+    "/content/prophet-recovery/data/validation.jsonl",
+    "--out",
+    "/content/prophet-recovery/recovery-comparisons-v1/attention-kl-cache.json",
+    "--documents",
+    "4",
+    "--lengths",
+    "128",
+    "512"
+  ]
+}

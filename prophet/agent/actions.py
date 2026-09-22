@@ -50,7 +50,7 @@ RESERVED_ACTIONS: dict[str, dict[str, Any]] = {
         "properties": {"question": {"type": "string"}, "proposed_action": {"type": "string"}},
         "required": ["question"],
     },
-    "done": {"type": "object", "properties": {"summary": {"type": "string"}}, "required": []},
+    "done": {"type": "object", "properties": {}, "required": []},
     "rollback": {"type": "object", "properties": {"step": {"type": "integer"}}, "required": ["step"]},
 }
 
@@ -177,7 +177,7 @@ class ToolRegistry:
         if missing:
             raise ValueError(f"{action.name}: missing required {missing}")
         unknown = [k for k in action.args if k not in props]
-        if unknown and props:
+        if unknown:
             raise ValueError(f"{action.name}: unknown arguments {unknown}")
         for key, value in action.args.items():
             expected = props.get(key, {}).get("type")
@@ -217,6 +217,9 @@ class PrefixState:
     tool: str | None = None
     key: str | None = None
     expected_type: str | None = None
+    in_string: bool = False
+    """The prefix ends inside an unterminated string value: the one place a sampled
+    token cannot break the structure (``AgentConfig.sample_scope``)."""
 
 
 class ActionGrammar:
@@ -234,22 +237,46 @@ class ActionGrammar:
     wasted token, not a malformed call.
     """
 
-    def __init__(self, registry: ToolRegistry) -> None:
+    def __init__(self, registry: ToolRegistry, *, compact: bool = True,
+                 ordered: bool = False) -> None:
         self.registry = registry
         self.names = registry.names
         self._all_names = tuple(registry.names)
+        self.compact = compact
+        self.ordered = ordered
+        """Require the argument keys in the schema's order (docs/33 amendment 6). The
+        renderer writes them in that order, so a model trained on rendered episodes has
+        never seen another; leaving the order free lets a small model put a list where
+        a word belongs."""
+        """Reject whitespace outside strings. Calls are rendered compact
+        (``separators=(",", ":")``), so a model trained on rendered episodes has never
+        seen a space in a call; admitting one at decode let a drifting model open the
+        span with indentation, wander off its training distribution and die before
+        ``{`` -- the failure of the first closed-loop pilot (docs/32). ``compact=False``
+        restores the tolerant JSON scanner."""
 
-    def restrict(self, names: "set[str] | None") -> None:
+    def restrict(self, names: "set[str] | None", *, exclude: "frozenset[str]" = frozenset()) -> None:
         """Limit the tool names the grammar accepts -- what the selection head decided --
         or ``None`` to accept every registered name again. Reserved actions are never
-        cut: the head's "none" option is exactly "one of those"."""
+        cut by ``names``: the head's "none" option is exactly "one of those". ``exclude``
+        removes names after that, reserved ones included: the loop uses it to forbid the
+        action of the previous step (``AgentConfig.no_repeat_action``)."""
         if names is None:
-            self.names = self._all_names
+            keep = set(self._all_names)
         else:
             keep = set(names) | set(RESERVED_ACTIONS)
-            self.names = tuple(n for n in self._all_names if n in keep)
+        self.names = tuple(n for n in self._all_names if n in keep and n not in exclude)
 
     # -- public ------------------------------------------------------------------------
+
+    def _ws(self, s: str, i: int) -> int:
+        """Whitespace outside strings: skipped when tolerant, dead when compact."""
+        if not self.compact:
+            return _skip_ws(s, i)
+        if i < len(s) and s[i] in " \t\n\r":
+            raise _Dead("whitespace outside strings; calls are rendered compact")
+        return i
+
 
     def check(self, partial: str) -> PrefixState:
         try:
@@ -269,14 +296,14 @@ class ActionGrammar:
     # -- scanner -----------------------------------------------------------------------
 
     def _scan(self, s: str) -> PrefixState:
-        i = _skip_ws(s, 0)
+        i = self._ws(s, 0)
         if i == len(s):
             return PrefixState(True)
         i = _expect(s, i, "{")
         if i is None:
             return PrefixState(True)
         # "name"
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         key, i = _scan_string(s, i)
         if key is None:
             return PrefixState(True)
@@ -286,11 +313,11 @@ class ActionGrammar:
             if not "name".startswith(key.value):
                 raise _Dead("first key must be 'name'")
             return PrefixState(True)
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         i2 = _expect(s, i, ":")
         if i2 is None:
             return PrefixState(True)
-        i = _skip_ws(s, i2)
+        i = self._ws(s, i2)
         name, i = _scan_string(s, i)
         if name is None:
             return PrefixState(True)
@@ -302,7 +329,7 @@ class ActionGrammar:
             raise _Dead(f"unknown tool {name.value!r}")
         schema = self.registry.schema(name.value)
 
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         if i == len(s):
             return PrefixState(True)
         if s[i] == "}":
@@ -312,7 +339,7 @@ class ActionGrammar:
         i = _expect(s, i, ",")
         if i is None:
             return PrefixState(True)
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         key, i = _scan_string(s, i)
         if key is None:
             return PrefixState(True)
@@ -322,26 +349,26 @@ class ActionGrammar:
             return PrefixState(True)
         if key.value != "args":
             raise _Dead("second key must be 'args'")
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         i2 = _expect(s, i, ":")
         if i2 is None:
             return PrefixState(True)
-        i = _skip_ws(s, i2)
+        i = self._ws(s, i2)
         i2 = _expect(s, i, "{")
         if i2 is None:
             return PrefixState(True)
-        seen, i, closed, at_value = self._scan_args(s, i2, schema)
+        seen, i, closed, at_value, in_string = self._scan_args(s, i2, schema)
         if not closed:
             if at_value is not None:
                 key_name, expected = at_value
                 return PrefixState(
                     True, value_start=True, tool=name.value, key=key_name, expected_type=expected
                 )
-            return PrefixState(True, tool=name.value)
+            return PrefixState(True, tool=name.value, in_string=in_string)
         missing = [r for r in schema.required if r not in seen]
         if missing:
             raise _Dead(f"{name.value}: missing required {missing}")
-        i = _skip_ws(s, i)
+        i = self._ws(s, i)
         if i == len(s):
             return PrefixState(True)
         if s[i] != "}":
@@ -353,44 +380,65 @@ class ActionGrammar:
 
     def _scan_args(
         self, s: str, i: int, schema: ToolSchema
-    ) -> tuple[set[str], int, bool, tuple[str, str | None] | None]:
-        """Returns ``(seen keys, index, closed, at_value)`` where ``at_value`` is
-        ``(key, expected type)`` when the prefix ends exactly at a value start."""
+    ) -> tuple[set[str], int, bool, tuple[str, str | None] | None, bool]:
+        """Returns ``(seen keys, index, closed, at_value, in_string)`` where ``at_value``
+        is ``(key, expected type)`` when the prefix ends exactly at a value start and
+        ``in_string`` says the prefix ends inside an unterminated string value."""
         props = schema.properties
         seen: set[str] = set()
         while True:
-            i = _skip_ws(s, i)
+            i = self._ws(s, i)
             if i == len(s):
-                return seen, i, False, None
+                return seen, i, False, None, False
             if s[i] == "}":
-                return seen, i + 1, True, None
+                return seen, i + 1, True, None, False
             if seen:
+                if s[i] == "," and all(k in seen for k in props):
+                    # Every parameter is given: the only continuation is the closing
+                    # brace. A comma here led the decoder into a key that cannot exist.
+                    raise _Dead(f"{schema.name}: all parameters given, expected '}}'")
                 i2 = _expect(s, i, ",")
                 if i2 is None:
-                    return seen, i, False, None
-                i = _skip_ws(s, i2)
+                    return seen, i, False, None, False
+                i = self._ws(s, i2)
+            if not props:
+                # An empty schema means "no parameters", not "anything goes": the renderer
+                # never writes a key here, so the decoder must not admit one (docs/32, mode c).
+                raise _Dead(f"{schema.name} takes no parameters")
             key, i = _scan_string(s, i)
             if key is None:
-                return seen, i, False, None
+                return seen, i, False, None, False
             if not key.done:
-                if props and not any(k.startswith(key.value) for k in props):
-                    raise _Dead(f"no parameter of {schema.name} starts with {key.value!r}")
-                return seen, i, False, None
-            if props and key.value not in props:
+                # A partial key must open a parameter not given yet: a prefix of a key
+                # already seen is a dead end the decoder would otherwise walk into.
+                candidates = [k for k in props if k.startswith(key.value) and k not in seen]
+                if self.ordered:
+                    # Strict order: the next key is the first one not given yet.
+                    candidates = [k for k in candidates if k == next(p for p in props if p not in seen)]
+                if not candidates:
+                    raise _Dead(f"no unseen parameter of {schema.name} starts with {key.value!r}")
+                return seen, i, False, None, False
+            if key.value not in props:
                 raise _Dead(f"{schema.name} has no parameter {key.value!r}")
+            if self.ordered:
+                expected_key = next(k for k in props if k not in seen)
+                if key.value != expected_key:
+                    raise _Dead(f"{schema.name}: expected parameter {expected_key!r}, "
+                                f"found {key.value!r} (schema order)")
             if key.value in seen:
                 raise _Dead(f"duplicate parameter {key.value!r}")
-            i = _skip_ws(s, i)
+            i = self._ws(s, i)
             i2 = _expect(s, i, ":")
             if i2 is None:
-                return seen, i, False, None
-            i = _skip_ws(s, i2)
+                return seen, i, False, None, False
+            i = self._ws(s, i2)
             expected = props.get(key.value, {}).get("type")
             if i == len(s):
-                return seen, i, False, (key.value, expected)
+                return seen, i, False, (key.value, expected), False
+            value_start = i
             done, i = _scan_value(s, i, expected)
             if not done:
-                return seen, i, False, None
+                return seen, i, False, None, s[value_start] == '"'
             seen.add(key.value)
 
 
@@ -529,13 +577,18 @@ class ConstrainedDecoder:
         self.candidates = candidates
         self.end_id = end_id
 
-    def allowed(self, prefix: str, ranked_token_ids: Sequence[int]) -> list[int]:
-        """Token ids, from the ranked candidates, that keep ``prefix`` viable."""
+    def allowed(self, prefix: str, ranked_token_ids: Sequence[int], *,
+                limit: int | None = -1) -> list[int]:
+        """Token ids, from the ranked candidates, that keep ``prefix`` viable. ``limit``
+        caps how many candidates are checked (default: ``candidates``; ``None``: all of
+        them, the fallback when the model's head of the distribution has no viable
+        continuation, e.g. after a sampled sub-word)."""
         state = self.grammar.check(prefix)
         if not state.viable:
             return []
         out: list[int] = []
-        for tid in list(ranked_token_ids)[: self.candidates]:
+        cap = self.candidates if limit == -1 else limit
+        for tid in list(ranked_token_ids)[:cap]:
             if tid == self.end_id:
                 if state.complete:
                     out.append(tid)

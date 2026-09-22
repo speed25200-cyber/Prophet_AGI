@@ -1,0 +1,102 @@
+{
+  "passed": true,
+  "maximum_loop_k": 6,
+  "full_backprop": true,
+  "actual_depths": [
+    6,
+    6,
+    6
+  ],
+  "steps": 3,
+  "step_seconds": [
+    3.4836526189974393,
+    3.0653878660014016,
+    3.056432671000948
+  ],
+  "losses": [
+    {
+      "loss": 4.108038902282715,
+      "gradient_norm": 47.718116760253906
+    },
+    {
+      "loss": 3.8924102783203125,
+      "gradient_norm": 6.477257251739502
+    },
+    {
+      "loss": 3.8210067749023438,
+      "gradient_norm": 3.1463592052459717
+    }
+  ],
+  "peak_allocated_bytes": 14214843392,
+  "device_capacity_bytes": 42405855232,
+  "memory_limit_fraction": 0.9,
+  "scope": "Disposable model/optimizer, real next training batches; original weights and loader untouched. Allocated peak excludes non-PyTorch allocations.",
+  "identity": {
+    "protocol": "r04-input-adapter-v1",
+    "numerical_policy": {
+      "name": "r04-strict-determinism-v1",
+      "deterministic_algorithms": true,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "cublas_workspace_config": ":4096:8",
+      "matmul_allow_tf32": true,
+      "cudnn_allow_tf32": true,
+      "cudnn_version": 91900,
+      "sdpa_backends": {
+        "flash": true,
+        "memory_efficient": true,
+        "math": true,
+        "cudnn": true
+      }
+    },
+    "plan_sha256": "1bd62f90d8c38f2fe61cc1bd6911b5f35279aca598ce96395b1d4627ee11d114",
+    "parent_checkpoint": {
+      "step": 4096,
+      "slot": 1,
+      "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+      "bytes": 3233905547,
+      "extra": {}
+    },
+    "parent_loader_sha256": "4a398330bf498c7964b8432ddbe34c13260b2a720ac88e3a051340cfff5701a0",
+    "data": {
+      "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+      "artifacts": {
+        "train/fineweb-edu/part-00000.jsonl": {
+          "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e",
+          "bytes": 91838924,
+          "documents": 19569
+        },
+        "validation/fineweb-edu/part-00000.jsonl": {
+          "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939",
+          "bytes": 1858016,
+          "documents": 376
+        }
+      },
+      "tokenizer_semantic_sha256": "7d8d36adb2b2bf9dac7a6060294641ea16c59ce20506e2294c556c7abd99537b"
+    },
+    "runtime": {
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "fla": "0.5.2",
+      "triton": "3.6.0",
+      "device": "NVIDIA A100-SXM4-40GB",
+      "triton_f32_default": "tf32x3"
+    },
+    "code": {
+      "revision": "dce35abc439fdeeb8f1482b1219dee3cc242c267",
+      "driver_sha256": "277d2f96ce91f65b5e2fea30cc4d377b35734a89a94b78198cb93585115290ec",
+      "entrypoint_sha256": "855539e8f660f6ba36448d943f98ee508360c54a51b010f29819153b3165c4ae"
+    },
+    "arm": "learned_mix",
+    "mode": "preflight",
+    "evaluation_depths": [
+      4,
+      1,
+      2,
+      6,
+      8
+    ],
+    "warm_start": "parent weights and loader, new optimizer/schedule, RNG reset to parent seed"
+  }
+}

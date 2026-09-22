@@ -1,0 +1,57 @@
+{
+  "seed": 0,
+  "step": 2048,
+  "tokens_per_arm": 33554432,
+  "planned_steps_per_arm": 4096,
+  "arms": {
+    "loop": {
+      "initial_ce": 10.750803995416335,
+      "final_ce": 4.357405080275228,
+      "final_bpb": 1.4114135615539174,
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "90239173054b59a0d06532ca5ff80c1ec5414b6d838d8c8c3c09b731c096cdd1",
+        "bytes": 3233910859,
+        "extra": {}
+      },
+      "logged_step_seconds_median": 1.967423915863037,
+      "timing_samples": 128,
+      "skipped_nonfinite": 0
+    },
+    "plain": {
+      "initial_ce": 10.765816254682996,
+      "final_ce": 4.367619375531633,
+      "final_bpb": 1.4147220891250318,
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "268b685cc47ac90728eb0072e631250ab20ea1864c619b1e1f544bde6969eeb7",
+        "bytes": 7605983483,
+        "extra": {}
+      },
+      "logged_step_seconds_median": 2.155614495277405,
+      "timing_samples": 128,
+      "skipped_nonfinite": 0
+    }
+  },
+  "paired": {
+    "direction": "left minus right; negative favors left",
+    "ce_delta": -0.010214295256404307,
+    "bpb_delta": -0.003308527571114478,
+    "ce_document_bootstrap_95": [
+      -0.01407171674698001,
+      -0.006317731419622522
+    ],
+    "bpb_document_bootstrap_95": [
+      -0.004559218489976217,
+      -0.002053992492783325
+    ],
+    "document_win_fraction": 0.5664893617021277,
+    "documents": 376,
+    "draws": 10000,
+    "bootstrap_seed": 0,
+    "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+  },
+  "scope": "single-seed early-learning pilot; document uncertainty excludes seed uncertainty; no architecture adoption decision"
+}

@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD 4632101)
+HEAD is now at 4632101 Freeze paired native capability analysis before scoring

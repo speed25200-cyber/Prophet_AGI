@@ -1,0 +1,9 @@
+............                                                             [100%]
+=============================== warnings summary ===============================
+../../../usr/local/lib/python3.13/dist-packages/fla/utils/_device.py:100
+  /usr/local/lib/python3.13/dist-packages/fla/utils/_device.py:100: UserWarning: Triton is not supported on current platform, roll back to CPU.
+    _cpu_device_warning()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /content/prophet-recovery/arc-evaluation-v1/scorer-tests.xml -
+12 passed, 1 warning in 4.39s

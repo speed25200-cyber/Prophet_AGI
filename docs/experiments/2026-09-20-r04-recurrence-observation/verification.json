@@ -1,0 +1,446 @@
+{
+  "verified": true,
+  "source_files": 11,
+  "pair_seconds": 63.56563744300365,
+  "document_forwards_with_recorded_exact_observer_equality": 32,
+  "aggregation": "Unweighted mean/minimum/maximum over the fixed sixteen documents, separately for every loop. Descriptive only; no inferential interval or collapse threshold.",
+  "arms": {
+    "fixed4": [
+      {
+        "loop": 1,
+        "state_rms": {
+          "mean": 1057.758065407844,
+          "minimum": 252.77731420253107,
+          "maximum": 4514.942230974732
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.5795249195850092,
+          "minimum": 0.23483983333147024,
+          "maximum": 0.9934291782541887
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.8866788905037509,
+          "minimum": 0.850773553880462,
+          "maximum": 0.9096668188115941
+        },
+        "previous_loop_cosine": null,
+        "relative_previous_loop_change": null
+      },
+      {
+        "loop": 2,
+        "state_rms": {
+          "mean": 1949.5915458488953,
+          "minimum": 411.8695345214721,
+          "maximum": 9001.307934989247
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.5559582341431287,
+          "minimum": 0.20310595082147964,
+          "maximum": 0.9944969346042368
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.8956333322467859,
+          "minimum": 0.8682668319675282,
+          "maximum": 0.9067376785591468
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9828712255175465,
+          "minimum": 0.9792998295605927,
+          "maximum": 0.9858740588247394
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.768198285332342,
+          "minimum": 0.2775847544530716,
+          "maximum": 0.997051637492624
+        }
+      },
+      {
+        "loop": 3,
+        "state_rms": {
+          "mean": 2740.020404660711,
+          "minimum": 422.05509440508894,
+          "maximum": 13474.341652431274
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.6698317780277726,
+          "minimum": 0.3498171392404643,
+          "maximum": 0.9962764145868105
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.7841192226451746,
+          "minimum": 0.7547170418496331,
+          "maximum": 0.8043241532780382
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9770078739260818,
+          "minimum": 0.9747027792660936,
+          "maximum": 0.979789801705047
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.31492431078874017,
+          "minimum": 0.1668656312633184,
+          "maximum": 0.49847125723186303
+        }
+      },
+      {
+        "loop": 4,
+        "state_rms": {
+          "mean": 3501.7358200827384,
+          "minimum": 380.46958662798215,
+          "maximum": 17943.941335506803
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.8735611111412587,
+          "minimum": 0.7294100782443074,
+          "maximum": 0.9982842282340761
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.39354582805398713,
+          "minimum": 0.3399295853094549,
+          "maximum": 0.45591727432987345
+        },
+        "previous_loop_cosine": {
+          "mean": 0.8326037863236867,
+          "minimum": 0.7895211333099672,
+          "maximum": 0.9009677054906138
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.3903141096745938,
+          "minimum": 0.13738679321927816,
+          "maximum": 0.504174861488987
+        }
+      },
+      {
+        "loop": 5,
+        "state_rms": {
+          "mean": 4435.986083857279,
+          "minimum": 576.0632472246413,
+          "maximum": 22417.09464246564
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.8677215957276921,
+          "minimum": 0.7176098872316379,
+          "maximum": 0.9974988781890562
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.401660898926441,
+          "minimum": 0.34664606138641907,
+          "maximum": 0.43767150674611716
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9276600122246652,
+          "minimum": 0.8910104877402562,
+          "maximum": 0.9647891823209994
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.6310844707814037,
+          "minimum": 0.11203776459249278,
+          "maximum": 1.378109419670362
+        }
+      },
+      {
+        "loop": 6,
+        "state_rms": {
+          "mean": 5565.189129996008,
+          "minimum": 890.5568529929814,
+          "maximum": 26902.387452745224
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.8117463802452731,
+          "minimum": 0.6327261993144911,
+          "maximum": 0.9963751531781028
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.588907141393643,
+          "minimum": 0.5666187286303194,
+          "maximum": 0.6172585041191064
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9292740596292073,
+          "minimum": 0.8455394673666712,
+          "maximum": 0.9567693610326933
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.8332002448393798,
+          "minimum": 0.13519244902775085,
+          "maximum": 2.5191775665251925
+        }
+      },
+      {
+        "loop": 7,
+        "state_rms": {
+          "mean": 6417.93945562716,
+          "minimum": 1019.8623694695601,
+          "maximum": 31372.91707555131
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.7961108894364284,
+          "minimum": 0.6133448473016031,
+          "maximum": 0.9964643676238518
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.609350286464323,
+          "minimum": 0.5913943506208063,
+          "maximum": 0.6390918210153826
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9955727712906796,
+          "minimum": 0.9922509244129176,
+          "maximum": 0.9966689663507001
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.16364516756934222,
+          "minimum": 0.08946085533334082,
+          "maximum": 0.2858576939188799
+        }
+      },
+      {
+        "loop": 8,
+        "state_rms": {
+          "mean": 7248.360712881003,
+          "minimum": 1097.1973438674345,
+          "maximum": 35840.6564252869
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.7977510904284975,
+          "minimum": 0.6189213541972095,
+          "maximum": 0.9966833055322811
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.5941441169956021,
+          "minimum": 0.5739068201706533,
+          "maximum": 0.6259933054970481
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9981558911434516,
+          "minimum": 0.9975628175640792,
+          "maximum": 0.9988448142593906
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.10788423053606777,
+          "minimum": 0.06911909154929699,
+          "maximum": 0.1427259481707408
+        }
+      }
+    ],
+    "uniform2to6": [
+      {
+        "loop": 1,
+        "state_rms": {
+          "mean": 912.7618658365013,
+          "minimum": 183.67348602914458,
+          "maximum": 4401.559383399367
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.5805654350245342,
+          "minimum": 0.1527862010418608,
+          "maximum": 0.9948241602838291
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.8375949471983621,
+          "minimum": 0.7930302425656839,
+          "maximum": 0.8652897399626107
+        },
+        "previous_loop_cosine": null,
+        "relative_previous_loop_change": null
+      },
+      {
+        "loop": 2,
+        "state_rms": {
+          "mean": 1760.0602307689417,
+          "minimum": 268.15854810014554,
+          "maximum": 8777.957432447276
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.6446420337334564,
+          "minimum": 0.21325906644637516,
+          "maximum": 0.9960253976740582
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.7886526153590179,
+          "minimum": 0.7629514392024551,
+          "maximum": 0.8008027994339252
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9723372112615579,
+          "minimum": 0.9685652572270109,
+          "maximum": 0.9761245356857376
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.8154483467952922,
+          "minimum": 0.5495773370881079,
+          "maximum": 0.9984156302298303
+        }
+      },
+      {
+        "loop": 3,
+        "state_rms": {
+          "mean": 2564.300176600494,
+          "minimum": 330.50265754468523,
+          "maximum": 13147.085205640458
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.6849884971075099,
+          "minimum": 0.2927824227457082,
+          "maximum": 0.9968429435674493
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.7027925204223792,
+          "minimum": 0.6790051481929338,
+          "maximum": 0.7167680191665987
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9862090327425831,
+          "minimum": 0.9841081300804211,
+          "maximum": 0.987259983381705
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.34017381316582906,
+          "minimum": 0.25624466016812303,
+          "maximum": 0.49986394621604124
+        }
+      },
+      {
+        "loop": 4,
+        "state_rms": {
+          "mean": 3362.9052566633964,
+          "minimum": 380.63294119321284,
+          "maximum": 17512.58813321918
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.727591430445708,
+          "minimum": 0.3800509932141942,
+          "maximum": 0.9974300805138155
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.6125477488756752,
+          "minimum": 0.5879956628354134,
+          "maximum": 0.6405869686159824
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9890395045279763,
+          "minimum": 0.9865550372912534,
+          "maximum": 0.9917583334415091
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.245409786999991,
+          "minimum": 0.19652609176274605,
+          "maximum": 0.3335894241398493
+        }
+      },
+      {
+        "loop": 5,
+        "state_rms": {
+          "mean": 4157.447600693133,
+          "minimum": 420.4240846296019,
+          "maximum": 21876.203512328586
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.7753333836093359,
+          "minimum": 0.4820631471941157,
+          "maximum": 0.9978834471028384
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.5116448515274721,
+          "minimum": 0.4793257518355015,
+          "maximum": 0.5561922659645047
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9862432707085252,
+          "minimum": 0.9810254450803888,
+          "maximum": 0.9903200782936566
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.20480652693978912,
+          "minimum": 0.1689377687118335,
+          "maximum": 0.25036523561012103
+        }
+      },
+      {
+        "loop": 6,
+        "state_rms": {
+          "mean": 4955.696230933175,
+          "minimum": 465.63766383410683,
+          "maximum": 26238.930435958086
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.8115652321329709,
+          "minimum": 0.5662266016789473,
+          "maximum": 0.9981514290182945
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.4312457854987135,
+          "minimum": 0.38672386619060306,
+          "maximum": 0.48095636390869806
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9869215471634623,
+          "minimum": 0.9784422845639538,
+          "maximum": 0.9911358570996629
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.1825844799468164,
+          "minimum": 0.1515574700793112,
+          "maximum": 0.20095130843578787
+        }
+      },
+      {
+        "loop": 7,
+        "state_rms": {
+          "mean": 5763.781012829194,
+          "minimum": 527.4625481172728,
+          "maximum": 30601.38778839978
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.8260426385729494,
+          "minimum": 0.6076771702048116,
+          "maximum": 0.998245167009758
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.395062046756668,
+          "minimum": 0.3460457373150012,
+          "maximum": 0.4380626459579869
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9890460165261094,
+          "minimum": 0.9789995638077734,
+          "maximum": 0.9941007400445042
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.17276855158156118,
+          "minimum": 0.1391086778643236,
+          "maximum": 0.1985021038602503
+        }
+      },
+      {
+        "loop": 8,
+        "state_rms": {
+          "mean": 6591.522876453287,
+          "minimum": 613.3309881972303,
+          "maximum": 34963.54915120067
+        },
+        "token_centered_energy_fraction": {
+          "mean": 0.8235915739222541,
+          "minimum": 0.6127496818344874,
+          "maximum": 0.9981899566610348
+        },
+        "mean_distinct_token_cosine": {
+          "mean": 0.39258300235024507,
+          "minimum": 0.3628060180030576,
+          "maximum": 0.42346449232022704
+        },
+        "previous_loop_cosine": {
+          "mean": 0.9867130947361064,
+          "minimum": 0.9497697407794055,
+          "maximum": 0.9936971246729718
+        },
+        "relative_previous_loop_change": {
+          "mean": 0.19989279263167806,
+          "minimum": 0.13743897417961504,
+          "maximum": 0.6447875434065664
+        }
+      }
+    ]
+  },
+  "scope": "File/source hashes, terminal process records, final checkpoint/report identities, selected document identities and scalar domains verified locally. Full activation arrays and weights are not exported, so raw-state metric calculations and observed-versus-ordinary hidden equality are recorded Colab measurements, not repeated locally."
+}

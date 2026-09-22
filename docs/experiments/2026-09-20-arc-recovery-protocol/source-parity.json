@@ -1,0 +1,8 @@
+{
+  "complete": true,
+  "rows": 2376,
+  "source_revision": "210d026faf9955653af8916fad021475a3f00453",
+  "prior_overlap_text_sha256": "45294faa8574fe1466eaa30972e4ec717405d2b570b955d0c2770cfb883decc8",
+  "ordered_question_and_choice_text_equal": true,
+  "scope": "Preparation uses exactly the ARC question/choice texts in the prior lexical overlap screen; this does not establish absent donor contamination or semantic/short-item cleanliness."
+}

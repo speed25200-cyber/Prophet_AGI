@@ -1,0 +1,110 @@
+{
+  "attention-kl-seed0/recovery.json": {
+    "bytes": 9350,
+    "sha256": "1df35f5559a7da2666194382ca1e1026e977849daf514f52a6d318d408352702"
+  },
+  "attention-kl-seed0/manifest.json": {
+    "bytes": 462,
+    "sha256": "25fea509568e987c4f4acdbfd33624c82d0d0a9b7e25e89f071eba1ee564c794"
+  },
+  "attention-kl-seed0/evaluation-step-002048.json": {
+    "bytes": 86862,
+    "sha256": "f3984d27f2d4248e79018185e058cf96c515d6533592796f65755a3880a850fc"
+  },
+  "attention-kl-seed0/training.jsonl": {
+    "bytes": 567608,
+    "sha256": "6816599d801c1283468506fc57e556e1527426d931e8a2aeb002a9b128ebc7d3"
+  },
+  "attention-kl-final-audit.json": {
+    "bytes": 10046,
+    "sha256": "7b5e7df167427a68a4aaf6444859f2e8641d48068a76303c6e523b4e508a8579"
+  },
+  "attention-kl-final-audit.txt": {
+    "bytes": 262,
+    "sha256": "26025db50e5e45fcf2f9f83dca191846b07fd7553393dc3b87ae4d2878191779"
+  },
+  "attention-kl-queued-segment1.txt": {
+    "bytes": 305820,
+    "sha256": "fd17dd0f40cc42810085fd3e41cc5c240a020f6055ded9622ebd25d42335dbaa"
+  },
+  "attention-kl-queued-segment2.txt": {
+    "bytes": 3126,
+    "sha256": "5831f2796694ed94f0b6561dd295ecae9c2d822bd73cce53b51e60a76fbb4fbd"
+  },
+  "plan.json": {
+    "bytes": 973,
+    "sha256": "a1a0e03e377ec5e268227478f8bc82985846c1608fd510ee17846615d1ec0f12"
+  },
+  "pilot-queue.json": {
+    "bytes": 11504,
+    "sha256": "121083ffc9d3846148bd915f28b6bca139c84283cd7e73d1815f2064d797562e"
+  },
+  "comparison/attention-kl-cache.json": {
+    "bytes": 21577,
+    "sha256": "db17e7e918581e4153b0fac247f54742eef24e880983e4305549314480617f88"
+  },
+  "comparison/attention-kl-cache.txt": {
+    "bytes": 942,
+    "sha256": "5ee67f6947df945399d118996e94450f02a6e180cf73b97ff66985f1c12202b8"
+  },
+  "comparison/four-arm-comparison.json": {
+    "bytes": 10052,
+    "sha256": "f1fd71d8657d26ed7d25009017e3a2734417c5a5bde900859a663d9c14a7e863"
+  },
+  "comparison/four-arm-comparison.txt": {
+    "bytes": 245,
+    "sha256": "2af3012d4b530d49181ba3c4be631010e87057e26bf4945c4a0850e44adcce9c"
+  },
+  "comparison/analysis-queue.json": {
+    "bytes": 678,
+    "sha256": "8e98426d5a84e23602b2d32fb1bf38fe604719759b2f3ae0399a2244a672e70e"
+  },
+  "comparison/cache-queue.json": {
+    "bytes": 2522,
+    "sha256": "2f0b307990afe541539c4f9f2327e411a5d3cd6181c7b0812c3aeeef8b38d59b"
+  },
+  "gpu-cache/attention-ce.json": {
+    "bytes": 19029,
+    "sha256": "8afdee14fbd2b5251400f5787092e2de5cd4dcbc39ba275c56d87a50610a7da1"
+  },
+  "gpu-cache/attention-ce.txt": {
+    "bytes": 776,
+    "sha256": "e27484a6a6b9bf50d60547c303503cf5eb534423277ded93742d59b546bfba93"
+  },
+  "gpu-cache/attention-kl.json": {
+    "bytes": 21781,
+    "sha256": "458b1933d51e448d78f83e5fa9718068f949966291dc0569e190003d79ae464b"
+  },
+  "gpu-cache/attention-kl.txt": {
+    "bytes": 776,
+    "sha256": "e27484a6a6b9bf50d60547c303503cf5eb534423277ded93742d59b546bfba93"
+  },
+  "gpu-cache/cuda-suite-tests.txt": {
+    "bytes": 208,
+    "sha256": "b3f7c6173b7b494b31051962330bd94fb13a7cf02890d1ad36a5a319d01dcefa"
+  },
+  "gpu-cache/cuda-suite-tests.xml": {
+    "bytes": 834,
+    "sha256": "6697023db0b715adcaedc23633cfd6f352c98a2ae7315be9d23e620085565a8e"
+  },
+  "gpu-cache/hybrid-ce.json": {
+    "bytes": 19137,
+    "sha256": "e5812627dbc9c9a1ea887d89451a0a90babe5467f77089a6a41277762dd5d4e8"
+  },
+  "gpu-cache/hybrid-ce.txt": {
+    "bytes": 776,
+    "sha256": "e27484a6a6b9bf50d60547c303503cf5eb534423277ded93742d59b546bfba93"
+  },
+  "gpu-cache/hybrid-kl.json": {
+    "bytes": 21870,
+    "sha256": "24b53025356554f6f8baa667f8b336976761076979ece25a3cc777c58c150349"
+  },
+  "gpu-cache/hybrid-kl.txt": {
+    "bytes": 776,
+    "sha256": "e27484a6a6b9bf50d60547c303503cf5eb534423277ded93742d59b546bfba93"
+  },
+  "gpu-cache/queue.json": {
+    "bytes": 2224,
+    "sha256": "8beb09145a9434d03ea4b8f95ed9751aea0dadbb8a38baafdf662552a0ba60b0"
+  }
+}

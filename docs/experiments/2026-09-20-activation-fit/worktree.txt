@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD 90c970b)
+HEAD is now at 90c970b Add train-only activation fitting scout after adjacent sharing fails

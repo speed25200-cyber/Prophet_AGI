@@ -241,14 +241,15 @@ def test_b6_halting_probes_see_context_at_decode_time():
     assert (full.halt_probs - inc_probs).abs().max() < 5e-3
 
 
-def test_b6_early_exit_reports_the_iterations_run_and_pins_the_cache():
+def test_b6_early_exit_reports_iterations_without_claiming_cached_causal_equivalence():
     torch.manual_seed(6)
     model = ProphetModel(_halting_cfg()).eval()
     ids = torch.randint(0, VOCAB, (1, 6))
     with torch.no_grad():
-        out = model(ids, loop_k=12, halt_threshold=0.05, cache=(cache := ProphetCache()))
+        out = model(ids, loop_k=12, halt_threshold=0.05)
     assert out.loop_k == out.halt_probs.shape[-1] <= 12
-    assert cache.loop_k == out.loop_k
+    with pytest.raises(ValueError, match="incremental cache"):
+        model(ids, loop_k=12, halt_threshold=0.05, cache=ProphetCache())
 
 
 def test_b6_a_cache_refuses_a_deeper_call_than_it_was_built_at():

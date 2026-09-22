@@ -1,0 +1,7 @@
+{
+  "source_zip_name": "prophet-r04-depth-adaptation-final-evidence.zip",
+  "source_zip_bytes": 478876,
+  "source_zip_sha256": "7bac6bc695ccbc7f23345604d595df35eb499ada7143bf62893117e991ae20de",
+  "source_files": 31,
+  "verification": "ZIP hash matched the Colab export metadata; every member length/hash verified before importing. Large JSON/JSONL members are losslessly gzipped with mtime zero."
+}

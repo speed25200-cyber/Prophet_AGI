@@ -1,0 +1,32 @@
+{
+  "status": "complete",
+  "revision": "90c970b5520a6b6c1da3d7bd78d5d7fc2b7567f6",
+  "maximum_seconds": 1800,
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "-u",
+    "/content/prophet-recovery/shared-fit-90c970b/scripts/probe_qwen_covariance.py",
+    "--source",
+    "/content/prophet-recovery/source",
+    "--train",
+    "/content/prophet-recovery/data/train.jsonl",
+    "--validation",
+    "/content/prophet-recovery/data/validation.jsonl",
+    "--out",
+    "/content/prophet-recovery/activation-fit-v1/fit",
+    "--device",
+    "cuda",
+    "--max-documents-per-session",
+    "64"
+  ],
+  "pid": 178787,
+  "actual_cpu_cuda_solver_tests_passed": 5,
+  "first_document_checkpoint_created": true,
+  "results": {
+    "donor": 3.12612828443195,
+    "mean-control": 12.213935210046936,
+    "activation-fit": 11.258849858771098
+  },
+  "resumed_from": 1,
+  "elapsed_seconds": 109.10520289099804
+}

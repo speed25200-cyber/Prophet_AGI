@@ -1,0 +1,27 @@
+{
+  "status": "stopped_requires_inspection",
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/r04-determinism-hashes-v1/probe.py",
+    "--model-repo",
+    "/content/r04-depth-adaptation-code-4f5c566",
+    "--policy",
+    "strict",
+    "--trace",
+    "/content/r04-determinism-hashes-v1/strict-a.json",
+    "--parent-run",
+    "/content/r04-final/loop-seed0",
+    "--corpus",
+    "/content/Prophet_AGI/data/fineweb-pilot-v1",
+    "--arm",
+    "fixed4",
+    "--mode",
+    "preflight",
+    "--out",
+    "/content/r04-determinism-hashes-v1/strict-a"
+  ],
+  "pid": 193944,
+  "error": "AssertionError(('strict-a', 1))",
+  "elapsed_seconds": 0.06608948299981421
+}

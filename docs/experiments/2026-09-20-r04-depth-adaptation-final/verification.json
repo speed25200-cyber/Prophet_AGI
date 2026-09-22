@@ -1,0 +1,18 @@
+{
+  "verified": true,
+  "source_files": 31,
+  "training_queue_seconds": 2920.515582674001,
+  "analysis_seconds": 30.29182409799978,
+  "sum_recorded_update_seconds": {
+    "fixed4": 1111.6041197776794,
+    "uniform2to6": 1098.243366241455
+  },
+  "seed0_screen_passed": false,
+  "checks": {
+    "variable_k6_improves_own_k4_by_at_least_half_percent": false,
+    "paired_ce_interval_upper_below_zero": false,
+    "variable_k4_within_one_percent_of_control_k4": true,
+    "variable_k6_improves_control_k6": true
+  },
+  "scope": "Exported file hashes, terminal process records, source identities, prior prefix continuity, checkpoint publication metadata and final document scores verified locally. Bootstrap and decision recomputed exactly. Recorded update seconds exclude evaluations and checkpoint writes. Checkpoint tensor finiteness was inspected by the recorded Colab CPU audit; weights are not reloaded here. No repeated inference or cross-seed claim."
+}

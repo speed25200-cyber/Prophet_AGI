@@ -1,0 +1,23 @@
+{
+  "status": "complete",
+  "revision": "e3ec54676be00daa190e183a387dd5ee22d3e42f",
+  "pid": 153706,
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "/content/prophet-recovery/comparison-e3ec546/scripts/summarize_recovery_pilot.py",
+    "--root",
+    "/content/prophet-recovery/recovery-fp32-v1",
+    "--baselines",
+    "/content/prophet-recovery/gpu-fp32-policy",
+    "--out",
+    "/content/prophet-recovery/recovery-comparisons-v1/four-arm-comparison.json"
+  ],
+  "exit_code": 0,
+  "sha256": "f1fd71d8657d26ed7d25009017e3a2734417c5a5bde900859a663d9c14a7e863",
+  "ce_ranking": [
+    "attention-kl",
+    "hybrid-kl",
+    "attention-ce",
+    "hybrid-ce"
+  ]
+}

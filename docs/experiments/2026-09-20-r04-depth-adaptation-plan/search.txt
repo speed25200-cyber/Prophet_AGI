@@ -1,0 +1,10 @@
+
+## Prophet-main: 0 feasible configurations at 1 A100-hours
+
+  none — constraints are jointly unsatisfiable at this budget
+
+
+## Prophet-mini: 0 feasible configurations at 1 A100-hours
+
+  none — constraints are jointly unsatisfiable at this budget
+

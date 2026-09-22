@@ -1,0 +1,18 @@
+{
+  "complete": true,
+  "source_revision": "90c970b5520a6b6c1da3d7bd78d5d7fc2b7567f6",
+  "source_zip_sha256": "7f0f68ba39494df8d4e8f61e26e79ce1f9b97a83fcbeb06a5de5cf98d86fc0eb",
+  "scope": "Byte identities, independently selected tokenized inputs, arithmetic and recorded objective bounds; no second GPU forward or refit.",
+  "scores_nats_per_token": {
+    "donor": 3.12612828443195,
+    "mean-control": 12.213935210046936,
+    "activation-fit": 11.258849858771098
+  },
+  "fit_count": 70,
+  "cpu_cuda_solver_tests": 5,
+  "calibration_documents": 64,
+  "resumed_from": 1,
+  "validation_targets": 8176,
+  "fit_vs_mean_ce_change_percent": -7.819636626942339,
+  "maximum_fit_to_mean_local_objective_ratio": 0.795235150479536
+}

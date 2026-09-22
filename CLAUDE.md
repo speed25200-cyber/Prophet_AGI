@@ -46,7 +46,8 @@ prophet/
                 profondeur récurrente avec halte apprise, têtes d'action typées
   data/         Tokenizer Prophet-Tok v1, mélanges, décontamination, streaming reprenable,
                 corpus réels (fichiers/Hub, phases, plafond d'époques au tirage)
-  train/        Muon + AdamW, planning WSD, checkpointing atomique, boucle, pertes
+  train/        Muon + AdamW, planning WSD, checkpointing atomique, boucle, pertes,
+                KLPO (régression par token régularisée par la KL vers l'échantillonneur, A5)
   eval/         Métriques (BPB), harnais à trois niveaux, benchmark agentique à vérificateurs
   memory/       Registre à clés-produit (écriture en forme close), état de session,
                 consolidation de contexte et de profondeur
@@ -59,11 +60,12 @@ prophet/
 configs/        Configurations générées par scripts/build_configs.py (jamais à la main)
 scripts/        Scripts exécutables : entraînement, conversion, vérification, sondes
 tests/          ~512 tests ; les plus importants sont des tests d'équivalence
+third_party/    Copies de référence non modifiées (KLPO), empreintes et commit dans VENDORED.md
 ```
 
 ## Ce que ce dépôt a appris à ses dépens
 
-Dix-huit défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+Vingt défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
 normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
 et faux :
 
@@ -87,6 +89,8 @@ et faux :
 | Masque d'attention par segment posé sur les couches pendant le forward et effacé à la sortie : sous checkpointing d'activations, le recalcul du backward ne le voit plus et PyTorch refuse — plantage au premier pas | le premier run à masque ; le masque reste posé jusqu'au forward suivant (qui le réécrit toujours), test sous checkpointing |
 | Registres d'attention jamais emportés par la session de l'agent (`extract_session` / `restore_session` appelés sans le modèle) : un état porté sans son registre, silencieusement | premier branchement du registre sur la boucle ; le modèle est passé, test de session avec registre |
 | Registres de la couche portés par les *tampons du module* : un épisode sans session héritait de ceux du précédent — fuite d'un épisode à l'autre par les poids, invisible au banc | même branchement ; remise à zéro à chaque épisode sans session, testée |
+| Grammaire d'action tolérante aux blancs alors que le rendu écrit les appels en JSON compact : un modèle qui dérive ouvre le span par des espaces, la grammaire les admet, et deux jetons plus loin plus aucun candidat n'est viable — 45 % de sorties « malformées » au banc, 0,233 contre 0,550 à poids égaux selon la grammaire | le premier pilote de boucle fermée (docs/32), diagnostic jeton par jeton ; `ActionGrammar(compact=True)`, tests d'accord rendu / grammaire |
+| Reprise après un arrêt entre la génération d'un tour et son enregistrement : les épisodes du tour étaient déjà en quarantaine, le tour rejoué les régénérait, et l'entraînement les voyait en double | un redémarrage de conteneur pendant le pilote v2 ; entrées étiquetées par tour, orphelins écartés à la reprise, test qui simule l'enregistrement manquant |
 
 **Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
 réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par

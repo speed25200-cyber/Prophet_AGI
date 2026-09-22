@@ -1,0 +1,275 @@
+{
+  "protocol": "four-arm-recovery-comparison-v1",
+  "complete": true,
+  "plan": {
+    "protocol": "qwen-recovery-fp32-pilot-v1",
+    "revision": "467d7c89e3914faa82df0d8c940c0537dc828b49",
+    "precision": "float32",
+    "allow_tf32": false,
+    "triton_f32_default": "tf32x3",
+    "arms": [
+      "hybrid-ce",
+      "attention-ce",
+      "hybrid-kl",
+      "attention-kl"
+    ],
+    "seed": 0,
+    "steps_per_arm": 2048,
+    "batch_size": 4,
+    "seq_len": 512,
+    "grad_accum": 1,
+    "loop_k": 5,
+    "input_tokens_per_arm": 4194304,
+    "evaluation_batch_size": 1,
+    "muon_peak_lr": 0.001,
+    "adamw_peak_lr": 3e-05,
+    "kl_alpha": 0.5,
+    "kl_temperature": 1.0,
+    "warmup_steps": 100,
+    "decay_steps": 368,
+    "checkpoint_every": 256,
+    "first_segment_steps": 256,
+    "train_sha256": "542508d6418b13e7c06def4b3de7cbcbd3ff0d21dd1f045487e1d0f4f3a2f3d6",
+    "validation_sha256": "06903e9925fb4e2ceed27eedc09f5d4b33b32e3e2ce1bfe6e1deed62a491e8af",
+    "scope": "exploratory matched-token recovery; no architecture adoption or cache certification; untrained initialization baselines at batch one"
+  },
+  "arms": {
+    "hybrid-ce": {
+      "nats_per_token": 4.571112242011234,
+      "bits_per_byte": 1.4041343622301012,
+      "unique_parameters": 385515905,
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "9d511123800d71cac0ed4399546ab152e1d70f5b31b4655aa6661ec92da242f8",
+        "bytes": 3707786649,
+        "extra": {}
+      },
+      "evaluation_sha256": "df0d519432eeea59999865404a23e7e56e61b9fe2962fb9905977ebf5a0bc4df",
+      "audit_sha256": "b910732bd3154dfb598ba77772f2391d94d9b44f0a4ccaf2ddda24402a86ded7",
+      "student_tokens": 4194304,
+      "teacher_tokens": 0,
+      "initial_ce": 11.308395923022758,
+      "fraction_initial_ce_gap_closed": 0.8265979924377607,
+      "median_logged_update_seconds_last_256": 1.1174753904342651,
+      "timing_samples": 256,
+      "versus_own_initialization": {
+        "direction": "left minus right; negative favors left",
+        "ce_delta": -6.737283681011524,
+        "bpb_delta": -2.0695294763617706,
+        "ce_document_bootstrap_95": [
+          -6.80493164344592,
+          -6.671656825799226
+        ],
+        "bpb_document_bootstrap_95": [
+          -2.0967425337741936,
+          -2.0428120698648176
+        ],
+        "document_win_fraction": 1,
+        "documents": 372,
+        "draws": 10000,
+        "bootstrap_seed": 0,
+        "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+      }
+    },
+    "attention-ce": {
+      "nats_per_token": 4.530511576697876,
+      "bits_per_byte": 1.3916628265780242,
+      "unique_parameters": 360087809,
+      "checkpoint": {
+        "step": 2048,
+        "slot": 1,
+        "sha256": "428a6dd7414054b93d4861535b643a19389b40dd4641de2e0dd03f80bd76527d",
+        "bytes": 3503292889,
+        "extra": {}
+      },
+      "evaluation_sha256": "475f6d4c7cd96768edbd2a1624c843079c02cd8dedce128ae35ffd4d7f1bbb9e",
+      "audit_sha256": "16f3b3f64a01bbe475571bd965109b3787390779f41bc261e45359d8529070a9",
+      "student_tokens": 4194304,
+      "teacher_tokens": 0,
+      "initial_ce": 9.221068973335752,
+      "fraction_initial_ce_gap_closed": 0.7735993706493841,
+      "median_logged_update_seconds_last_256": 0.8711358308792114,
+      "timing_samples": 256,
+      "versus_own_initialization": {
+        "direction": "left minus right; negative favors left",
+        "ce_delta": -4.690557396637876,
+        "bpb_delta": -1.4408250049300855,
+        "ce_document_bootstrap_95": [
+          -4.761395317234076,
+          -4.620042312400488
+        ],
+        "bpb_document_bootstrap_95": [
+          -1.473900794658758,
+          -1.408752344139075
+        ],
+        "document_win_fraction": 1,
+        "documents": 372,
+        "draws": 10000,
+        "bootstrap_seed": 0,
+        "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+      }
+    },
+    "hybrid-kl": {
+      "nats_per_token": 4.332629850977074,
+      "bits_per_byte": 1.3308783793731758,
+      "unique_parameters": 385515905,
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "d2b8cc68424da4e3d1ee030fed2ffec4a088e1a14ced9e377965092a7c95d118",
+        "bytes": 3707789145,
+        "extra": {}
+      },
+      "evaluation_sha256": "9d2e2563bb464d8580d02ebaaf97895d881d956c8720d55744b37f4213787a17",
+      "audit_sha256": "70376ee369f770bdbb60250dd6f690c0d6b6012109afb246f7fa7980bc89aded",
+      "student_tokens": 4194304,
+      "teacher_tokens": 4194304,
+      "initial_ce": 11.308395923022758,
+      "fraction_initial_ce_gap_closed": 0.8558574202715901,
+      "median_logged_update_seconds_last_256": 1.3479422330856323,
+      "timing_samples": 256,
+      "versus_own_initialization": {
+        "direction": "left minus right; negative favors left",
+        "ce_delta": -6.975766072045683,
+        "bpb_delta": -2.142785459218696,
+        "ce_document_bootstrap_95": [
+          -7.046075257868652,
+          -6.908153659770299
+        ],
+        "bpb_document_bootstrap_95": [
+          -2.170791488330982,
+          -2.1153327262455814
+        ],
+        "document_win_fraction": 1,
+        "documents": 372,
+        "draws": 10000,
+        "bootstrap_seed": 0,
+        "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+      }
+    },
+    "attention-kl": {
+      "nats_per_token": 4.296796569353524,
+      "bits_per_byte": 1.3198712678923692,
+      "unique_parameters": 360087809,
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "4f79c0db8c12540449117a6c33a4d71d3ce4dcd38ffe6d1d07e3eeb61a014abf",
+        "bytes": 3503296025,
+        "extra": {}
+      },
+      "evaluation_sha256": "f3984d27f2d4248e79018185e058cf96c515d6533592796f65755a3880a850fc",
+      "audit_sha256": "7b5e7df167427a68a4aaf6444859f2e8641d48068a76303c6e523b4e508a8579",
+      "student_tokens": 4194304,
+      "teacher_tokens": 4194304,
+      "initial_ce": 9.221068973335752,
+      "fraction_initial_ce_gap_closed": 0.8121452762431421,
+      "median_logged_update_seconds_last_256": 1.1015572547912598,
+      "timing_samples": 256,
+      "versus_own_initialization": {
+        "direction": "left minus right; negative favors left",
+        "ce_delta": -4.924272403982228,
+        "bpb_delta": -1.5126165636157403,
+        "ce_document_bootstrap_95": [
+          -4.996412622439681,
+          -4.852639057091964
+        ],
+        "bpb_document_bootstrap_95": [
+          -1.5464672799173873,
+          -1.4795648392659204
+        ],
+        "document_win_fraction": 1,
+        "documents": 372,
+        "draws": 10000,
+        "bootstrap_seed": 0,
+        "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+      }
+    }
+  },
+  "contrasts": {
+    "hybrid_minus_attention_ce": {
+      "direction": "left minus right; negative favors left",
+      "ce_delta": 0.040600665313357744,
+      "bpb_delta": 0.01247153565207714,
+      "ce_document_bootstrap_95": [
+        0.03736223601734291,
+        0.0438299965280992
+      ],
+      "bpb_document_bootstrap_95": [
+        0.011465313926897211,
+        0.013490560796794717
+      ],
+      "document_win_fraction": 0.12903225806451613,
+      "documents": 372,
+      "draws": 10000,
+      "bootstrap_seed": 0,
+      "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+    },
+    "hybrid_minus_attention_kl": {
+      "direction": "left minus right; negative favors left",
+      "ce_delta": 0.03583328162355116,
+      "bpb_delta": 0.01100711148080642,
+      "ce_document_bootstrap_95": [
+        0.033104842801094256,
+        0.03867615612533622
+      ],
+      "bpb_document_bootstrap_95": [
+        0.010186894890543556,
+        0.011866835169391524
+      ],
+      "document_win_fraction": 0.11290322580645161,
+      "documents": 372,
+      "draws": 10000,
+      "bootstrap_seed": 0,
+      "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+    },
+    "kl_minus_ce_hybrid": {
+      "direction": "left minus right; negative favors left",
+      "ce_delta": -0.2384823910341586,
+      "bpb_delta": -0.07325598285692567,
+      "ce_document_bootstrap_95": [
+        -0.2439851127273368,
+        -0.23309813029862425
+      ],
+      "bpb_document_bootstrap_95": [
+        -0.07501027933460044,
+        -0.07152588226987423
+      ],
+      "document_win_fraction": 1,
+      "documents": 372,
+      "draws": 10000,
+      "bootstrap_seed": 0,
+      "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+    },
+    "kl_minus_ce_attention": {
+      "direction": "left minus right; negative favors left",
+      "ce_delta": -0.23371500734435205,
+      "bpb_delta": -0.07179155868565494,
+      "ce_document_bootstrap_95": [
+        -0.2392250327742855,
+        -0.22845056322078156
+      ],
+      "bpb_document_bootstrap_95": [
+        -0.07345727826874777,
+        -0.07015663516289365
+      ],
+      "document_win_fraction": 1,
+      "documents": 372,
+      "draws": 10000,
+      "bootstrap_seed": 0,
+      "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty"
+    }
+  },
+  "ce_ranking": [
+    "attention-kl",
+    "hybrid-kl",
+    "attention-ce",
+    "hybrid-ce"
+  ],
+  "donor_nats_per_token": 3.1577788846940416,
+  "scope": "single-seed, matched student tokens; KL adds teacher compute; no architecture adoption",
+  "uncertainty": "four factorial contrasts; all document intervals unadjusted and conditional on models, not training-seed uncertainty",
+  "timing_scope": "last logged updates only; excludes setup, checkpointing and evaluation; not billed runtime",
+  "evidence_scope": "report consistency against separate checkpoint audits; no weight reload or remote durability check"
+}

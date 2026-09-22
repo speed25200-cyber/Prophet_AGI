@@ -9,10 +9,13 @@ uninterrupted one, and :mod:`tests.test_training` asserts exactly that.
 
 from __future__ import annotations
 
+import json
 import math
 import time
-from collections.abc import Callable
-from dataclasses import dataclass, field
+import warnings
+from collections.abc import Callable, Mapping
+from copy import deepcopy
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import torch
@@ -24,6 +27,7 @@ from prophet.data.tokenizer import N_BYTES, SPECIAL_TOKENS
 from prophet.modeling.action import build_action_targets
 from prophet.modeling.moe import apply_router_updates
 from prophet.train.checkpoint import CheckpointManager
+from prophet.train.distillation import DistillationObjective
 from prophet.train.loss import compute_loss
 from prophet.train.optim import build_optimizers
 from prophet.train.schedule import WSDSchedule
@@ -32,6 +36,8 @@ TOOL_ID = N_BYTES + SPECIAL_TOKENS.index("<|tool|>")
 """Id of ``<|tool|>``: opens an observation span in the trainer's depth ceilings."""
 
 __all__ = ["TrainConfig", "Trainer", "TrainMetrics"]
+
+_TRAINER_STATE_VERSION = 3
 
 
 def tool_span_mask(batch: Tensor, tool_id: int, assistant_id: int) -> Tensor:
@@ -71,6 +77,8 @@ class TrainConfig:
     confidence_weight: float | None = None
     """Same rule, from ``heads.confidence_loss_weight``."""
     z_loss_weight: float = 1e-4
+    loss_chunk_tokens: int | None = None
+    """Optional CE/z-loss workspace bound. None preserves the original autograd path."""
     ponder_weight: float = 0.0
     max_consecutive_nonfinite: int = 20
     """A non-finite loss or gradient norm skips the optimiser step (the batch is still
@@ -149,12 +157,31 @@ class Trainer:
         model_config: ProphetConfig | None = None,
         on_log: Callable[[TrainMetrics], None] | None = None,
         tokenizer: Any | None = None,
+        distillation: DistillationObjective | None = None,
+        run_identity: Mapping[str, Any] | None = None,
     ) -> None:
         self.model = model
         self.loader = loader
         self.cfg = cfg
         self.model_config = model_config
         self.tokenizer = tokenizer
+        self.distillation = distillation
+        self._run_identity = (None if run_identity is None else
+                              json.loads(json.dumps(dict(run_identity), allow_nan=False)))
+        if distillation is not None:
+            student_parameters = {id(p) for p in model.parameters()}
+            if any(id(p) in student_parameters for p in distillation.teacher.parameters()):
+                raise ValueError("teacher and student must not share parameters")
+            if (cfg.segment_by_bos or cfg.ledger_write != "all" or
+                    (model_config is not None and
+                     (model_config.heads.action_head or model_config.recurrent.token_depth))):
+                raise ValueError("donor distillation supports plain text without control-token policies")
+        if cfg.loss_chunk_tokens is not None and (
+            not isinstance(cfg.loss_chunk_tokens, int)
+            or isinstance(cfg.loss_chunk_tokens, bool)
+            or cfg.loss_chunk_tokens < 1
+        ):
+            raise ValueError("loss_chunk_tokens must be a positive integer or None")
         self._action = bool(model_config is not None and model_config.heads.action_head)
         if cfg.segment_by_bos and tokenizer is None:
             raise ValueError("segment_by_bos needs the tokenizer: Trainer(..., tokenizer=...)")
@@ -178,6 +205,8 @@ class Trainer:
             )
         self.device = torch.device(cfg.device)
         self.model.to(self.device)
+        if self.distillation is not None:
+            self.distillation.teacher.to(self.device)
         self.model.gradient_checkpointing = cfg.activation_checkpointing
         if self.device.type == "cuda" and cfg.allow_tf32:
             torch.backends.cuda.matmul.allow_tf32 = True
@@ -244,15 +273,33 @@ class Trainer:
 
     def _apply_lr(self) -> float:
         multiplier = self.schedule.lr_at(self.step)
-        for opt, peak in zip(self.optimizers, self._peak_lrs, strict=False):
+        for opt, peak in zip(self.optimizers, self._peak_lrs, strict=True):
             for group in opt.param_groups:
                 group["lr"] = peak * multiplier
         return self._peak_lrs[0] * multiplier if self._peak_lrs else 0.0
 
     # -- state -------------------------------------------------------------------------
 
+    def training_contract(self) -> dict[str, Any]:
+        """Numerical settings that must stay fixed for an exact continuation.
+
+        Session length, logging and checkpoint placement are operational controls.
+        Changing the optimizer schedule or objectives requires a separate warm start,
+        not a resume claimed to be the same experiment.
+        """
+        operational = {"checkpoint_every", "log_every", "checkpoint_dir", "keep_milestones",
+                       "max_wall_seconds", "device"}
+        contract = {**{k: v for k, v in asdict(self.cfg).items() if k not in operational},
+                    "device_type": self.device.type, "schedule": asdict(self.schedule)}
+        if self.distillation is not None:
+            contract["distillation"] = self.distillation.fingerprint()
+        if self._run_identity is not None:
+            contract["run_identity"] = deepcopy(self._run_identity)
+        return contract
+
     def state_dict(self) -> dict[str, Any]:
         return {
+            "trainer_state_version": _TRAINER_STATE_VERSION,
             "model": self.model.state_dict(),
             "optimizers": [o.state_dict() for o in self.optimizers],
             "step": self.step,
@@ -264,15 +311,91 @@ class Trainer:
             # not on the A100, where it matters.
             "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             "config": self.model_config.to_dict() if self.model_config else None,
+            "loss_chunk_tokens": self.cfg.loss_chunk_tokens,
+            "training_contract": self.training_contract(),
+            "skipped_nonfinite": self.skipped_nonfinite,
+            "consecutive_nonfinite": self._consecutive_skips,
         }
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
+        if state.get("loss_chunk_tokens") != self.cfg.loss_chunk_tokens:
+            raise ValueError("checkpoint loss_chunk_tokens does not match the current trainer")
+        version = state.get("trainer_state_version")
+        if version is not None and (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version not in (1, 2, _TRAINER_STATE_VERSION)
+        ):
+            raise ValueError(f"unsupported trainer state version: {version!r}")
+        saved_contract = state.get("training_contract")
+        if saved_contract is None:
+            if self.distillation is not None or self._run_identity is not None:
+                raise ValueError("identified recovery resume requires a complete training contract")
+            if version == _TRAINER_STATE_VERSION:
+                raise ValueError("checkpoint does not contain the training contract")
+            warnings.warn("legacy checkpoint has no training contract; optimizer schedule and "
+                          "objective consistency cannot be verified", RuntimeWarning, stacklevel=2)
+        elif saved_contract != self.training_contract():
+            raise ValueError("checkpoint training contract does not match the current trainer")
+        skipped = state.get("skipped_nonfinite", 0)
+        consecutive = state.get("consecutive_nonfinite", 0)
+        if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in (skipped, consecutive)) or consecutive > skipped:
+            raise ValueError("invalid non-finite step counters")
+
+        current_config = self.model_config.to_dict() if self.model_config else None
+        has_saved_config = "config" in state and state["config"] is not None
+        if has_saved_config:
+            raw_saved_config = state["config"]
+            if not isinstance(raw_saved_config, Mapping):
+                raise ValueError("checkpoint model config must be a mapping")
+            # A current-format state was written by ``state_dict`` above and must contain
+            # the complete config. Legacy states are normalised through ``from_dict`` so
+            # fields added since they were written receive their historical defaults.
+            saved_config = (
+                dict(raw_saved_config)
+                if version in (2, _TRAINER_STATE_VERSION)
+                else ProphetConfig.from_dict(dict(raw_saved_config)).to_dict()
+            )
+            if current_config is None or saved_config != current_config:
+                raise ValueError(
+                    "checkpoint model config does not match the current trainer config"
+                )
+        elif version in (2, _TRAINER_STATE_VERSION):
+            if current_config is not None or "config" not in state:
+                raise ValueError(
+                    "checkpoint does not contain a model config compatible with the "
+                    "current trainer"
+                )
+        elif current_config is not None:
+            warnings.warn(
+                "loading a legacy checkpoint without model config metadata; "
+                "compatibility cannot be verified",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+        optimizer_states = state.get("optimizers")
+        if not isinstance(optimizer_states, (list, tuple)):
+            raise ValueError("checkpoint optimizers must be a list of optimizer states")
+        if len(optimizer_states) != len(self.optimizers):
+            raise ValueError(
+                "checkpoint optimizer count does not match the current trainer: "
+                f"{len(optimizer_states)} != {len(self.optimizers)}"
+            )
+
+        # Validate stream identity and cursor bounds before changing model or optimizer
+        # state. A seed/corpus/packing mismatch is otherwise detected only after a
+        # partial restore, leaving the Trainer unusable for a clean fallback.
+        loader_state = self.loader.validate_state(state["loader"])
+
         self.model.load_state_dict(state["model"])
-        for opt, opt_state in zip(self.optimizers, state["optimizers"], strict=False):
+        for opt, opt_state in zip(self.optimizers, optimizer_states, strict=True):
             opt.load_state_dict(opt_state)
         self.step = int(state["step"])
         self.tokens_seen = int(state["tokens_seen"])
-        self.loader.restore(state["loader"])
+        self.skipped_nonfinite = skipped
+        self._consecutive_skips = consecutive
+        self.loader.load_state(loader_state)
         if "torch_rng" in state and state["torch_rng"] is not None:
             torch.set_rng_state(state["torch_rng"].cpu().to(torch.uint8))
         if state.get("cuda_rng") is not None and torch.cuda.is_available():
@@ -338,6 +461,8 @@ class Trainer:
                 opt.zero_grad(set_to_none=True)
 
             accumulated = 0.0
+            objective_finite = True
+            distillation_metrics: dict[str, float] = {}
             extra: dict[str, float] = {}
             for _ in range(self.cfg.grad_accum_steps):
                 batch = self._batch()
@@ -366,6 +491,7 @@ class Trainer:
                     batch,
                     mtp_weight=self.cfg.mtp_weight,
                     z_loss_weight=self.cfg.z_loss_weight,
+                    loss_chunk_tokens=self.cfg.loss_chunk_tokens,
                     ponder_weight=self.cfg.ponder_weight,
                     ponder_target_steps=self.cfg.ponder_target_steps,
                     project=getattr(self.model, "_project", None),
@@ -375,7 +501,18 @@ class Trainer:
                     gate_weight=self.cfg.gate_weight or 0.0,
                     jumped_lm_weight=1.0 if self.cfg.jumped_lm_weight is None else self.cfg.jumped_lm_weight,
                 )
-                (terms.total / self.cfg.grad_accum_steps).backward()
+                total = terms.total
+                if self.distillation is not None:
+                    kl = self.distillation.loss(output.logits, batch,
+                                                autocast_dtype=self._autocast_dtype)
+                    alpha = self.distillation.settings.alpha
+                    total = total + alpha * (kl - terms.lm)
+                    kl_value, total_value = kl.item(), total.item()
+                    objective_finite &= math.isfinite(kl_value) and math.isfinite(total_value)
+                    for key, value in (("loss/donor_kl", kl_value), ("loss/total", total_value)):
+                        distillation_metrics[key] = (distillation_metrics.get(key, 0.0)
+                                                     + value / self.cfg.grad_accum_steps)
+                (total / self.cfg.grad_accum_steps).backward()
                 # Loss-free MoE balancing moves the router biases *after* backward, so
                 # a checkpointed block recomputes the routing it saved.
                 apply_router_updates(getattr(output, "router_stats", ()))
@@ -393,7 +530,7 @@ class Trainer:
             total_norm = float(torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.cfg.grad_clip or float("inf")
             ))
-            finite = math.isfinite(total_norm) and math.isfinite(accumulated)
+            finite = math.isfinite(total_norm) and math.isfinite(accumulated) and objective_finite
             if finite:
                 for opt in self.optimizers:
                     opt.step()
@@ -411,6 +548,7 @@ class Trainer:
                         "last checkpoint; continuing would train nothing."
                     )
             extra["train/grad_norm"] = total_norm
+            extra.update(distillation_metrics)
             if self.skipped_nonfinite:
                 extra["train/skipped_nonfinite"] = float(self.skipped_nonfinite)
 

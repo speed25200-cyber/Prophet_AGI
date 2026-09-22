@@ -1,0 +1,43 @@
+# Budget report — prophet-r04-loop
+
+d_model=1792  parameterised_depth=8  effective_depth=20  frontend=bpe  ffn=dense
+
+## Parameters
+
+| Component | Params | Share |
+|---|---:|---:|
+| ffn/dense | 209.19M | 54.9% |
+| mixer/gdn | 77.39M | 20.3% |
+| frontend/embeddings | 58.72M | 15.4% |
+| mixer/swa | 14.68M | 3.9% |
+| mixer/full_attn | 14.68M | 3.9% |
+| recurrent/input_adapter | 6.42M | 1.7% |
+| norms | 28.67K | 0.0% |
+| **total (resident)** | **381.11M** | 100% |
+| **active / token** | **381.11M** | 100.0% |
+| embedding share | 58.72M | 15.4% |
+
+## Training on one A100 80GB
+
+| Batch tokens | Optimiser | Weights | Grads | Optim | Acts | Total | Fits |
+|---:|---|---:|---:|---:|---:|---:|---|
+| 8192 | Muon+AdamW (4.6 B/param) | 1.4 | 1.4 | 1.6 | 1.6 | 6.0 GB | yes |
+| 8192 | 8-bit (not implemented) | 1.4 | 1.4 | 0.7 | 1.6 | 5.1 GB | yes |
+| 16384 | Muon+AdamW (4.6 B/param) | 1.4 | 1.4 | 1.6 | 3.1 | 7.6 GB | yes |
+| 16384 | 8-bit (not implemented) | 1.4 | 1.4 | 0.7 | 3.1 | 6.7 GB | yes |
+| 32768 | Muon+AdamW (4.6 B/param) | 1.4 | 1.4 | 1.6 | 6.2 | 10.7 GB | yes |
+| 32768 | 8-bit (not implemented) | 1.4 | 1.4 | 0.7 | 6.2 | 9.8 GB | yes |
+
+Token budget at 300 A100-hours and 35% MFU: **20.42B tokens** (54 tokens/param, avg loop k=4.0).
+
+## Inference
+
+| Device | Precision | Context | k | Weights | KV/state | Total | Fits | Decode ceiling |
+|---|---|---:|---:|---:|---:|---:|---|---:|
+| RTX 5090 | int4_g64 | 32768 | 4 | 0.21 | 0.03 | 0.75 GB | yes | 3265 tok/s |
+| RTX 5090 | int4_g64 | 131072 | 4 | 0.21 | 0.13 | 0.84 GB | yes | 2759 tok/s |
+| Mac Studio (M-Ultra) | int4_g64 | 131072 | 4 | 0.21 | 0.13 | 0.84 GB | yes | 1232 tok/s |
+| iPhone 17 Pro | int4_g64 | 8192 | 2 | 0.21 | 0.01 | 0.73 GB | yes | 283 tok/s |
+| iPhone 17 Pro | int4_g64 | 32768 | 2 | 0.21 | 0.03 | 0.75 GB | yes | 262 tok/s |
+
+Decode figures are bandwidth-bound ceilings (bytes streamed per token divided into device bandwidth). Real kernels reach roughly 50-70% of these.

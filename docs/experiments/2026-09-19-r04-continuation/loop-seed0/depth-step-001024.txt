@@ -1,0 +1,63 @@
+{
+  "variant": "loop",
+  "seed": 0,
+  "checkpoint": {
+    "step": 1024,
+    "slot": 1,
+    "sha256": "920f8a3338b33de0e5835756b8ec0f94c34e2af18cee9ac8edbc97835534e726",
+    "bytes": 3233913291,
+    "extra": {}
+  },
+  "step": 1024,
+  "tokens_seen": 16777216,
+  "trainer_state_version": 3,
+  "skipped_nonfinite": 0,
+  "consecutive_nonfinite": 0,
+  "all_model_optimizer_tensors_finite": true,
+  "inspected_tensors": 313,
+  "nonfinite_tensor_paths": [],
+  "training_contract": {
+    "total_steps": 4096,
+    "batch_size": 8,
+    "seq_len": 2048,
+    "grad_accum_steps": 1,
+    "peak_lr_muon": 0.01,
+    "peak_lr_adamw": 0.0003,
+    "weight_decay": 0.1,
+    "warmup_frac": 0.02,
+    "decay_frac": 0.18,
+    "grad_clip": 1.0,
+    "mtp_weight": 0.3,
+    "confidence_weight": 0.1,
+    "z_loss_weight": 0.0001,
+    "loss_chunk_tokens": 512,
+    "ponder_weight": 0.0,
+    "max_consecutive_nonfinite": 20,
+    "ledger_write": "all",
+    "segment_by_bos": false,
+    "sel_weight": 0.5,
+    "ptr_weight": 0.5,
+    "gate_weight": 0.1,
+    "jumped_lm_weight": 0.1,
+    "ponder_target_steps": 4.0,
+    "seed": 0,
+    "dtype": "bfloat16",
+    "activation_checkpointing": true,
+    "allow_tf32": true,
+    "device_type": "cuda",
+    "schedule": {
+      "peak_lr": 1.0,
+      "total_steps": 4096,
+      "warmup_frac": 0.02,
+      "decay_frac": 0.18,
+      "final_lr_frac": 0.0,
+      "decay_shape": "one_minus_sqrt",
+      "min_warmup_steps": 100
+    }
+  }
+}
+DEPTH_RESULT 4 {'total_nats': 1850631.522982473, 'scored_tokens': 393040, 'scored_bytes': 1750592, 'nats_per_token': 4.708506826232631, 'bits_per_byte': 1.5251394503799878, 'seq_len': 2048, 'batch_size': 8, 'loop_k': 4, 'precision': 'bf16 autocast', 'protocol': 'window-local positions; one-token overlap; first token unscored; EOS scored with zero payload bytes', 'evaluation_seconds_including_io_compile': 27.639116272999672, 'peak_allocated_bytes': 5660687872}
+DEPTH_RESULT 1 {'total_nats': 2213991.7279963177, 'scored_tokens': 393040, 'scored_bytes': 1750592, 'nats_per_token': 5.632993405242005, 'bits_per_byte': 1.8245912734374856, 'seq_len': 2048, 'batch_size': 8, 'loop_k': 1, 'precision': 'bf16 autocast', 'protocol': 'window-local positions; one-token overlap; first token unscored; EOS scored with zero payload bytes', 'evaluation_seconds_including_io_compile': 9.856470797999464, 'peak_allocated_bytes': 5595545088}
+DEPTH_RESULT 2 {'total_nats': 1945662.8091982598, 'scored_tokens': 393040, 'scored_bytes': 1750592, 'nats_per_token': 4.950292105633675, 'bits_per_byte': 1.6034564799064652, 'seq_len': 2048, 'batch_size': 8, 'loop_k': 2, 'precision': 'bf16 autocast', 'protocol': 'window-local positions; one-token overlap; first token unscored; EOS scored with zero payload bytes', 'evaluation_seconds_including_io_compile': 14.935619072999543, 'peak_allocated_bytes': 5660687872}
+DEPTH_RESULT 8 {'total_nats': 1941283.342790462, 'scored_tokens': 393040, 'scored_bytes': 1750592, 'nats_per_token': 4.939149559308117, 'bits_per_byte': 1.5998472811506903, 'seq_len': 2048, 'batch_size': 8, 'loop_k': 8, 'precision': 'bf16 autocast', 'protocol': 'window-local positions; one-token overlap; first token unscored; EOS scored with zero payload bytes', 'evaluation_seconds_including_io_compile': 45.382852766000724, 'peak_allocated_bytes': 5660687872}
+DEPTH_SWEEP_COMPLETE

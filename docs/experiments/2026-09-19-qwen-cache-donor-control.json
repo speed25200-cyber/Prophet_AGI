@@ -1,0 +1,36 @@
+{
+  "scope": "one fixed 128-token prefix, CPU float32; hybrid uses fixed k=5",
+  "model": "unchanged_donor",
+  "checkpoint_sha256": "cfa8f33e3e588a13fb430a1427a5e9f842395d169822f9c55e7bd13a0ca41848",
+  "donor_weights_sha256": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b",
+  "gdn_scan": null,
+  "document_sha256": "7e7fd2f5cd43e4a09b5ba6278ca5dcc307c30a6987293fcaba4101ea972340e8",
+  "input_ids_sha256": "c04ea11e1e4b312c93bfd47cda1482293776c59530f43f6d5a115fe4eec5b49b",
+  "atol": 0.0001,
+  "rtol": 0.0001,
+  "paths": {
+    "chunked_prefill_then_decode": {
+      "all_logits_finite": true,
+      "max_absolute_error": 2.193450927734375e-05,
+      "max_tolerance_ratio": 0.14024104177951813,
+      "passed": true,
+      "argmax_matches": 128,
+      "positions": 128,
+      "cache": {
+        "position": 128
+      }
+    },
+    "tokenwise": {
+      "all_logits_finite": true,
+      "max_absolute_error": 8.344650268554688e-05,
+      "max_tolerance_ratio": 0.6824714541435242,
+      "passed": true,
+      "argmax_matches": 128,
+      "positions": 128,
+      "cache": {
+        "position": 128
+      }
+    }
+  },
+  "passed": true
+}

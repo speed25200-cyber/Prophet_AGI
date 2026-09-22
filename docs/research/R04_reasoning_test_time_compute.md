@@ -3,6 +3,11 @@
 **Track:** R04 · **Status:** research complete, decision-ready · **Date:** 2026-09-03
 **Scope:** depth-recurrent / looped transformers, adaptive compute, latent reasoning, explicit test-time search, reasoning distillation — evaluated strictly against Prophet's constraint envelope (single A100 80GB, a few hundred GPU-hours; inference on 1× RTX 5090 / Mac Studio MLX / iPhone 17 Pro ANE).
 
+> 2026-09-19 update: see [the primary-source audit](../15_R04_SOURCE_AUDIT.md)
+> before using this historical review to gate a decision. In particular, the
+> project's chosen 350M scale is not a universal lower bound for recurrence.
+> [The measured pilot](../14_R04_PILOT.md) remains preliminary.
+
 **Citation confidence convention used throughout:**
 - `[V]` = number verified against a retrieved primary/secondary source during this research session.
 - `[M]` = number recalled from prior knowledge, **not** re-verified in this session (arXiv egress was blocked; only `github.com` was fetchable). Treat `[M]` numbers as approximately right and re-check before they gate a decision.

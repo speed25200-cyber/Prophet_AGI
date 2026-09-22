@@ -1,0 +1,28 @@
+{
+  "status": "complete",
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/prophet-recovery/shared-fit-90c970b/scripts/eval_r04_depth.py",
+    "--model-repo",
+    "/content/Prophet_AGI",
+    "--run",
+    "/content/r04-final/loop-seed0",
+    "--corpus",
+    "/content/Prophet_AGI/data/fineweb-pilot-v1",
+    "--expected-step",
+    "4096",
+    "--depths",
+    "4",
+    "1",
+    "2",
+    "6",
+    "8",
+    "--out",
+    "/content/r04-final-depth-v1/report.json"
+  ],
+  "maximum_seconds": 600,
+  "training_modified": false,
+  "pid": 181734,
+  "elapsed_seconds": 158.8152182470003
+}

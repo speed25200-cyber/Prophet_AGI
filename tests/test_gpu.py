@@ -1,8 +1,6 @@
 """GPU-only checks: the first tests to run on the A100, skipped everywhere else.
 
-The fused delta-rule kernel (flash-linear-attention) has never executed in this
-repository: no GPU, no ``fla``. Its layout contract is written down in
-``GatedDeltaNet.forward`` and nothing else vouches for it. These tests are the vouching:
+The fused delta-rule kernel's layout contract lives in ``GatedDeltaNet.forward``:
 the kernel must match the reference scan on outputs *and* on the state it hands back,
 and a chunked prefill must match token-by-token decode under the kernel, before any
 budgeted run starts. ``scripts/train.py`` refuses a real run without ``fla`` for exactly
@@ -20,6 +18,20 @@ from prophet.modeling.model import ProphetCache, ProphetModel
 
 CUDA = torch.cuda.is_available()
 pytestmark = pytest.mark.skipif(not CUDA, reason="needs a CUDA device")
+
+
+@pytest.fixture(autouse=True)
+def strict_reference_precision():
+    """Trainer enables TF32; don't let that contaminate later FP32 references."""
+    matmul = torch.backends.cuda.matmul.allow_tf32
+    convolution = torch.backends.cudnn.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    try:
+        yield
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = matmul
+        torch.backends.cudnn.allow_tf32 = convolution
 
 
 def _model(cfg_path: str = "configs/prophet_tiny_smoke.json") -> ProphetModel:
@@ -71,7 +83,8 @@ def test_fused_prefill_matches_incremental_decode():
     assert torch.allclose(full[:, 25:], torch.cat(steps, 1), atol=2e-3, rtol=1e-3)
 
 
-def test_a_training_step_runs_under_autocast_with_checkpointing():
+@pytest.mark.parametrize("loss_chunk_tokens", [None, 7])
+def test_a_training_step_runs_under_autocast_with_checkpointing(loss_chunk_tokens):
     """bf16 autocast, activation checkpointing, Muon + AdamW, on the real device."""
     from prophet.data.streaming import StreamingLoader, sources_from_iterables
     from prophet.train.loop import TrainConfig, Trainer
@@ -83,8 +96,96 @@ def test_a_training_step_runs_under_autocast_with_checkpointing():
     trainer = Trainer(
         model, loader,
         TrainConfig(total_steps=2, seq_len=64, batch_size=2, device="cuda",
+                    loss_chunk_tokens=loss_chunk_tokens,
                     checkpoint_dir="/tmp/prophet-gpu-check", activation_checkpointing=True),
         model_config=cfg,
     )
     history = trainer.train(max_steps=2)
     assert len(history) == 2 and all(torch.isfinite(torch.tensor(h.loss)) for h in history)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_chunked_loss_cuda_values_and_gradients(dtype):
+    from prophet.train.chunked_loss import token_losses
+
+    torch.manual_seed(27)
+    x = torch.randn(2, 67, 2048, device="cuda", dtype=dtype).requires_grad_()
+    ref = x.detach().clone().requires_grad_()
+    targets = torch.randint(0, 2048, (2, 67), device="cuda")
+    targets[0, ::3] = -100
+    weights = torch.randn(2, 67, device="cuda")
+    ce, z = token_losses(x, targets, 13)
+    expected_ce = torch.nn.functional.cross_entropy(
+        ref.float().reshape(-1, 2048), targets.flatten(), reduction="none",
+    ).view_as(targets)
+    expected_z = ref.float().logsumexp(-1).square()
+    torch.testing.assert_close(ce, expected_ce)
+    torch.testing.assert_close(z, expected_z)
+    ((ce * weights).mean() + 1e-4 * z.mean()).backward()
+    ((expected_ce * weights).mean() + 1e-4 * expected_z.mean()).backward()
+    error = (x.grad.float() - ref.grad.float()).norm() / ref.grad.float().norm()
+    assert error < (0.006 if dtype == torch.bfloat16 else 2e-6), error
+
+
+@pytest.mark.skipif(not HAS_FLA, reason="flash-linear-attention is not installed")
+@pytest.mark.parametrize("autocast", [False, True], ids=["fp32", "bf16"])
+def test_fused_backward_matches_sequential_reference(autocast):
+    """A finite training loss alone cannot establish a correct fused backward."""
+    import copy
+
+    torch.manual_seed(23)
+    reference = GatedDeltaNet(64, n_heads=2, head_dim=16, expand=2,
+                              allow_fused=False, chunk_size=None).cuda()
+    fused = copy.deepcopy(reference)
+    fused.allow_fused = True
+    data = torch.randn(2, 67, 64, device="cuda")  # non-aligned length, K != V
+    target = torch.randn_like(data)
+
+    def run(layer):
+        x = data.clone().requires_grad_()
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=autocast):
+            out = layer(x)
+            loss = (out.float() - target).square().mean()
+        loss.backward()
+        return out.detach(), {"input": x.grad, **{n: p.grad for n, p in layer.named_parameters()}}
+
+    expected, reference_gradients = run(reference)
+    actual, fused_gradients = run(fused)
+    # BF16 rounds intermediate matrix operations; compare their full-tensor L2 error,
+    # avoiding relative errors at individual near-zero coordinates.
+    tolerance = 0.03 if autocast else 0.002
+    pairs = {"output": (expected, actual)}
+    pairs.update({name: (gradient, fused_gradients[name])
+                  for name, gradient in reference_gradients.items()})
+    for name, (left, right) in pairs.items():
+        assert left is not None and right is not None, name
+        assert torch.isfinite(right).all(), name
+        error = (left.float() - right.float()).norm() / left.float().norm().clamp_min(1e-8)
+        assert error <= tolerance, f"{name}: relative L2 {error.item():.6g} > {tolerance}"
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_chunked_donor_kl_cuda_values_and_gradients(dtype):
+    """Compare the custom backward to independent dense PyTorch KL on CUDA."""
+    import torch.nn.functional as F
+
+    from prophet.train.distillation import forward_kl
+
+    torch.manual_seed(19)
+    student = torch.randn(2, 67, 2048, dtype=dtype, device="cuda").requires_grad_()
+    teacher = torch.randn_like(student).requires_grad_()
+    reference = student.detach().clone().requires_grad_()
+    weights = torch.rand(2, 67, device="cuda")
+    weights[:, -1] = 0
+    temperature = 1.7
+    actual = forward_kl(student, teacher, temperature=temperature, chunk_tokens=13)
+    expected = F.kl_div(F.log_softmax(reference.float() / temperature, -1),
+                        F.log_softmax(teacher.detach().float() / temperature, -1),
+                        reduction="none", log_target=True).sum(-1) * temperature**2
+    torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-5)
+    (actual * weights).mean().backward()
+    (expected * weights).mean().backward()
+    error = (student.grad.float() - reference.grad.float()).norm() / reference.grad.float().norm()
+    assert error < (0.006 if dtype == torch.bfloat16 else 2e-6)
+    assert teacher.grad is None
+    assert torch.count_nonzero(student.grad[:, -1]) == 0

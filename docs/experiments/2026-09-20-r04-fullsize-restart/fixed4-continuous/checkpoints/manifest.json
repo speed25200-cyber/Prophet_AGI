@@ -1,0 +1,18 @@
+{
+  "checkpoints": [
+    {
+      "step": 0,
+      "slot": 0,
+      "sha256": "51da5888b6c939dcfed491baca27a356bc27f847e42565b58e3e0954e923b0fb",
+      "bytes": 1498817767,
+      "extra": {}
+    },
+    {
+      "step": 8,
+      "slot": 1,
+      "sha256": "af070f0fb9c4bfd8eb1436f80923659d61cf81b523a2475fea3bb678be598b3e",
+      "bytes": 3233904139,
+      "extra": {}
+    }
+  ]
+}

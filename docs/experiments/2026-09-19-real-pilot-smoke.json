@@ -1,0 +1,34 @@
+{
+  "purpose": "real-text pipeline smoke; not a language-quality or architecture claim",
+  "code_revision": "b9fe83c0013824b7e3be99340f96fefcc3f71c98",
+  "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+  "corpus_artifacts": {
+    "train/fineweb-edu/part-00000.jsonl": {
+      "sha256": "ead8005a573105bb1859d53b93a48b6db5b22d56db9ca19331528a95e045a85e",
+      "bytes": 91838924,
+      "documents": 19569
+    },
+    "validation/fineweb-edu/part-00000.jsonl": {
+      "sha256": "9697cff334df05dc6e7d6989f452821c837d6ab6fcc6391fa658768ea4ffb939",
+      "bytes": 1858016,
+      "documents": 376
+    }
+  },
+  "tokenizer_sha256": "4d212345c25569add0ed6b2a397767062b9205f77b0fabc8f9a794107dffb1c2",
+  "parameters": 2468360,
+  "device": "cpu",
+  "torch": "2.14.0+cpu",
+  "steps": 64,
+  "resumed_from_step": 32,
+  "tokens_seen": 16384,
+  "skipped_nonfinite": 0,
+  "before": {
+    "nats_per_token": 10.411359190940857,
+    "scored_tokens": 1016
+  },
+  "after": {
+    "nats_per_token": 8.604541659355164,
+    "scored_tokens": 1016
+  },
+  "evaluation": "first 128 tokens of each of the first eight held-out documents"
+}

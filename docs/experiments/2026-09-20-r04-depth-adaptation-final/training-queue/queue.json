@@ -1,0 +1,76 @@
+{
+  "status": "both_512_steps_and_depth_evaluations_complete",
+  "revision": "f5a7d71be1723324e36a7be2546c940a69de9fdf",
+  "maximum_seconds": 5400,
+  "restart_gate_archive_sha256": "e1935e51e12858e4d04099b34331501c824508f4f989fc667035fc3c54c02529",
+  "outputs": {
+    "fixed4": "/content/r04-depth-strict-gate-v1/fixed4-continuous",
+    "uniform2to6": "/content/r04-depth-strict-gate-v1/uniform2to6-continuous"
+  },
+  "results": {
+    "fixed4-to64": {
+      "step": 64,
+      "tokens_seen": 1048576,
+      "depth_counts": {
+        "4": 64
+      },
+      "complete": false,
+      "report_sha256": "922b58bc0688b09f5583d56fce2b1feb6081febd56c293c30c7252c3361e6bf4"
+    },
+    "uniform2to6-to64": {
+      "step": 64,
+      "tokens_seen": 1048576,
+      "depth_counts": {
+        "6": 16,
+        "5": 15,
+        "2": 8,
+        "4": 7,
+        "3": 18
+      },
+      "complete": false,
+      "report_sha256": "1930abf3fa815657d054430c8b312180e359c19edace3a74558db3a9b0b9f04c"
+    },
+    "fixed4-to512": {
+      "step": 512,
+      "tokens_seen": 8388608,
+      "depth_counts": {
+        "4": 512
+      },
+      "complete": true,
+      "report_sha256": "4e7ea52504d2530718bdbfbbe5807ed923641dcf59a76c02868e8d62ea5f3dc9"
+    },
+    "uniform2to6-to512": {
+      "step": 512,
+      "tokens_seen": 8388608,
+      "depth_counts": {
+        "6": 99,
+        "5": 105,
+        "2": 116,
+        "4": 91,
+        "3": 101
+      },
+      "complete": true,
+      "report_sha256": "5bfbc55c39edce0e049832f4ca5a1d338d9d88c8c1a4e8fc80094a87cf9115b0"
+    }
+  },
+  "scope": "Continue preselected continuous-eight prefixes to 64 then 512 steps. No quality-based early stopping or recipe selection. Gate diagnostics separately bounded at 1800 seconds.",
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/r04-depth-adaptation-code-f5a7d71/scripts/adapt_r04_depth.py",
+    "--parent-run",
+    "/content/r04-final/loop-seed0",
+    "--corpus",
+    "/content/Prophet_AGI/data/fineweb-pilot-v1",
+    "--arm",
+    "uniform2to6",
+    "--out",
+    "/content/r04-depth-strict-gate-v1/uniform2to6-continuous",
+    "--max-session-steps",
+    "448",
+    "--session-minutes",
+    "30"
+  ],
+  "pid": 214912,
+  "elapsed_seconds": 2920.515582674001
+}

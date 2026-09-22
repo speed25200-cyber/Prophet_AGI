@@ -1,0 +1,191 @@
+{
+  "status": "all_six_and_analysis_complete",
+  "revision": "46321013c2b3a52eabd296ac173c255cd1369bec",
+  "maximum_execution_seconds": 1800,
+  "maximum_wait_seconds": 1200,
+  "results": {
+    "original4096-k4": {
+      "report_sha256": "e1f283e24a3ef6461e272594e566cc80e67b20a07b1df4ebbae85215076c2f85",
+      "checkpoint": {
+        "step": 4096,
+        "slot": 1,
+        "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+        "bytes": 3233905547,
+        "extra": {}
+      },
+      "seconds": 84.54898164699989
+    },
+    "original4096-k6": {
+      "report_sha256": "b0e0cd330b086c001bbf2d20ee38e305697cefd8b5fd4d5637b2ec48aa1ba214",
+      "checkpoint": {
+        "step": 4096,
+        "slot": 1,
+        "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+        "bytes": 3233905547,
+        "extra": {}
+      },
+      "seconds": 117.22101652999845
+    },
+    "fixed_sum-k4": {
+      "report_sha256": "d8ed9e491326b3d12a0bc903a27decd2d9042b12a8954e7623398ec1c91a11b4",
+      "checkpoint": {
+        "step": 512,
+        "slot": 0,
+        "sha256": "37f4bae9a361e42bc7100c3ad6c74b97fcf2c4478f60747a92d0948f35b8a412",
+        "bytes": 3233908299,
+        "extra": {}
+      },
+      "seconds": 84.12567703900277
+    },
+    "fixed_sum-k6": {
+      "report_sha256": "206c792d9814418dafd90ad7fae84e1d602420a4eae2fcecd22cd87149458020",
+      "checkpoint": {
+        "step": 512,
+        "slot": 0,
+        "sha256": "37f4bae9a361e42bc7100c3ad6c74b97fcf2c4478f60747a92d0948f35b8a412",
+        "bytes": 3233908299,
+        "extra": {}
+      },
+      "seconds": 118.07248897299723
+    },
+    "learned_mix-k4": {
+      "report_sha256": "5b06d377e1b0973a65da6891d8ea1ae0b9a0511726641be71d61ebfdfe51a97f",
+      "checkpoint": {
+        "step": 512,
+        "slot": 0,
+        "sha256": "fdde37c0cddd8b6b6602adccc164f9c1a3ad6c5d48f9aa2bea020015771ea19b",
+        "bytes": 3285289159,
+        "extra": {}
+      },
+      "seconds": 85.45112482400145
+    },
+    "learned_mix-k6": {
+      "report_sha256": "2ec8a396d5dac51899c0f2c004c7d7c36dec7c9bac271702c39652a40781cb9c",
+      "checkpoint": {
+        "step": 512,
+        "slot": 0,
+        "sha256": "fdde37c0cddd8b6b6602adccc164f9c1a3ad6c5d48f9aa2bea020015771ea19b",
+        "bytes": 3285289159,
+        "extra": {}
+      },
+      "seconds": 119.41622498200013
+    }
+  },
+  "scope": "All six preselected native ARC-Easy runs; inference only; no outcome-based selection or training.",
+  "elapsed_execution_seconds": 772.7732469420007,
+  "preceding_export": {
+    "path": "/content/prophet-r04-reinjection-final.zip",
+    "bytes": 420964,
+    "sha256": "1cd634622e1e0bc17558b3bd457ded11f7298819a14c0256700b6325017d331d",
+    "files": 20
+  },
+  "command": [
+    "/usr/bin/python3",
+    "/content/native-arc-code-4632101/scripts/summarize_arc_native.py",
+    "--reports",
+    "/content/native-arc-evaluation-v1",
+    "--items",
+    "/content/native-arc-evaluation-v1/items",
+    "--out",
+    "/content/native-arc-evaluation-v1/summary.json"
+  ],
+  "pid": 251565,
+  "processes": {
+    "fetch": {
+      "pid": 248155,
+      "returncode": 0
+    },
+    "worktree": {
+      "pid": 248167,
+      "returncode": 0
+    },
+    "tests": {
+      "pid": 248171,
+      "returncode": 0
+    },
+    "prepare": {
+      "pid": 248229,
+      "returncode": 0
+    },
+    "original4096-k4": {
+      "pid": 248269,
+      "returncode": 0
+    },
+    "original4096-k6": {
+      "pid": 248751,
+      "returncode": 0
+    },
+    "fixed_sum-k4": {
+      "pid": 249378,
+      "returncode": 0
+    },
+    "fixed_sum-k6": {
+      "pid": 249849,
+      "returncode": 0
+    },
+    "learned_mix-k4": {
+      "pid": 250484,
+      "returncode": 0
+    },
+    "learned_mix-k6": {
+      "pid": 250944,
+      "returncode": 0
+    },
+    "analysis": {
+      "pid": 251565,
+      "returncode": 0
+    }
+  },
+  "tests_passed": 28,
+  "input_manifest": {
+    "complete": true,
+    "protocol": "arc-easy-native-r04-v1",
+    "source": {
+      "hf_id": "allenai/ai2_arc",
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "config": "ARC-Easy",
+      "split": "test",
+      "license": "cc-by-sa-4.0"
+    },
+    "original_items_sha256": "5011ec1abef00263b75101c484acdd4e8e2a1e51f8d6895059e87126ccdc6b3b",
+    "rows": 2376,
+    "items_sha256": "6692f86fc175fe21ffd341309f5c3788164328b45214b1288cfa94d1d1f57ee8",
+    "tokenizer_semantic_sha256": "7d8d36adb2b2bf9dac7a6060294641ea16c59ce20506e2294c556c7abd99537b",
+    "max_tokens": 2048,
+    "max_observed_tokens": 167,
+    "maximum_input_length": 256,
+    "buckets": [
+      {
+        "seq_len": 32,
+        "candidates": 6219,
+        "batches": 778
+      },
+      {
+        "seq_len": 64,
+        "candidates": 2878,
+        "batches": 360
+      },
+      {
+        "seq_len": 128,
+        "candidates": 392,
+        "batches": 49
+      },
+      {
+        "seq_len": 256,
+        "candidates": 12,
+        "batches": 2
+      }
+    ],
+    "padded_input_positions": 437760,
+    "batch_size": 8,
+    "total_candidate_tokens": 305468,
+    "candidates": 9501,
+    "prompt_template": "Question: {question}\nAnswer:",
+    "continuation_prefix": " ",
+    "fewshot": 0,
+    "precision": "fp32; no autocast or TF32 matmul",
+    "scoring": "continuation-only summed nats; character-normalized nats divide by original choice length",
+    "tie_policy": "first source choice; report ties",
+    "scope": "All original questions and choices in source order, retokenized only. Exploratory capability probe; no training, filtering, truncation or reserved benchmark. Original R04 overlap screen is incomplete and does not establish benchmark-clean training."
+  }
+}

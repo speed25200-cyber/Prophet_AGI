@@ -1,0 +1,27 @@
+{
+  "status": "complete",
+  "remote_flush_verified": true,
+  "destination": "/content/drive/MyDrive/Prophet_AGI/R04/donor-recovery/fp32-pilot-v1/hybrid-ce-seed0-step002048",
+  "flush_seconds": 2.8527597270003753,
+  "pid": 120651,
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "/content/prophet-recovery/checkpoint-analysis-25d24cc/scripts/audit_recovery_checkpoint.py",
+    "--run",
+    "/content/drive/MyDrive/Prophet_AGI/R04/donor-recovery/fp32-pilot-v1/hybrid-ce-seed0-step002048",
+    "--step",
+    "2048",
+    "--out",
+    "/content/prophet-recovery/recovery-fp32-v1/hybrid-ce-final-remounted-audit.json"
+  ],
+  "exit_code": 0,
+  "checkpoint": {
+    "step": 2048,
+    "slot": 0,
+    "sha256": "9d511123800d71cac0ed4399546ab152e1d70f5b31b4655aa6661ec92da242f8",
+    "bytes": 3707786649,
+    "extra": {}
+  },
+  "audit_sha256": "b910732bd3154dfb598ba77772f2391d94d9b44f0a4ccaf2ddda24402a86ded7",
+  "metadata_verified": true
+}

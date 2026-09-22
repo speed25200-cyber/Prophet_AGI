@@ -1,0 +1,10 @@
+{
+  "status": "verified",
+  "gate_sha256": "f60d87c9301168490ee44805cb74ff204734a954d087c1d1c3927d683dee324a",
+  "source_revision": "7e088f59e2db8f7401664d755a05470f0d642181",
+  "source_files_verified_against_git": {
+    "prophet/convert/retained_recurrence.py": "97f77cf4f6bbcdf00ba40b9447e2ce5e16d38c859e3ef886dfc3e7cdce4da6b1",
+    "scripts/gate_retained_recurrence.py": "0b508bc0e97ccf91673699163e5eea34d52b8026eeede6a7e4c2a388fa0d42ba"
+  },
+  "scope": "Recorded CPU gate identities, declared checks, cache arithmetic and source bytes; no repeated model forward or tensor reload during this archive verification."
+}

@@ -1,0 +1,5 @@
+From https://github.com/speed25200-cyber/Prophet_AGI
+ * branch            claude/prophet-v03-memory-context -> FETCH_HEAD
+   8ad19d3..6d36dce  claude/prophet-v03-memory-context -> origin/claude/prophet-v03-memory-context
+Preparing worktree (detached HEAD 6d36dce)
+HEAD is now at 6d36dce Add frozen ARC-Easy capability evaluation for recovered models

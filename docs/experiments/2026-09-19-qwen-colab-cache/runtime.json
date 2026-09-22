@@ -1,0 +1,19 @@
+{
+  "python": "3.13.15",
+  "torch": "2.11.0+cu128",
+  "transformers": "5.17.0",
+  "cuda_visible": false,
+  "device": "cpu",
+  "dtype": "float32",
+  "script_sha256": "6203b0d0763d6f0317d83942c53a1ce70674f7c8def34a7923235bb11139d688",
+  "initialization_identity": {
+    "complete": true,
+    "checkpoint_sha256": "1b440d1ab490dfc3263a3fb37e1e9ccbde9b72db0c87b4efed4a5e68de0574c8",
+    "state_sha256": "4720d2cbee2ddebd766e674162baefbeacc2a3da711587648c315a1d3bc625e7",
+    "config_sha256": "889fd93c182e27ff5b9681ebbb7b617e204e0d29d7cabaa01c1e28ced9532e10",
+    "donor_revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "donor_weights_sha256": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b",
+    "state_entries": 165,
+    "scope": "all state tensor names, shapes, dtypes and bytes; excludes serialization container metadata"
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "status": "all_passed",
+  "revision": "bfce7c522f4de9e2cba726135bbcbe2cb6adcacc",
+  "results": {
+    "hybrid-ce": {
+      "passed": true,
+      "exit_code": 0,
+      "sha256": "e5812627dbc9c9a1ea887d89451a0a90babe5467f77089a6a41277762dd5d4e8",
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "9d511123800d71cac0ed4399546ab152e1d70f5b31b4655aa6661ec92da242f8",
+        "bytes": 3707786649,
+        "extra": {}
+      }
+    },
+    "attention-ce": {
+      "passed": true,
+      "exit_code": 0,
+      "sha256": "8afdee14fbd2b5251400f5787092e2de5cd4dcbc39ba275c56d87a50610a7da1",
+      "checkpoint": {
+        "step": 2048,
+        "slot": 1,
+        "sha256": "428a6dd7414054b93d4861535b643a19389b40dd4641de2e0dd03f80bd76527d",
+        "bytes": 3503292889,
+        "extra": {}
+      }
+    },
+    "hybrid-kl": {
+      "passed": true,
+      "exit_code": 0,
+      "sha256": "24b53025356554f6f8baa667f8b336976761076979ece25a3cc777c58c150349",
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "d2b8cc68424da4e3d1ee030fed2ffec4a088e1a14ced9e377965092a7c95d118",
+        "bytes": 3707789145,
+        "extra": {}
+      }
+    },
+    "attention-kl": {
+      "passed": true,
+      "exit_code": 0,
+      "sha256": "458b1933d51e448d78f83e5fa9718068f949966291dc0569e190003d79ae464b",
+      "checkpoint": {
+        "step": 2048,
+        "slot": 0,
+        "sha256": "4f79c0db8c12540449117a6c33a4d71d3ce4dcd38ffe6d1d07e3eeb61a014abf",
+        "bytes": 3503296025,
+        "extra": {}
+      }
+    }
+  },
+  "pid": 156464,
+  "command": [
+    "/content/prophet-recovery/venv/bin/python",
+    "/content/prophet-recovery/gpu-cache-bfce7c5/scripts/audit_recovery_cache_suite.py",
+    "--run",
+    "/content/prophet-recovery/recovery-fp32-v1/attention-kl-seed0",
+    "--step",
+    "2048",
+    "--source",
+    "/content/prophet-recovery/source",
+    "--validation",
+    "/content/prophet-recovery/data/validation.jsonl",
+    "--out",
+    "/content/prophet-recovery/gpu-recovered-cache-v1/attention-kl.json",
+    "--documents",
+    "4",
+    "--lengths",
+    "128",
+    "512",
+    "--device",
+    "cuda"
+  ],
+  "unit_tests": {
+    "passed": 4,
+    "cuda_cases": 2,
+    "skipped": 0
+  }
+}

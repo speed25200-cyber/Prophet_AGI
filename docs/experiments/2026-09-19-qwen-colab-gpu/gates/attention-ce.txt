@@ -1,0 +1,8 @@
+NUMERICAL_GATE fp32 True
+NUMERICAL_GATE bf16 True
+step       1  loss  9.3840  lr 1.56e-05  warmup       0.00M tok    1.04s  loss/mtp=10.14  train/grad_norm=218.5
+step       2  loss  9.1779  lr 3.13e-05  warmup       0.00M tok    0.36s  loss/mtp=9.946  train/grad_norm=189.7
+step       3  loss  9.1739  lr 4.69e-05  warmup       0.00M tok    0.35s  loss/mtp=9.861  train/grad_norm=201
+step       4  loss  8.1744  lr 6.25e-05  warmup       0.00M tok    0.37s  loss/mtp=9.039  train/grad_norm=147.3
+step       5  loss  7.8610  lr 7.81e-05  warmup       0.00M tok    0.35s  loss/mtp=8.857  train/grad_norm=125.5
+RECOVERY_GPU_GATE True

@@ -1,0 +1,23 @@
+{
+  "verified": true,
+  "source_files": 48,
+  "revision": "dce35abc439fdeeb8f1482b1219dee3cc242c267",
+  "queue_seconds": 949.4033812910056,
+  "cpu_cuda_tests_passed": 52,
+  "initial_predictions_equal": true,
+  "results": {
+    "fixed_sum": {
+      "exact_restart": true,
+      "peak_allocated_bytes": 13444140032,
+      "tensors": 315,
+      "tensor_elements": 867172946
+    },
+    "learned_mix": {
+      "exact_restart": true,
+      "peak_allocated_bytes": 14214843392,
+      "tensors": 317,
+      "tensor_elements": 880018002
+    }
+  },
+  "scope": "Exported source hashes, separate terminal PIDs, exact original baseline rows, paired evaluation and training log equality recomputed locally. Checkpoint model/optimizer/RNG tensor equality was checked on A100 by the recorded auditor; weights are not included or reloaded here. No quality or capability decision."
+}

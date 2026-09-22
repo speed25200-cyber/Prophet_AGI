@@ -1,0 +1,30 @@
+{
+  "status": "mounted_copy_verified_pending_flush_remount",
+  "remote_flush_verified": false,
+  "destination": "/content/drive/MyDrive/Prophet_AGI/R04/donor-recovery/fp32-pilot-v1/hybrid-ce-seed0-step002048",
+  "checkpoint": {
+    "step": 2048,
+    "slot": 0,
+    "sha256": "9d511123800d71cac0ed4399546ab152e1d70f5b31b4655aa6661ec92da242f8",
+    "bytes": 3707786649,
+    "extra": {}
+  },
+  "files": {
+    "ckpt_slot0.pt": {
+      "sha256": "9d511123800d71cac0ed4399546ab152e1d70f5b31b4655aa6661ec92da242f8",
+      "bytes": 3707786649
+    },
+    "recovery.json": {
+      "sha256": "11a9d875ff71ad155d32b6c31d9584c094de3c87103d02a7ed10b1651a142cec",
+      "bytes": 6731
+    },
+    "evaluation-step-002048.json": {
+      "sha256": "df0d519432eeea59999865404a23e7e56e61b9fe2962fb9905977ebf5a0bc4df",
+      "bytes": 86858
+    },
+    "training.jsonl": {
+      "sha256": "1a0a275c2fb80453249c7a4d8e86be5f93fc0ec4ae9f9f8bfb785a25766a4ddf",
+      "bytes": 423847
+    }
+  }
+}

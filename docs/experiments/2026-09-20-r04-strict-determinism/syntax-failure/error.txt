@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/tmp/ipykernel_1330/1743295017.py", line 26, in hash_probe_run
+    assert code==0,(label,code)
+           ^^^^^^^
+AssertionError: ('strict-a', 1)

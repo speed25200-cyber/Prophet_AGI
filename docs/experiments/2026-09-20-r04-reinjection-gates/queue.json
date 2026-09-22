@@ -1,0 +1,94 @@
+{
+  "status": "all_gates_passed",
+  "revision": "dce35abc439fdeeb8f1482b1219dee3cc242c267",
+  "maximum_seconds": 1800,
+  "scope": "Initial actual-shape equality, CUDA tests, both k6 preflights and both separate-process 8 versus 1+7 restart gates. No long continuation.",
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "/content/r04-reinjection-code-dce35ab/scripts/audit_r04_restart.py",
+    "--left",
+    "/content/r04-reinjection-gate-v1/learned_mix-continuous",
+    "--right",
+    "/content/r04-reinjection-gate-v1/learned_mix-resumed",
+    "--expected-step",
+    "8",
+    "--out",
+    "/content/r04-reinjection-gate-v1/learned_mix-restart.json"
+  ],
+  "pid": 235897,
+  "elapsed_seconds": 949.4033812910056,
+  "processes": {
+    "fetch": {
+      "pid": 231749,
+      "returncode": 0
+    },
+    "worktree": {
+      "pid": 231761,
+      "returncode": 0
+    },
+    "tests": {
+      "pid": 231765,
+      "returncode": 0
+    },
+    "initial-equality": {
+      "pid": 231911,
+      "returncode": 0
+    },
+    "fixed_sum-preflight": {
+      "pid": 232071,
+      "returncode": 0
+    },
+    "fixed_sum-continuous8": {
+      "pid": 232352,
+      "returncode": 0
+    },
+    "fixed_sum-split1": {
+      "pid": 232941,
+      "returncode": 0
+    },
+    "fixed_sum-split7": {
+      "pid": 233450,
+      "returncode": 0
+    },
+    "fixed_sum-audit": {
+      "pid": 233918,
+      "returncode": 0
+    },
+    "learned_mix-preflight": {
+      "pid": 234043,
+      "returncode": 0
+    },
+    "learned_mix-continuous8": {
+      "pid": 234325,
+      "returncode": 0
+    },
+    "learned_mix-split1": {
+      "pid": 234910,
+      "returncode": 0
+    },
+    "learned_mix-split7": {
+      "pid": 235431,
+      "returncode": 0
+    },
+    "learned_mix-audit": {
+      "pid": 235897,
+      "returncode": 0
+    }
+  },
+  "tests_passed": 52,
+  "paired_depth_history": [
+    6,
+    6,
+    5,
+    2,
+    5,
+    6,
+    4,
+    5
+  ],
+  "continuation_preselected": [
+    "fixed_sum-continuous",
+    "learned_mix-continuous"
+  ]
+}

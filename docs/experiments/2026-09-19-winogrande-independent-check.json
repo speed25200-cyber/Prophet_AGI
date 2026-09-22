@@ -1,0 +1,20 @@
+{
+  "complete": true,
+  "method": "independent ripgrep fixed-string whole-word-boundary search over normalized document lines; no corpus n-gram hash lookup",
+  "pattern_count": 9625,
+  "rg_version": "ripgrep 15.1.0 (rev af60c2de9d)",
+  "splits": {
+    "train": {
+      "documents": 19569,
+      "matches": 0,
+      "rg_exit_code": 1,
+      "normalized_file_sha256": "5a6a631d0797666606f3dd79aa71f1f96508db2b83a8f77441839052d0bc4eec"
+    },
+    "validation": {
+      "documents": 376,
+      "matches": 0,
+      "rg_exit_code": 1,
+      "normalized_file_sha256": "97a8e945f517857da73ccef01e2bcffbaef5791d686349faca737590d53dca39"
+    }
+  }
+}

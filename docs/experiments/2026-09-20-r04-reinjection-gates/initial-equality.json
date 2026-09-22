@@ -1,0 +1,62 @@
+{
+  "passed": true,
+  "depths": {
+    "4": {
+      "hidden_equal": true,
+      "logits_equal": true,
+      "finite": true
+    },
+    "6": {
+      "hidden_equal": true,
+      "logits_equal": true,
+      "finite": true
+    }
+  },
+  "protocol": "r04-input-adapter-initial-equality-v1",
+  "plan_sha256": "1bd62f90d8c38f2fe61cc1bd6911b5f35279aca598ce96395b1d4627ee11d114",
+  "parent_checkpoint": {
+    "step": 4096,
+    "slot": 1,
+    "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+    "bytes": 3233905547,
+    "extra": {}
+  },
+  "code": {
+    "revision": "dce35abc439fdeeb8f1482b1219dee3cc242c267",
+    "driver_sha256": "277d2f96ce91f65b5e2fea30cc4d377b35734a89a94b78198cb93585115290ec",
+    "gate_sha256": "782361afeca079e8ab98fe0e4a2f1d1f089b2544086fc630fa9b103470682052"
+  },
+  "numerical_policy": {
+    "name": "r04-strict-determinism-v1",
+    "deterministic_algorithms": true,
+    "warn_only": false,
+    "cudnn_benchmark": false,
+    "cudnn_deterministic": true,
+    "cublas_workspace_config": ":4096:8",
+    "matmul_allow_tf32": true,
+    "cudnn_allow_tf32": true,
+    "cudnn_version": 91900,
+    "sdpa_backends": {
+      "flash": true,
+      "memory_efficient": true,
+      "math": true,
+      "cudnn": true
+    }
+  },
+  "runtime": {
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "fla": "0.5.2",
+    "triton": "3.6.0",
+    "device": "NVIDIA A100-SXM4-40GB",
+    "triton_f32_default": "tf32x3"
+  },
+  "input_shape": [
+    8,
+    2048
+  ],
+  "input_sha256": "8bf76c1350b3a6c0ecc18df2297240ea729c45d321d7c96a256f6d9f5d5914dd",
+  "loader_step_after": 32776,
+  "peak_allocated_bytes": 9677437952,
+  "scope": "Exact hidden and full-logit equality on the same next packed training batch at k4 and k6, CUDA BF16 autocast. No optimizer updates. Each arm must separately reproduce all original k4 validation documents before training."
+}

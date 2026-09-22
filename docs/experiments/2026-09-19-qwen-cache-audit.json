@@ -1,0 +1,41 @@
+{
+  "scope": "one fixed 128-token prefix, hybrid initialization, fixed k=5, CPU float32",
+  "checkpoint_sha256": "cfa8f33e3e588a13fb430a1427a5e9f842395d169822f9c55e7bd13a0ca41848",
+  "document_sha256": "7e7fd2f5cd43e4a09b5ba6278ca5dcc307c30a6987293fcaba4101ea972340e8",
+  "input_ids_sha256": "c04ea11e1e4b312c93bfd47cda1482293776c59530f43f6d5a115fe4eec5b49b",
+  "atol": 0.0001,
+  "rtol": 0.0001,
+  "paths": {
+    "chunked_prefill_then_decode": {
+      "all_logits_finite": true,
+      "max_absolute_error": 6.937980651855469e-05,
+      "max_tolerance_ratio": 0.5176414847373962,
+      "passed": true,
+      "argmax_matches": 128,
+      "positions": 128,
+      "cache": {
+        "slots": 28,
+        "position": 128,
+        "attention_bytes": 8388608,
+        "recurrent_bytes": 43909120,
+        "total_bytes": 52297728
+      }
+    },
+    "tokenwise": {
+      "all_logits_finite": true,
+      "max_absolute_error": 0.0014647841453552246,
+      "max_tolerance_ratio": 10.30961799621582,
+      "passed": false,
+      "argmax_matches": 128,
+      "positions": 128,
+      "cache": {
+        "slots": 28,
+        "position": 128,
+        "attention_bytes": 8388608,
+        "recurrent_bytes": 43909120,
+        "total_bytes": 52297728
+      }
+    }
+  },
+  "passed": false
+}

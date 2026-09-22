@@ -1,0 +1,74 @@
+{
+  "complete": true,
+  "protocol": "recovered-checkpoint-local-transfer-verification-v1",
+  "verified_at_utc": "2026-09-20T01:06:53.461048+00:00",
+  "checkpoint": {
+    "step": 2048,
+    "slot": 1,
+    "sha256": "428a6dd7414054b93d4861535b643a19389b40dd4641de2e0dd03f80bd76527d",
+    "bytes": 3503292889,
+    "extra": {}
+  },
+  "parts": [
+    {
+      "name": "prophet-attention-ce-step002048.pt.part00",
+      "bytes": 536870912,
+      "sha256": "1d73edfc0895bff0769fa49d6e45f09f298f93bb8d8c6396592c694364fddbdd"
+    },
+    {
+      "name": "prophet-attention-ce-step002048.pt.part01",
+      "bytes": 536870912,
+      "sha256": "6affcbe2ba86e4d0abf69960c6fffeb555975d4b815e24ac7546a8c6714727e6"
+    },
+    {
+      "name": "prophet-attention-ce-step002048.pt.part02",
+      "bytes": 536870912,
+      "sha256": "31f54a709f240b50bf3b20c703492d84545b12160c0586037d242a6c3fa5703a"
+    },
+    {
+      "name": "prophet-attention-ce-step002048.pt.part03",
+      "bytes": 536870912,
+      "sha256": "b0fab5b1686e51182c5f4ecad3551cfbc910c1ff1a8d276fc7bab6e01b0a843b"
+    },
+    {
+      "name": "prophet-attention-ce-step002048.pt.part04",
+      "bytes": 536870912,
+      "sha256": "5a63e00446699d5f1e262f3e270b084c332aa6a5efd01cd46c37d96acec56155"
+    },
+    {
+      "name": "prophet-attention-ce-step002048.pt.part05",
+      "bytes": 536870912,
+      "sha256": "e6c5de19bb06b52231c0aeca04e65a7a206b978029ef029cc049bd076d93942c"
+    },
+    {
+      "name": "prophet-attention-ce-step002048.pt.part06",
+      "bytes": 282067417,
+      "sha256": "da18a56eef2818a760775d68abffe6d2eec35be37bc2757f42b9c880c2c1df34"
+    }
+  ],
+  "transport_manifest_sha256": "db3bc898a7a014ba5b57c0f35bee52fcc8baf2f8ce262b30d54fa27b629e3ca5",
+  "metadata": {
+    "recovery.json": {
+      "bytes": 6737,
+      "sha256": "f953cb456ec9fd4f02b7a164874883ef9257c2e3728ada28f00af3840fb30d6a"
+    },
+    "manifest.json": {
+      "bytes": 462,
+      "sha256": "ec97c70378d4dd04648dd6e404bcaae1e756411531a7c8a591ae95e8c35edcd7"
+    },
+    "evaluation-step-002048.json": {
+      "bytes": 86844,
+      "sha256": "475f6d4c7cd96768edbd2a1624c843079c02cd8dedce128ae35ffd4d7f1bbb9e"
+    },
+    "training.jsonl": {
+      "bytes": 424097,
+      "sha256": "79bccaa7b655f73dba4f62b1ab9e46098b0ee1b8b0d729ea7fd2d2a3fce23e27"
+    }
+  },
+  "colab_audit_sha256": "16f3b3f64a01bbe475571bd965109b3787390779f41bc261e45359d8529070a9",
+  "local_audit_sha256": "c0d99b391cac03e0d5bb6bcd56f56bdeb0b0efd7e916fb220544f9e60548142f",
+  "audit_matches_colab_except_torch_version": true,
+  "colab_torch": "2.11.0+cu128",
+  "local_torch": "2.14.0+cpu",
+  "scope": "Exact original checkpoint reconstructed and restricted-loaded on the local PC outside the Colab runtime. All seven parts, full checkpoint bytes, metadata, contract, config, saved RNG and tensor finiteness verified. No new inference, CUDA check, Drive persistence claim or performance comparison between runtimes."
+}

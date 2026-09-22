@@ -1,0 +1,254 @@
+[
+  {
+    "name": "lambada_openai",
+    "hf_id": "EleutherAI/lambada_openai",
+    "revision": "900124bf3b8235c6daf21033af9948b3f07346c4",
+    "gated": false,
+    "license": "mit",
+    "config": "default",
+    "split": "test",
+    "fields": [
+      "text"
+    ]
+  },
+  {
+    "name": "sciq",
+    "hf_id": "allenai/sciq",
+    "revision": "2c94ad3e1aafab77146f384e23536f97a4849815",
+    "gated": false,
+    "license": [
+      "cc-by-nc-3.0"
+    ],
+    "config": null,
+    "split": "test",
+    "fields": [
+      "question",
+      "support",
+      "correct_answer",
+      "distractor1",
+      "distractor2",
+      "distractor3"
+    ]
+  },
+  {
+    "name": "piqa",
+    "hf_id": "ybisk/piqa",
+    "revision": "2e8ac2dffd59bac8c3c6714948f4c551a0848bb0",
+    "gated": false,
+    "license": [
+      "unknown"
+    ],
+    "config": null,
+    "split": "validation",
+    "fields": [
+      "goal",
+      "sol1",
+      "sol2"
+    ]
+  },
+  {
+    "name": "arc_easy",
+    "hf_id": "allenai/ai2_arc",
+    "revision": "210d026faf9955653af8916fad021475a3f00453",
+    "gated": false,
+    "license": [
+      "cc-by-sa-4.0"
+    ],
+    "config": "ARC-Easy",
+    "split": "test",
+    "fields": [
+      "question",
+      "choices"
+    ]
+  },
+  {
+    "name": "arc_challenge",
+    "hf_id": "allenai/ai2_arc",
+    "revision": "210d026faf9955653af8916fad021475a3f00453",
+    "gated": false,
+    "license": [
+      "cc-by-sa-4.0"
+    ],
+    "config": "ARC-Challenge",
+    "split": "test",
+    "fields": [
+      "question",
+      "choices"
+    ]
+  },
+  {
+    "name": "hellaswag",
+    "hf_id": "Rowan/hellaswag",
+    "revision": "218ec52e09a7e7462a5400043bb9a69a41d06b76",
+    "gated": false,
+    "license": null,
+    "config": null,
+    "split": "validation",
+    "fields": [
+      "ctx",
+      "endings"
+    ]
+  },
+  {
+    "name": "social_iqa",
+    "hf_id": "allenai/social_i_qa",
+    "revision": "8835ceb9141d7896d9d968634a9b21ae440e3ec5",
+    "gated": false,
+    "license": null,
+    "config": null,
+    "split": "validation",
+    "fields": [
+      "context",
+      "question",
+      "answerA",
+      "answerB",
+      "answerC"
+    ]
+  },
+  {
+    "name": "openbookqa",
+    "hf_id": "allenai/openbookqa",
+    "revision": "388097ea7776314e93a529163e0fea805b8a6454",
+    "gated": false,
+    "license": [
+      "unknown"
+    ],
+    "config": "main",
+    "split": "test",
+    "fields": [
+      "question_stem",
+      "choices"
+    ]
+  },
+  {
+    "name": "commonsense_qa",
+    "hf_id": "tau/commonsense_qa",
+    "revision": "94630fe30dad47192a8546eb75f094926d47e155",
+    "gated": false,
+    "license": [
+      "mit"
+    ],
+    "config": null,
+    "split": "validation",
+    "fields": [
+      "question",
+      "choices"
+    ]
+  },
+  {
+    "name": "winogrande",
+    "hf_id": "allenai/winogrande",
+    "revision": "01e74176c63542e6b0bcb004dcdea22d94fb67b5",
+    "gated": false,
+    "license": null,
+    "config": "winogrande_xl",
+    "split": "validation",
+    "fields": [
+      "sentence",
+      "option1",
+      "option2"
+    ]
+  },
+  {
+    "name": "mmlu",
+    "hf_id": "cais/mmlu",
+    "revision": "c30699e8356da336a370243923dbaf21066bb9fe",
+    "gated": false,
+    "license": [
+      "mit"
+    ],
+    "config": "all",
+    "split": "test",
+    "fields": [
+      "question",
+      "choices"
+    ]
+  },
+  {
+    "name": "mmlu_pro",
+    "hf_id": "TIGER-Lab/MMLU-Pro",
+    "revision": "b189ec765aa7ed75c8acfea42df31fdae71f97be",
+    "gated": false,
+    "license": "mit",
+    "config": null,
+    "split": "test",
+    "fields": [
+      "question",
+      "options"
+    ]
+  },
+  {
+    "name": "gsm8k",
+    "hf_id": "openai/gsm8k",
+    "revision": "740312add88f781978c0658806c59bc2815b9866",
+    "gated": false,
+    "license": [
+      "mit"
+    ],
+    "config": "main",
+    "split": "test",
+    "fields": [
+      "question",
+      "answer"
+    ]
+  },
+  {
+    "name": "humaneval",
+    "hf_id": "openai/openai_humaneval",
+    "revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+    "gated": false,
+    "license": [
+      "mit"
+    ],
+    "config": null,
+    "split": "test",
+    "fields": [
+      "prompt",
+      "canonical_solution",
+      "test"
+    ]
+  },
+  {
+    "name": "mbpp",
+    "hf_id": "google-research-datasets/mbpp",
+    "revision": "4bb6404fdc6cacfda99d4ac4205087b89d32030c",
+    "gated": false,
+    "license": [
+      "cc-by-4.0"
+    ],
+    "config": "full",
+    "split": "test",
+    "fields": [
+      "text",
+      "code"
+    ]
+  },
+  {
+    "name": "ifeval",
+    "hf_id": "google/IFEval",
+    "revision": "966cd89545d6b6acfd7638bc708b98261ca58e84",
+    "gated": false,
+    "license": "apache-2.0",
+    "config": null,
+    "split": "train",
+    "fields": [
+      "prompt"
+    ]
+  },
+  {
+    "name": "gpqa_diamond",
+    "hf_id": "Idavidrein/gpqa",
+    "revision": "633f5ee89ab8ad4522a9f850766b73f62147ffdd",
+    "gated": "auto",
+    "license": "cc-by-4.0",
+    "config": "gpqa_diamond",
+    "split": "train",
+    "fields": [
+      "Question",
+      "Correct Answer",
+      "Incorrect Answer 1",
+      "Incorrect Answer 2",
+      "Incorrect Answer 3"
+    ]
+  }
+]

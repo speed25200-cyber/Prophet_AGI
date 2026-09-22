@@ -114,6 +114,61 @@ class AgentConfig:
     verifier: VerifierConfig = field(default_factory=VerifierConfig)
     verifier_version: str = "prior-0"
     family: str = "default"
+    sample_actions: bool = False
+    """Sample the action span at ``sample_temperature`` instead of decoding it greedily.
+    Off for benches; on when the episode is training data for a policy-gradient method
+    (docs/research/A5_klpo.md): a greedy sampler is a point mass and teaches nothing."""
+    sample_scope: str = "span"
+    """With ``sample_actions``: ``"span"`` samples every token of the action span,
+    ``"values"`` only the tokens inside string values and decodes the structure (names,
+    keys, punctuation) greedily (docs/33 amendment 2). A small model sampling a key
+    picks a rare sub-word and the grammar finds no continuation in its head."""
+    decoder_widen: bool = False
+    """When no token of the decoder's top candidates keeps the call viable, check the
+    whole vocabulary before giving the span up (docs/33 amendment 2)."""
+    sample_topk: int = 0
+    """When a token is drawn, keep the ``sample_topk`` most likely tokens only (after
+    any grammar mask); 0 draws from the full tempered distribution (docs/33 amendment
+    4). A small model's tail is where garbled sub-words come from."""
+    allow_copy: bool = True
+    """Let the copy heads splice a span of the context into a value. Off for episodes
+    whose values must be *invented* rather than read (proposals, docs/33 amendment 5):
+    the gate otherwise copies fragments of the pinned prompt."""
+    ordered_keys: bool = False
+    """Require a call's argument keys in the schema's order, as the renderer writes
+    them (docs/33 amendment 6)."""
+    record_sampling: bool = False
+    """Record, for every token the model draws, the sampler's log-probability as used
+    (grammar-masked, tempered) and ``mc_draws`` auxiliary draws with theirs, in
+    ``EpisodeResult.sampled``; the exact token stream goes to ``EpisodeResult.ids``."""
+    mc_draws: int = 8
+    sample_copy: bool = False
+    """Sample the copy pointer's start and end from their softmax at ``sample_temperature``
+    instead of taking the argmax (docs/31 amendment 12). Without it the pointer never
+    explores, so a systematically misplaced copy can never yield a verified episode and
+    the closed loop cannot correct it. Greedy (temperature 0) keeps the argmax."""
+    no_repeat_action: bool = False
+    """Forbid, at step *i*, the action name of step *i - 1* (docs/31 amendment 11). Canonical
+    trajectories never repeat a step; without this the decoder could loop on ``note``
+    and never reach ``done`` within the step budget."""
+    copy_topk: int = 0
+    """Draw the copy pointer's start uniformly among its ``copy_topk`` best positions
+    (docs/31 amendment 15); 0 keeps the argmax (or the tempered draw of ``sample_copy``).
+    On the tasks a checkpoint always fails, the right value was the pointer's *second*
+    choice with a probability its softmax never reaches (docs/32 §14)."""
+    copy_explore: str = "all"
+    """Which copy events ``copy_topk`` explores: ``"all"`` of them, or only those whose
+    argmax start lies in a tool ``"observations"`` (docs/31 amendment 17). What is copied
+    from the goal is a constant of the task and not worth exploring; what is copied from
+    an observation is the choice a loop can get systematically wrong."""
+    copy_boundaries: str = "off"
+    """Restrict the copy pointer's start to word boundaries -- positions whose previous
+    token ends in whitespace, a quote or punctuation, or that open an observation --
+    for the exploratory draw only (``"explore"``) or for the argmax as well
+    (``"always"``); ``"off"`` leaves the pointer free (docs/31 amendment 19). A copied
+    value is a whole word or field; a start inside a word is never right, and on the
+    misplaced pointer of docs/32 §13 the right start ranked 11th and 15th, behind
+    positions inside the same name."""
 
 
 @dataclass
@@ -149,12 +204,50 @@ class EpisodeResult:
     tokens: int = 0
     """Every token the model processed in the episode: prompt, spans, observations and
     spliced values. The denominator of "tokens per success"."""
+    ids: list[int] | None = None
+    """With ``record_sampling``: the exact token stream the model was fed."""
+    sampled: list[dict[str, Any]] | None = None
+    """With ``record_sampling``: one record per token the sampler drew --
+    ``position`` in ``ids``, ``token``, ``logq``, ``mc_ids``, ``mc_logq``."""
+
+
+def choose_copy_span(
+    s_logits: torch.Tensor, e_logits: torch.Tensor, *, temperature: float, topk: int = 0
+) -> tuple[int, int]:
+    """Start and end indices of the copy span among the key positions. ``temperature``
+    zero (or negative) takes the argmax of each pointer; otherwise both are sampled from
+    their tempered softmax, the end restricted to positions at or after the start.
+    ``topk`` > 0 draws the start uniformly among the ``topk`` highest-scoring positions
+    instead (docs/31 amendment 15): a confident pointer's second choice is then reached
+    as often as its first, which no temperature achieves."""
+    finite = int(torch.isfinite(s_logits).sum())
+    if topk > 0 and finite > 0:
+        candidates = torch.topk(s_logits, min(topk, finite)).indices
+        start_i = int(candidates[torch.randint(candidates.numel(), (1,))].item())
+    elif temperature > 0:
+        start_i = int(torch.multinomial(torch.softmax(s_logits / temperature, -1), 1).item())
+    else:
+        start_i = int(s_logits.argmax())
+    e_logits = e_logits.masked_fill(torch.arange(e_logits.numel()) < start_i, float("-inf"))
+    if temperature > 0:
+        end_i = int(torch.multinomial(torch.softmax(e_logits / temperature, -1), 1).item())
+    else:
+        end_i = int(e_logits.argmax())
+    return start_i, end_i
 
 
 class AgentLoop:
-    def __init__(self, model, tokenizer: Tokenizer, tools: ToolRegistry, cfg: AgentConfig,
-                 *, scorer: SignalScorer | None = None, quarantine: Quarantine | None = None,
-                 verifier_tool: Callable[[AgentState], bool] | None = None) -> None:
+    def __init__(
+        self,
+        model,
+        tokenizer: Tokenizer,
+        tools: ToolRegistry,
+        cfg: AgentConfig,
+        *,
+        scorer: SignalScorer | None = None,
+        quarantine: Quarantine | None = None,
+        verifier_tool: Callable[[AgentState], bool] | None = None,
+    ) -> None:
         self.model = model
         self.tok = tokenizer
         self.tools = tools
@@ -164,18 +257,22 @@ class AgentLoop:
         self.verifier_tool = verifier_tool
         """An executable check for the task (tests, a checklist). When present, ``done``
         is accepted only if it passes; when absent the confidence head decides."""
-        self.grammar = ActionGrammar(tools)
+        self.grammar = ActionGrammar(tools, ordered=cfg.ordered_keys)
         self.decoder = ConstrainedDecoder(
-            self.grammar, lambda tid: self.tok.decode([tid]),
+            self.grammar,
+            lambda tid: self.tok.decode([tid]),
             end_id=self._sid("<|/call|>"),
         )
         self._ids: list[int] = []
+        self._observation_spans: list[tuple[int, int]] = []
         self._copied = 0
         self._has_action = getattr(model, "action", None) is not None
         recurrent = getattr(getattr(model, "cfg", None), "recurrent", None)
         if cfg.depth_policy == "auto":
             # A model without a config (a scripted stand-in) ignores depth anyway.
-            self.variable_depth = recurrent is None or bool(getattr(recurrent, "token_depth", False))
+            self.variable_depth = recurrent is None or bool(
+                getattr(recurrent, "token_depth", False)
+            )
         else:
             self.variable_depth = cfg.depth_policy == "token"
         if self.variable_depth and recurrent is not None and not recurrent.token_depth:
@@ -183,8 +280,10 @@ class AgentLoop:
                 "depth_policy='token' on a model whose recurrent.token_depth is off: "
                 "varying the depth within one cache is undefined for it"
             )
-        self.k_think = cfg.k_think if cfg.k_think is not None else (
-            int(recurrent.default_loop_k) if recurrent is not None else cfg.k_decide
+        self.k_think = (
+            cfg.k_think
+            if cfg.k_think is not None
+            else (int(recurrent.default_loop_k) if recurrent is not None else cfg.k_decide)
         )
 
     # -- ids ---------------------------------------------------------------------------
@@ -198,9 +297,17 @@ class AgentLoop:
     # -- decoding ----------------------------------------------------------------------
 
     @torch.no_grad()
-    def _feed(self, ids: list[int], cache: ProphetCache, *, loop_k: int | None,
-              halt_threshold: float | None = None, modality: int | None = None,
-              positions: dict[str, list[int]] | None = None, observation: bool = False):
+    def _feed(
+        self,
+        ids: list[int],
+        cache: ProphetCache,
+        *,
+        loop_k: int | None,
+        halt_threshold: float | None = None,
+        modality: int | None = None,
+        positions: dict[str, list[int]] | None = None,
+        observation: bool = False,
+    ):
         if not ids:
             return None
         self._ids.extend(ids)  # absolute position == index; eviction never renumbers
@@ -218,9 +325,17 @@ class AgentLoop:
         return self.model(t, **kw)
 
     @torch.no_grad()
-    def _decode(self, cache: ProphetCache, *, budget: int, loop_k: int | None,
-                halt_threshold: float | None, greedy: bool, stop_ids: set[int],
-                constrained: bool = False) -> tuple[str, Any]:
+    def _decode(
+        self,
+        cache: ProphetCache,
+        *,
+        budget: int,
+        loop_k: int | None,
+        halt_threshold: float | None,
+        greedy: bool,
+        stop_ids: set[int],
+        constrained: bool = False,
+    ) -> tuple[str, Any]:
         """Generate up to ``budget`` tokens; return the text and the last output.
 
         In a constrained span with action heads, every fed token also scores the copy
@@ -235,8 +350,13 @@ class AgentLoop:
         self._copied = 0
         for _ in range(budget):
             if last_id is not None:
-                out = self._feed([last_id], cache, loop_k=loop_k, halt_threshold=halt_threshold,
-                                 positions=copy_kw)
+                out = self._feed(
+                    [last_id],
+                    cache,
+                    loop_k=loop_k,
+                    halt_threshold=halt_threshold,
+                    positions=copy_kw,
+                )
             elif out is None:
                 # First token of the span is produced from the cache's current logits;
                 # the caller has already fed the span opener.
@@ -257,16 +377,24 @@ class AgentLoop:
             if constrained:
                 ranked = logits.topk(min(self.decoder.candidates, logits.numel())).indices.tolist()
                 allowed = self.decoder.allowed(prefix, ranked)
+                if not allowed and self.cfg.decoder_widen:
+                    allowed = self.decoder.allowed(
+                        prefix, logits.argsort(descending=True).tolist(), limit=None
+                    )
                 if not allowed:
                     break
                 mask = torch.full_like(logits, float("-inf"))
                 mask[allowed] = 0.0
                 logits = logits + mask
-            if greedy or self.cfg.sample_temperature <= 0:
+            if not self._sample_here(prefix, constrained=constrained, greedy=greedy):
                 nxt = int(logits.argmax().item())
             else:
-                probs = torch.softmax(logits / self.cfg.sample_temperature, -1)
+                probs = torch.softmax(
+                    self._sampling_logits(logits) / self.cfg.sample_temperature, -1
+                )
                 nxt = int(torch.multinomial(probs, 1).item())
+                if self.cfg.record_sampling:
+                    self._record_draw(logits, probs, nxt)
             if nxt in stop_ids:
                 last_id = nxt
                 break
@@ -280,12 +408,36 @@ class AgentLoop:
             self._last_output = self._feed([last_id], cache, loop_k=loop_k) or self._last_output
         return prefix, out
 
+    def _record_draw(self, logits: torch.Tensor, probs: torch.Tensor, token: int) -> None:
+        """The sampler as it was actually used at this position, plus auxiliary draws.
+
+        ``logits`` are already grammar-masked; the log-probabilities are those of the
+        tempered distribution the token was drawn from. The position is where the token
+        will land in ``self._ids``: it is fed next, nothing is fed in between.
+        """
+        log_probs = torch.log_softmax(logits / self.cfg.sample_temperature, -1)
+        draws = torch.multinomial(probs, max(int(self.cfg.mc_draws), 1), replacement=True)
+        self._sampled.append(
+            {
+                "position": len(self._ids),
+                "token": int(token),
+                "logq": float(log_probs[token]),
+                "mc_ids": draws.tolist(),
+                "mc_logq": log_probs[draws].tolist(),
+            }
+        )
+
+    def _record_kw(self) -> dict[str, Any]:
+        if not self.cfg.record_sampling:
+            return {}
+        return {"ids": list(self._ids), "sampled": list(self._sampled)}
+
     def _try_copy(self, prefix: str, out) -> str | None:
         """At a value start, ask the gate; if it says copy, read the span the pointers
         chose out of everything fed so far, render it as the JSON the schema expects,
         and accept it only if the grammar does. Otherwise generate as usual."""
         state = self.grammar.check(prefix)
-        if not state.value_start:
+        if not state.value_start or not self.cfg.allow_copy:
             return None
         gate = getattr(out, "copy_gate", None)
         starts, ends = getattr(out, "copy_start", None), getattr(out, "copy_end", None)
@@ -295,9 +447,23 @@ class AgentLoop:
         if float(gate[0, -1]) <= 0.0:
             return None
         s_logits, e_logits = starts[0, -1].float(), ends[0, -1].float()
-        start_i = int(s_logits.argmax())
-        e_logits = e_logits.masked_fill(torch.arange(e_logits.numel()) < start_i, float("-inf"))
-        end_i = int(e_logits.argmax())
+        topk = self.cfg.copy_topk
+        if topk > 0 and self.cfg.copy_explore == "observations":
+            preferred = int(key_pos[int(s_logits.argmax())])
+            if not self._from_observation(preferred):
+                topk = 0
+        if self.cfg.copy_boundaries == "always" or (
+            self.cfg.copy_boundaries == "explore" and topk > 0
+        ):
+            boundary = torch.tensor([self._word_start(int(k)) for k in key_pos])
+            if bool(boundary.any()):
+                s_logits = s_logits.masked_fill(~boundary, float("-inf"))
+        start_i, end_i = choose_copy_span(
+            s_logits,
+            e_logits,
+            temperature=self.cfg.sample_temperature if self.cfg.sample_copy else 0.0,
+            topk=topk,
+        )
         start, end = int(key_pos[start_i]), int(key_pos[end_i])
         if end < start or end >= len(self._ids):
             return None
@@ -322,11 +488,56 @@ class AgentLoop:
             return None
         return rendered if self.grammar.check(prefix + rendered).viable else None
 
+    def _sampling_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """The logits a draw is taken from: the ``sample_topk`` best kept, the rest
+        masked out, when the option is set."""
+        k = int(self.cfg.sample_topk)
+        if k <= 0 or k >= logits.numel():
+            return logits
+        kept = logits.topk(k).indices
+        masked = torch.full_like(logits, float("-inf"))
+        masked[kept] = logits[kept]
+        return masked
+
+    def _sample_here(self, prefix: str, *, constrained: bool, greedy: bool) -> bool:
+        """Whether the next token is drawn rather than taken by argmax: never when greedy
+        or at temperature zero; in a constrained span under ``sample_scope="values"``,
+        only inside a string value."""
+        if greedy or self.cfg.sample_temperature <= 0:
+            return False
+        if constrained and self.cfg.sample_scope == "values":
+            return self.grammar.check(prefix).in_string
+        return True
+
+    def _from_observation(self, position: int) -> bool:
+        """Whether an absolute position of ``self._ids`` lies in a tool observation fed
+        this episode."""
+        return any(start <= position < end for start, end in self._observation_spans)
+
+    _BOUNDARY_CHARS = " \t\n\r\"'`:,;=(){}[]<>|"
+
+    def _word_start(self, position: int) -> bool:
+        """Whether a copied span may start at ``position``: the first token of the
+        context or of an observation, or a token whose predecessor ends in whitespace,
+        a quote or punctuation (a control token decodes to nothing and counts too)."""
+        if position <= 0 or position >= len(self._ids):
+            return position == 0
+        if any(position == start for start, _ in self._observation_spans):
+            return True
+        previous = self.tok.decode([self._ids[position - 1]])
+        return previous == "" or previous[-1] in self._BOUNDARY_CHARS
+
     # -- the episode -------------------------------------------------------------------
 
     @torch.no_grad()
-    def run(self, goal: str, *, notes: str = "", modality_tool: int | None = None,
-            session: Any | None = None) -> EpisodeResult:
+    def run(
+        self,
+        goal: str,
+        *,
+        notes: str = "",
+        modality_tool: int | None = None,
+        session: Any | None = None,
+    ) -> EpisodeResult:
         """Run one episode.
 
         ``session`` carries the recurrent core's bounded state from an earlier episode
@@ -337,7 +548,13 @@ class AgentLoop:
         self.model.eval()
         cache = ProphetCache()
         self._ids = []
-        fingerprint = model_fingerprint(self.model) if isinstance(self.model, torch.nn.Module) and hasattr(self.model, "cfg") else ""
+        self._sampled = []
+        self._observation_spans = []
+        fingerprint = (
+            model_fingerprint(self.model)
+            if isinstance(self.model, torch.nn.Module) and hasattr(self.model, "cfg")
+            else ""
+        )
         # An episode without a session starts from empty ledgers: they are buffers on
         # the model, not on the cache, and would otherwise leak from one episode into the
         # next through the weights.
@@ -359,7 +576,9 @@ class AgentLoop:
         anchors = [i for i, tid in enumerate(pinned_ids) if tid == anchor_id]
         tool_names = [s.name for s in self.tools.schemas()]  # the anchors' order
         self._last_output = self._feed(
-            pinned_ids, cache, loop_k=self.cfg.k_decide,
+            pinned_ids,
+            cache,
+            loop_k=self.cfg.k_decide,
             positions={"anchor_positions": anchors} if anchors else None,
         )
         k_think = self.k_think if self.variable_depth else None
@@ -378,11 +597,15 @@ class AgentLoop:
             # 1. think: free text, learned halting, budgeted.
             think = ""
             if think_open is not None:
-                self._last_output = self._feed([think_open], cache, loop_k=k_think,
-                                               halt_threshold=self.cfg.halt_threshold)
+                self._last_output = self._feed(
+                    [think_open], cache, loop_k=k_think, halt_threshold=self.cfg.halt_threshold
+                )
                 think, _ = self._decode(
-                    cache, budget=self.cfg.think_budget, loop_k=k_think,
-                    halt_threshold=self.cfg.halt_threshold, greedy=False,
+                    cache,
+                    budget=self.cfg.think_budget,
+                    loop_k=k_think,
+                    halt_threshold=self.cfg.halt_threshold,
+                    greedy=False,
                     stop_ids={think_close} if think_close is not None else set(),
                 )
 
@@ -390,26 +613,54 @@ class AgentLoop:
             # heads, the selection pointer decides the tool at <|call|> and the grammar
             # is narrowed to it; the LM fills arguments.
             self._last_output = self._feed(
-                [call_open], cache, loop_k=k_act, positions={"decision_positions": [0]},
+                [call_open],
+                cache,
+                loop_k=k_act,
+                positions={"decision_positions": [0]},
             )
             selected, sel_margin = self._selection(self._last_output, tool_names)
+            exclude = frozenset()
+            if self.cfg.no_repeat_action:
+                previous = next(
+                    (t["action"] for t in reversed(state.trajectory) if t.get("action")), None
+                )
+                if previous is not None:
+                    exclude = frozenset({previous["name"]})
             if selected is not None and self.cfg.use_selection_head:
-                self.grammar.restrict(set() if selected == "none" else {selected})
+                self.grammar.restrict(set() if selected == "none" else {selected}, exclude=exclude)
+            elif exclude:
+                self.grammar.restrict(None, exclude=exclude)
             try:
                 text, out = self._decode(
-                    cache, budget=self.cfg.action_budget, loop_k=k_act,
-                    halt_threshold=None, greedy=True,
-                    stop_ids={call_close} if call_close is not None else set(), constrained=True,
+                    cache,
+                    budget=self.cfg.action_budget,
+                    loop_k=k_act,
+                    halt_threshold=None,
+                    greedy=not self.cfg.sample_actions,
+                    stop_ids={call_close} if call_close is not None else set(),
+                    constrained=True,
                 )
             finally:
                 self.grammar.restrict(None)
             action = self.grammar.complete(text)
             if action is None:
                 # The grammar guarantees viability, not completion within budget.
-                records.append(StepRecord(step, think, None, None, "", gated="malformed",
-                                          selected=selected, sel_margin=sel_margin,
-                                          copied=self._copied))
-                state.trajectory.append({"step": step, "think": think, "action": None, "gated": "malformed"})
+                records.append(
+                    StepRecord(
+                        step,
+                        think,
+                        None,
+                        None,
+                        "",
+                        gated="malformed",
+                        selected=selected,
+                        sel_margin=sel_margin,
+                        copied=self._copied,
+                    )
+                )
+                state.trajectory.append(
+                    {"step": step, "think": think, "action": None, "gated": "malformed"}
+                )
                 state.step += 1
                 continue
 
@@ -430,33 +681,74 @@ class AgentLoop:
                     gated = "refused_done"
                     action = Action("verify", {"what": f"confidence {p:.2f} below tau_done"})
                 if action.name == "done":
-                    records.append(StepRecord(step, think, action, verdict, "", gated,
-                                              selected=selected, sel_margin=sel_margin,
-                                              copied=self._copied))
+                    records.append(
+                        StepRecord(
+                            step,
+                            think,
+                            action,
+                            verdict,
+                            "",
+                            gated,
+                            selected=selected,
+                            sel_margin=sel_margin,
+                            copied=self._copied,
+                        )
+                    )
                     state.trajectory.append(self._traj(step, action, verdict, "", think))
                     self._close(state, passed=True, verified=verified_before_done)
-                    return EpisodeResult(True, "done", records, state.notes, verified_before_done,
-                                         session=self._session(cache, fingerprint), tokens=len(self._ids) - carried)
+                    return EpisodeResult(
+                        True,
+                        "done",
+                        records,
+                        state.notes,
+                        verified_before_done,
+                        session=self._session(cache, fingerprint),
+                        tokens=len(self._ids) - carried,
+                        **self._record_kw(),
+                    )
 
             elif action.name == "ask" or (p < self.cfg.tau_ask and self._needs_user(action)):
                 q = action.args.get("question", "clarification needed")
-                records.append(StepRecord(step, think, action, verdict, "", "ask",
-                                          selected=selected, sel_margin=sel_margin,
-                                          copied=self._copied))
+                records.append(
+                    StepRecord(
+                        step,
+                        think,
+                        action,
+                        verdict,
+                        "",
+                        "ask",
+                        selected=selected,
+                        sel_margin=sel_margin,
+                        copied=self._copied,
+                    )
+                )
                 state.trajectory.append(self._traj(step, action, verdict, "", think))
                 self._close(state, passed=False, verified=False)
-                return EpisodeResult(False, "ask", records, state.notes, False, asked_user=q,
-                                     session=self._session(cache, fingerprint), tokens=len(self._ids) - carried)
+                return EpisodeResult(
+                    False,
+                    "ask",
+                    records,
+                    state.notes,
+                    False,
+                    asked_user=q,
+                    session=self._session(cache, fingerprint),
+                    tokens=len(self._ids) - carried,
+                    **self._record_kw(),
+                )
 
             elif self.tools.is_irreversible(action.name) and p < self.cfg.tau_act:
                 gated = "verify_first"
-                action = Action("verify", {"what": f"dry-run of {action.name} at confidence {p:.2f}"})
+                action = Action(
+                    "verify", {"what": f"dry-run of {action.name} at confidence {p:.2f}"}
+                )
 
             # 4. loop detector.
             repeats = state.note_action(action.hash())
             if repeats > self.cfg.max_repeats:
                 gated = "reflect"
-                action = Action("note", {"text": state.notes + f"\n[stuck: repeated {action.name} x{repeats}]"})
+                action = Action(
+                    "note", {"text": state.notes + f"\n[stuck: repeated {action.name} x{repeats}]"}
+                )
 
             # 5. execute / reserved actions.
             observation = self._execute(action, state, cache)
@@ -465,21 +757,46 @@ class AgentLoop:
             if observation:
                 obs_ids = self._observation_ids(observation)
                 start = cache.position
-                self._last_output = self._feed(obs_ids, cache, loop_k=k_ingest, modality=modality_tool,
-                                               observation=True) or self._last_output
-                obs = Observation(step, action.name, observation, len(obs_ids), start, cache.position)
+                self._last_output = (
+                    self._feed(
+                        obs_ids, cache, loop_k=k_ingest, modality=modality_tool, observation=True
+                    )
+                    or self._last_output
+                )
+                self._observation_spans.append((start, cache.position))
+                obs = Observation(
+                    step, action.name, observation, len(obs_ids), start, cache.position
+                )
                 for old in state.push_observation(obs):
                     state.evict_from_attention(cache, old)
 
-            records.append(StepRecord(step, think, action, verdict, observation, gated,
-                                      selected=selected, sel_margin=sel_margin,
-                                      copied=self._copied))
+            records.append(
+                StepRecord(
+                    step,
+                    think,
+                    action,
+                    verdict,
+                    observation,
+                    gated,
+                    selected=selected,
+                    sel_margin=sel_margin,
+                    copied=self._copied,
+                )
+            )
             state.trajectory.append(self._traj(step, action, verdict, observation, think))
             state.step += 1
 
         self._close(state, passed=False, verified=False)
-        return EpisodeResult(False, "max_steps", records, state.notes, False,
-                             session=self._session(cache, fingerprint), tokens=len(self._ids) - carried)
+        return EpisodeResult(
+            False,
+            "max_steps",
+            records,
+            state.notes,
+            False,
+            session=self._session(cache, fingerprint),
+            tokens=len(self._ids) - carried,
+            **self._record_kw(),
+        )
 
     # -- helpers -------------------------------------------------------------------------
 
@@ -544,8 +861,9 @@ class AgentLoop:
     def _needs_user(self, action: Action) -> bool:
         return action.name in ("done", "submit", "send", "purchase")
 
-    def _traj(self, step: int, action: Action | None, verdict: Verdict | None, obs: str,
-              think: str = "") -> dict:
+    def _traj(
+        self, step: int, action: Action | None, verdict: Verdict | None, obs: str, think: str = ""
+    ) -> dict:
         """One serialised step. The think span and the full (already capped)
         observation are kept: a promoted episode is rendered back into training text
         by ``prophet.agent.render``, and a summary cannot be un-summarised."""
@@ -585,15 +903,24 @@ class AgentLoop:
         if self.quarantine is None:
             return
         last = next((t for t in reversed(state.trajectory) if t.get("p_correct") is not None), None)
-        tier = Tier.GROUND_TRUTH if (verified and passed) else (
-            Tier.LEARNED if last is not None else Tier.UNVERIFIED
+        tier = (
+            Tier.GROUND_TRUTH
+            if (verified and passed)
+            else (Tier.LEARNED if last is not None else Tier.UNVERIFIED)
         )
-        self.quarantine.add(Entry(
-            family=self.cfg.family, goal=state.goal, trajectory=state.trajectory,
-            outcome_passed=passed, process_ok=verified,
-            provenance=Provenance(
-                tier=int(tier), verifier_version=self.cfg.verifier_version,
-                p_correct=float(last["p_correct"]) if last else 0.0,
-                depth_disagreement=None, attempts=state.attempts_on_current,
-            ),
-        ))
+        self.quarantine.add(
+            Entry(
+                family=self.cfg.family,
+                goal=state.goal,
+                trajectory=state.trajectory,
+                outcome_passed=passed,
+                process_ok=verified,
+                provenance=Provenance(
+                    tier=int(tier),
+                    verifier_version=self.cfg.verifier_version,
+                    p_correct=float(last["p_correct"]) if last else 0.0,
+                    depth_disagreement=None,
+                    attempts=state.attempts_on_current,
+                ),
+            )
+        )

@@ -1,0 +1,40 @@
+{
+  "complete": true,
+  "overlap_audit_sha256": "1ca9c67d5d14d48ee1c3d0b318ef4f2165b803eb76507411e4174ad1a2267df9",
+  "donor_smoke_sha256": "0a6f4c79bf703d1b26c659992f8fd14a79a432169bd482101916c69f323ee30e",
+  "splits": {
+    "train": {
+      "input_documents": 19569,
+      "retained_documents": 19560,
+      "removed_sha256": [
+        "22b326527deef810aed4c3d550fd4f3b4be2cbd5d56d3dcf7bbd90637eeaf025",
+        "2372eb93825ba6d9d1ac7c2bddd3134bc386a3dcc056db9e98ee078c6e09320a",
+        "2caa7faf9b346931e736d88b7bfd7a358a398175dc956dcc342dfa8ba8249a52",
+        "8a40c241c49d364db088f7f3c72cee594790628942544fc78f5a43dbe53cc857",
+        "8fe124207d83924895339427d25932eaaacf6384750c507b6cb7934384f12e0f",
+        "9e61ee6f1cc3140f7068c6df19cdc39560ea28d60a6d251640ebe4d29790d4f4",
+        "b38c7720f989548510f98610ab25662ab9d263f71e82011bb1ca67ee7ae61160",
+        "da4468fa8fd60a8393aab26e5ab607f98eccaff38f43e6bb7a5f4335f016c47a",
+        "f5eb30de14d8776070c02fcf493adfa12cdff913cafc03f35257673d2d240051"
+      ],
+      "sha256": "542508d6418b13e7c06def4b3de7cbcbd3ff0d21dd1f045487e1d0f4f3a2f3d6",
+      "bytes": 86841543,
+      "path": "train.jsonl"
+    },
+    "validation": {
+      "input_documents": 376,
+      "retained_documents": 372,
+      "removed_sha256": [
+        "08a7ff45df25aa6ac076d94ab6cdfd69ee36e3b1e8f6d5db14cb75d13040efde",
+        "41f9a35c7d0d62ab246a26494b1ad32838bced07799cee6165027663d1bc3be4",
+        "7e7fd2f5cd43e4a09b5ba6278ca5dcc307c30a6987293fcaba4101ea972340e8",
+        "e2c3e269410624577e9ba3afc2df4c5e3df1e11b35938edbe89359d14c712653"
+      ],
+      "sha256": "06903e9925fb4e2ceed27eedc09f5d4b33b32e3e2ce1bfe6e1deed62a491e8af",
+      "bytes": 1737523,
+      "path": "validation.jsonl"
+    }
+  },
+  "scope": "recovery development data; known lexical overlaps removed; not benchmark-clean or a final untouched test set",
+  "all_requested_benchmarks_screened": false
+}

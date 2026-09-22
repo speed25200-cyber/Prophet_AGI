@@ -1,0 +1,63 @@
+{
+  "status": "complete",
+  "revision": "467d7c89e3914faa82df0d8c940c0537dc828b49",
+  "results": {
+    "cuda-restart": {
+      "pid": 103995,
+      "exit_code": 0,
+      "command": [
+        "/content/prophet-recovery/venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_recovery_cli.py",
+        "-k",
+        "fp32_recovery and cuda",
+        "-q",
+        "--junitxml=/content/prophet-recovery/gpu-fp32-pretrain-checks-v2/cuda-restart.xml"
+      ]
+    },
+    "hybrid-full-window": {
+      "pid": 104123,
+      "exit_code": 0,
+      "command": [
+        "/content/prophet-recovery/venv/bin/python",
+        "/content/prophet-recovery/gpu-repo/scripts/gate_qwen_recovery.py",
+        "--source",
+        "/content/prophet-recovery/source",
+        "--initialization",
+        "/content/prophet-recovery/initializations/hybrid.pt",
+        "--audit",
+        "/content/prophet-recovery/initializations/hybrid-conversion.json",
+        "--train",
+        "/content/prophet-recovery/data/train.jsonl",
+        "--data-audit",
+        "/content/prophet-recovery/gpu-repo/docs/experiments/2026-09-19-qwen-recovery-data.json",
+        "--out",
+        "/content/prophet-recovery/gpu-fp32-pretrain-checks-v2/hybrid-full-window.json",
+        "--objective",
+        "ce",
+        "--precision",
+        "float32",
+        "--seq-len",
+        "512",
+        "--batch-size",
+        "4",
+        "--grad-accum",
+        "1",
+        "--loop-k",
+        "5",
+        "--chunk-tokens",
+        "128",
+        "--muon-lr",
+        "0.001",
+        "--adamw-lr",
+        "0.00003",
+        "--probe-seq-len",
+        "512"
+      ],
+      "sha256": "904ef4c33beb0a061912b23fb61f723d0881c06fe47ceaa33a5fdf7b427f20fb"
+    }
+  },
+  "previous_attempt": "/content/prophet-recovery/gpu-fp32-pretrain-checks",
+  "previous_failure": "test collection imported an unrelated installed tests package"
+}

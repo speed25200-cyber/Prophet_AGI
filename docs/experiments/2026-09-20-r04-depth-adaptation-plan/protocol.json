@@ -1,0 +1,41 @@
+{
+  "status": "budgeted_protocol_only_not_launched",
+  "parent_checkpoint": {
+    "step": 4096,
+    "slot": 1,
+    "sha256": "e623941c9db93f792f02c263c79f4e01ec25d8a9afc9ccb032defd5323551cb4",
+    "bytes": 3233905547,
+    "extra": {}
+  },
+  "parameters_each": 374689648,
+  "steps_each": 512,
+  "batch_size": 8,
+  "seq_len": 2048,
+  "parameter_count_scope": "Budget agrees exactly with meta-device ProphetModel construction. Historical R04 tables used a pre-b015121 budget that omitted 1136 gate-bias and GDN output-normalization parameters; no weights are added by this correction.",
+  "additional_tokens_each": 8388608,
+  "cumulative_tokens_each": 75497472,
+  "original_training_corpus_tokens": 19419613,
+  "cumulative_corpus_passes_each": 3.887691891697327,
+  "mean_training_loops": {
+    "fixed4": 4,
+    "uniform2to6": 4
+  },
+  "maximum_backpropagated_loops": 6,
+  "nominal_total_gpu_hours": 1,
+  "hard_queue_seconds": 5400,
+  "nominal_paired_training_seconds_at_2_seconds_per_step": 2048,
+  "timing_scope": "Projection from measured fixed-k4 R04 steps; variable-depth, warm-start, evaluation and checkpoint costs require measurement.",
+  "budget_scope": "These CLI reports describe full training candidates, not measured warm-start memory or training viability. Per-arm worst-case k6 CUDA preflight is required; design-search from-scratch feasibility is not a warm-start result.",
+  "recipe": {
+    "muon_lr": 0.001,
+    "adamw_lr": 3e-05,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "schedule": "512-step WSD with existing 100-step minimum warmup and 18% decay",
+    "precision": "original R04 BF16 autocast with FP32 master weights; exact runtime and GPU gate required"
+  },
+  "warm_start": "Same final weights and loader cursor in both arms; new optimizer and LR schedule. Not an exact continuation of the original optimizer. Each new arm must resume exactly within its own frozen contract.",
+  "primary_gate": "At step512, uniform arm k6/k4 BPB <=0.995 with paired-document 95% bootstrap upper difference <0, and uniform k4 BPB <=1.01*fixed4 k4 BPB. Must also improve k6 versus the matched fixed4 arm. Seed0 screening only; repeat seeds before adoption.",
+  "stop": "No long run on nonfinite updates, changed provenance, failed k4 baseline reproduction, failed actual CUDA resume or peak memory gate. Preserve partial reports; no recipe tuning against development scores.",
+  "scope": "Training-depth policy ablation; no model topology changes, adaptive halting, reasoning-capability or device deployment claim."
+}

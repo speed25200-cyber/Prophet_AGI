@@ -1,0 +1,350 @@
+{
+  "complete": true,
+  "passed": true,
+  "protocol": "qwen-recovery-gpu-gate-v1",
+  "initialization_sha256": "013f6845b9e084aaa7fa1f740878ce65dd9b8c2dd40c3368784ff2f0ee89cfa4",
+  "config": {
+    "name": "prophet-from-qwen3-0.6b",
+    "d_model": 1024,
+    "n_layers": 16,
+    "norm_eps": 1e-06,
+    "norm_kind": "rmsnorm",
+    "residual_scaling": false,
+    "logit_soft_cap": null,
+    "z_loss_weight": 0.0001,
+    "max_seq_len": 4096,
+    "dropout": 0.0,
+    "frontend": {
+      "mode": "bpe",
+      "vocab_size": 151936,
+      "tie_word_embeddings": true,
+      "byte_vocab_size": 260,
+      "local_encoder_layers": 2,
+      "local_decoder_layers": 3,
+      "local_dim": 512,
+      "local_heads": 8,
+      "hash_ngram_sizes": [
+        3,
+        4,
+        5,
+        6
+      ],
+      "hash_ngram_buckets": 32768
+    },
+    "mixer": {
+      "pattern": [
+        "swa",
+        "full_attn"
+      ],
+      "n_heads": 16,
+      "n_kv_heads": 8,
+      "head_dim": 128,
+      "qk_norm": true,
+      "sliding_window": 2048,
+      "attention_sink_tokens": 1,
+      "global_memory": "none",
+      "global_ledger_rope": false,
+      "global_window": 4096,
+      "global_ledger_slots": 16384,
+      "global_ledger_top_k": 32,
+      "global_ledger_heads": 1,
+      "kv_compression": "none",
+      "kv_lora_rank": 512,
+      "linear_heads": 16,
+      "linear_head_dim": 128,
+      "linear_expand": 2.0,
+      "conv_kernel": 4,
+      "linear_beta_max": 2.0,
+      "linear_chunk_size": 64,
+      "rope_theta": 1000000.0,
+      "rope_scaling": "none",
+      "rope_scaling_factor": 1.0,
+      "nope_layers": [
+        1
+      ]
+    },
+    "recurrent": {
+      "enabled": true,
+      "prelude_layers": 4,
+      "core_layers": 4,
+      "coda_layers": 4,
+      "train_loop_min": 5,
+      "train_loop_max": 5,
+      "train_loop_dist": "log_uniform",
+      "train_loop_poisson_lambda": 4.0,
+      "default_loop_k": 5,
+      "core_pattern": [
+        "full_attn"
+      ],
+      "prelude_pattern": null,
+      "coda_pattern": null,
+      "inject_input_each_step": true,
+      "state_init": "randn",
+      "eval_state_init": "zeros",
+      "truncated_backprop_steps": 5,
+      "halting": "none",
+      "halting_loss_weight": 0.01,
+      "halting_target_steps": 4.0,
+      "token_depth": false,
+      "ingest_depth": 1,
+      "token_depth_random_spans": 0.25,
+      "iteration_embedding": false,
+      "iteration_readout": false,
+      "iteration_requantize": "none"
+    },
+    "ffn": {
+      "kind": "dense",
+      "activation": "swiglu",
+      "hidden_mult": 4.5,
+      "n_experts": 64,
+      "n_experts_per_token": 6,
+      "n_shared_experts": 2,
+      "expert_hidden_mult": 0.5,
+      "moe_layer_stride": 1,
+      "moe_first_dense_layers": 1,
+      "router_bias_balancing": true,
+      "router_bias_update_rate": 0.001,
+      "router_z_loss_weight": 0.001,
+      "load_balance_loss_weight": 0.0,
+      "router_dtype": "float32"
+    },
+    "memory": {
+      "enabled": false,
+      "kind": "none",
+      "mount": "output",
+      "layers": [],
+      "memory_dim": 512,
+      "n_slots": 4096,
+      "update_rule": "delta",
+      "write_lr": 1.0,
+      "decay": 1.0,
+      "surprise_threshold": 1.0,
+      "max_writes": 1000000
+    },
+    "heads": {
+      "n_multi_token_predict": 1,
+      "mtp_loss_weight": 0.0,
+      "confidence_head": true,
+      "confidence_loss_weight": 0.0,
+      "action_head": false,
+      "action_dk": 128,
+      "action_kv_head": 0,
+      "sel_loss_weight": 0.5,
+      "ptr_loss_weight": 0.5,
+      "gate_loss_weight": 0.1,
+      "jumped_token_lm_weight": 0.1
+    },
+    "modality": {
+      "n_modalities": 1,
+      "modality_embeddings": true,
+      "position_dims": 1
+    },
+    "init_std": 0.02,
+    "mup_base_width": null
+  },
+  "donor_config": {
+    "architectures": [
+      "Qwen3ForCausalLM"
+    ],
+    "attention_bias": false,
+    "attention_dropout": 0.0,
+    "bos_token_id": 151643,
+    "eos_token_id": 151645,
+    "head_dim": 128,
+    "hidden_act": "silu",
+    "hidden_size": 1024,
+    "initializer_range": 0.02,
+    "intermediate_size": 3072,
+    "max_position_embeddings": 40960,
+    "max_window_layers": 28,
+    "model_type": "qwen3",
+    "num_attention_heads": 16,
+    "num_hidden_layers": 28,
+    "num_key_value_heads": 8,
+    "rms_norm_eps": 1e-06,
+    "rope_scaling": null,
+    "rope_theta": 1000000,
+    "sliding_window": null,
+    "tie_word_embeddings": true,
+    "torch_dtype": "bfloat16",
+    "transformers_version": "4.51.0",
+    "use_cache": true,
+    "use_sliding_window": false,
+    "vocab_size": 151936
+  },
+  "donor_weights_sha256": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b",
+  "tokenizer": {
+    "format": "donor-bytelevel-raw-text-v1",
+    "source_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "eos_id": 151645,
+    "pad_id": 151643,
+    "vocab_size": 151936,
+    "normalizer": {
+      "type": "NFC"
+    },
+    "policy": "no added-token recognition; no postprocessor; explicit EOS"
+  },
+  "train_sha256": "542508d6418b13e7c06def4b3de7cbcbd3ff0d21dd1f045487e1d0f4f3a2f3d6",
+  "torch": "2.11.0+cu128",
+  "cuda": "12.8",
+  "transformers": "5.17.0",
+  "device": "NVIDIA A100-SXM4-40GB",
+  "fla": "0.5.2",
+  "triton": "3.6.0",
+  "triton_f32_default": "tf32x3",
+  "device_memory_bytes": 42405855232,
+  "objective": "kl",
+  "numerical": {
+    "fp32": {
+      "passed": true,
+      "applicable": false,
+      "reason": "no GDN mixers"
+    },
+    "bf16": {
+      "passed": true,
+      "applicable": false,
+      "reason": "no GDN mixers"
+    }
+  },
+  "scope": "initialized training path and measured allocation; not cached decoding or quality",
+  "updates": {
+    "passed": true,
+    "model_optimizer_tensors_finite": true,
+    "skipped_nonfinite": 0,
+    "teacher_unchanged_and_no_gradients": true,
+    "warmup_steps": 2,
+    "measured_steps": 3,
+    "synchronized_seconds_per_step": [
+      0.4199539580004057,
+      0.4250591419986449,
+      0.4180405829974916
+    ],
+    "mean_seconds_per_step": 0.42101789433218073,
+    "peak_cuda_allocated_bytes": 7103455744,
+    "tokens_seen": 2560,
+    "teacher_tokens_seen": 2560,
+    "metrics": [
+      {
+        "step": 1,
+        "loss": 9.38399887084961,
+        "lr": 1.5625e-05,
+        "phase": "warmup",
+        "tokens": 512,
+        "seconds": 1.1700618267059326,
+        "extra": {
+          "loss/mtp": 10.138399124145508,
+          "train/grad_norm": 219.47349548339844,
+          "loss/donor_kl": 6.110857009887695,
+          "loss/total": 7.747427940368652
+        }
+      },
+      {
+        "step": 2,
+        "loss": 9.177840232849121,
+        "lr": 3.125e-05,
+        "phase": "warmup",
+        "tokens": 1024,
+        "seconds": 0.6962110996246338,
+        "extra": {
+          "loss/mtp": 9.951082229614258,
+          "train/grad_norm": 193.0067901611328,
+          "loss/donor_kl": 6.093344688415527,
+          "loss/total": 7.635592460632324
+        }
+      },
+      {
+        "step": 3,
+        "loss": 9.166646003723145,
+        "lr": 4.6875e-05,
+        "phase": "warmup",
+        "tokens": 1536,
+        "seconds": 0.41089296340942383,
+        "extra": {
+          "loss/mtp": 9.854488372802734,
+          "train/grad_norm": 193.39239501953125,
+          "loss/donor_kl": 5.952887535095215,
+          "loss/total": 7.55976676940918
+        }
+      },
+      {
+        "step": 4,
+        "loss": 8.171319007873535,
+        "lr": 6.25e-05,
+        "phase": "warmup",
+        "tokens": 2048,
+        "seconds": 0.4159817695617676,
+        "extra": {
+          "loss/mtp": 9.037534713745117,
+          "train/grad_norm": 145.0572509765625,
+          "loss/donor_kl": 5.3410162925720215,
+          "loss/total": 6.756167411804199
+        }
+      },
+      {
+        "step": 5,
+        "loss": 7.857704162597656,
+        "lr": 7.8125e-05,
+        "phase": "warmup",
+        "tokens": 2560,
+        "seconds": 0.4089944362640381,
+        "extra": {
+          "loss/mtp": 8.859538078308105,
+          "train/grad_norm": 127.58009338378906,
+          "loss/donor_kl": 5.748996734619141,
+          "loss/total": 6.803350448608398
+        }
+      }
+    ],
+    "training_contract": {
+      "total_steps": 128,
+      "batch_size": 1,
+      "seq_len": 512,
+      "grad_accum_steps": 1,
+      "peak_lr_muon": 0.001,
+      "peak_lr_adamw": 3e-05,
+      "weight_decay": 0.1,
+      "warmup_frac": 0.02,
+      "decay_frac": 0.18,
+      "grad_clip": 1.0,
+      "mtp_weight": 0,
+      "confidence_weight": 0,
+      "z_loss_weight": 0,
+      "loss_chunk_tokens": 128,
+      "ponder_weight": 0,
+      "max_consecutive_nonfinite": 20,
+      "ledger_write": "all",
+      "segment_by_bos": false,
+      "sel_weight": 0.5,
+      "ptr_weight": 0.5,
+      "gate_weight": 0.1,
+      "jumped_lm_weight": 0.1,
+      "ponder_target_steps": 4.0,
+      "seed": 0,
+      "dtype": "bfloat16",
+      "activation_checkpointing": true,
+      "allow_tf32": true,
+      "device_type": "cuda",
+      "schedule": {
+        "peak_lr": 1.0,
+        "total_steps": 128,
+        "warmup_frac": 0.02,
+        "decay_frac": 0.18,
+        "final_lr_frac": 0.0,
+        "decay_shape": "one_minus_sqrt",
+        "min_warmup_steps": 100
+      },
+      "distillation": {
+        "format": "frozen-forward-kl-v1",
+        "identity": {
+          "donor_sha256": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b"
+        },
+        "state_sha256": "99d80885171eefad29bb3d6e28afb234ce1769ec640b8af02df21d2fd86673c3",
+        "alpha": 0.5,
+        "temperature": 1.0,
+        "chunk_tokens": 128,
+        "alignment": "next-token; exclude final position; full vocabulary"
+      }
+    },
+    "scope": "real Trainer updates, data loading and teacher included; checkpoints/evaluation excluded; weights discarded"
+  }
+}

@@ -127,6 +127,20 @@ def test_every_byte_value_is_representable(tokenizer):
     assert tokenizer.decode(tokenizer.encode(raw)) == raw
 
 
+def test_decode_is_total_for_model_generated_byte_ids(tokenizer):
+    assert isinstance(tokenizer.decode(range(N_BYTES)), str)
+    assert tokenizer.decode([0xFF]) == "\N{REPLACEMENT CHARACTER}"
+
+
+def test_unused_in_range_ids_are_safe_but_exposed_for_logit_masking(tokenizer):
+    unused = next(token_id for token_id in range(len(tokenizer))
+                  if token_id not in tokenizer.valid_token_ids)
+    assert tokenizer.decode([unused]) == ""
+    assert tokenizer.decode([unused], skip_special=False) == f"<|unused_{unused}|>"
+    with pytest.raises(ValueError, match="unknown or unused"):
+        tokenizer.decode([len(tokenizer)])
+
+
 def test_unknown_token_is_never_emitted(tokenizer):
     unk = tokenizer.special_id("<|unk|>")
     for text in ("\x00\x01\x02", "🜁🜂🜃", "日本"):
@@ -176,6 +190,55 @@ def test_bos_and_eos_can_be_added_and_skipped(tokenizer):
 def test_trainer_rejects_a_vocabulary_with_no_room_for_merges():
     with pytest.raises(ValueError, match="no room for merges"):
         BPETrainer(vocab_size=N_BYTES + N_RESERVED)
+
+
+def _full_recount_reference(corpus, budget, min_frequency):
+    """Independent slow oracle: recount every pair and rewrite every word."""
+    from collections import Counter
+    sequences = Counter(tuple(bytes([b]) for b in u.encode())
+                        for text in corpus for u in pre_tokenize(text) if u)
+    vocabulary = {bytes([b]) for b in range(256)}
+    merges = []
+    for _ in range(budget):
+        counts = Counter()
+        for word, occurrences in sequences.items():
+            for a, b in zip(word, word[1:], strict=False):
+                if a + b not in vocabulary:
+                    counts[a, b] += occurrences
+        if not counts:
+            break
+        pair = min(counts, key=lambda p: (-counts[p], p))
+        if counts[pair] < min_frequency:
+            break
+        rewritten = Counter()
+        for word, occurrences in sequences.items():
+            pieces, i = [], 0
+            while i < len(word):
+                if i + 1 < len(word) and word[i:i + 2] == pair:
+                    pieces.append(pair[0] + pair[1])
+                    i += 2
+                else:
+                    pieces.append(word[i])
+                    i += 1
+            rewritten[tuple(pieces)] += occurrences
+        sequences = rewritten
+        vocabulary.add(pair[0] + pair[1])
+        merges.append(pair)
+    return merges
+
+
+@pytest.mark.parametrize("seed", range(8))
+@pytest.mark.parametrize("min_frequency", [1, 3])
+def test_incremental_bpe_exactly_matches_full_recount(seed, min_frequency):
+    import random
+    rng = random.Random(seed)
+    corpus = [" ".join("".join(rng.choices("aaabbbcdeé日本", k=rng.randint(2, 18)))
+                       for _ in range(25)) for _ in range(6)]
+    corpus += ["aaaa aaaaa abab abcabc abc bcd abcd    \n" * 15, "12345 12.67\n"]
+    expected = _full_recount_reference(corpus, 180, min_frequency)
+    trainer = BPETrainer(N_BYTES + N_RESERVED + 180, min_frequency=min_frequency)
+    assert trainer.train(corpus) == expected
+    assert trainer.train(reversed(corpus)) == expected
 
 
 # --------------------------------------------------------------------------------------

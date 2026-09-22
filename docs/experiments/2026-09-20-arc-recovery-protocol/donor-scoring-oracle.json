@@ -1,0 +1,43 @@
+{
+  "complete": true,
+  "scope": "One pinned ARC item, four candidates, CPU FP32 scoring integration against original Qwen masked-label loss; not an ARC accuracy result",
+  "donor_revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+  "donor_weights_sha256": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b",
+  "item_id": "Mercury_417466",
+  "source_row_sha256": "66c4ca2da9f2cf7802666ff679e4e83aee7254d2c911063d82b146a572250983",
+  "cases": [
+    {
+      "tokens": 31,
+      "context_tokens": 19,
+      "answer_tokens": 12,
+      "scorer_nats": 26.652374267578125,
+      "hf_masked_loss_nats": 26.652377128601074,
+      "absolute_error": 2.86102294921875e-06
+    },
+    {
+      "tokens": 30,
+      "context_tokens": 19,
+      "answer_tokens": 11,
+      "scorer_nats": 40.47216796875,
+      "hf_masked_loss_nats": 40.472167015075684,
+      "absolute_error": 9.5367431640625e-07
+    },
+    {
+      "tokens": 28,
+      "context_tokens": 19,
+      "answer_tokens": 9,
+      "scorer_nats": 31.375350952148438,
+      "hf_masked_loss_nats": 31.3753502368927,
+      "absolute_error": 7.152557373046875e-07
+    },
+    {
+      "tokens": 27,
+      "context_tokens": 19,
+      "answer_tokens": 8,
+      "scorer_nats": 25.357187271118164,
+      "hf_masked_loss_nats": 25.35718536376953,
+      "absolute_error": 1.9073486328125e-06
+    }
+  ],
+  "torch": "2.14.0+cpu"
+}

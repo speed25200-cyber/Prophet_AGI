@@ -1,0 +1,20 @@
+{
+  "direction": "left minus right; negative favors left",
+  "ce_delta": -5.658711010826858,
+  "bpb_delta": -1.7382182181411194,
+  "ce_document_bootstrap_95": [
+    -5.717977172643563,
+    -5.60010368048644
+  ],
+  "bpb_document_bootstrap_95": [
+    -1.7588802715465985,
+    -1.718068939984325
+  ],
+  "document_win_fraction": 1,
+  "documents": 372,
+  "draws": 10000,
+  "bootstrap_seed": 0,
+  "uncertainty_scope": "paired document resampling conditional on these models; excludes training-seed uncertainty",
+  "fraction_of_initial_ce_gap_to_donor_closed": 0.6942678062552152,
+  "scope": "step 256 versus its own initialization; matched development protocol; no control recovery endpoint yet"
+}

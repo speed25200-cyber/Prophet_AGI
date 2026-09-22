@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[dev,conversion]"
+      - name: Static checks
+        run: |
+          python -m compileall -q prophet tests scripts
+          ruff check \
+            scripts/gate_retained_recurrence.py tests/test_retained_recurrence.py \
+            scripts/prepare_fresh_pilot.py tests/test_fresh_pilot.py \
+            scripts/prepare_arc_native_eval.py scripts/eval_arc_native.py scripts/summarize_arc_native.py tests/test_native_choice_eval.py tests/test_native_choice_summary.py prophet/eval/choices.py \
+            scripts/adapt_r04_reinjection.py scripts/build_r04_reinjection_plan.py scripts/gate_r04_input_adapter.py scripts/summarize_reinjection.py tests/test_input_adapter.py tests/test_reinjection_adaptation.py \
+            prophet/config.py prophet/budget.py prophet/data prophet/convert prophet/eval/__init__.py \
+            prophet/eval/continual.py prophet/eval/text.py prophet/eval/paired.py prophet/eval/choices.py \
+            prophet/memory/consolidate.py prophet/memory/ledger.py prophet/memory/session.py \
+            prophet/modeling/layers.py prophet/modeling/model.py \
+            prophet/train/checkpoint.py prophet/train/loop.py \
+            prophet/train/loss.py prophet/train/chunked_loss.py prophet/train/distillation.py \
+            scripts/build_data_docs.py scripts/verify_datasets.py scripts/verify_donors.py scripts/prepare_pilot.py scripts/audit_pilot_overlap.py scripts/snapshot_r04.py \
+            scripts/audit_qwen_blocks.py scripts/audit_qwen_stack.py scripts/audit_qwen_cache.py scripts/rehearse_qwen_conversion.py scripts/smoke_qwen_conversion.py scripts/ablate_qwen_initialization.py \
+            scripts/recover_qwen.py scripts/eval_qwen_recovery.py scripts/gate_qwen_recovery.py scripts/audit_recovery_checkpoint.py scripts/audit_recovery_cache_suite.py scripts/summarize_recovery_pilot.py scripts/audit_initialization_identity.py scripts/audit_donor_tokenizer.py scripts/prepare_recovery_data.py scripts/audit_recovery_pair.py \
+            scripts/gpu_check.py scripts/train.py scripts/pilot_smoke.py scripts/train_tokenizer.py scripts/run_r04_pilot.py scripts/summarize_r04.py scripts/eval_r04_depth.py scripts/audit_r04_checkpoint.py \
+            scripts/prepare_arc_recovery_eval.py scripts/eval_arc_recovery.py scripts/probe_qwen_relaxed.py scripts/probe_qwen_selective.py scripts/probe_qwen_covariance.py scripts/adapt_r04_depth.py scripts/audit_r04_restart.py scripts/summarize_depth_adaptation.py scripts/diagnose_r04_recurrence.py \
+            tests/test_config_budget.py tests/test_continual.py tests/test_data.py tests/test_convert.py \
+            tests/test_memory.py tests/test_modeling.py tests/test_tokenizer.py \
+            tests/test_recovery_cli.py tests/test_recovery_data.py tests/test_recovery_gate.py tests/test_recovery_summary.py tests/test_choice_eval.py tests/test_relaxed_probe.py tests/test_selective_probe.py tests/test_shared_fit.py tests/test_depth_adaptation.py tests/test_depth_summary.py tests/test_recurrence_observation.py \
+            tests/test_training.py tests/test_chunked_loss.py tests/test_distillation.py tests/test_donor_tokenizer.py tests/test_pilot_data.py tests/test_gpu.py tests/test_text_eval.py tests/test_r04_pilot.py tests/test_paired_eval.py tests/test_checkpoint_audit.py tests/test_r04_snapshot.py
+      - name: Tests
+        run: python -m pytest -q

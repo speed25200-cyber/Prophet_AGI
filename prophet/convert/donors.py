@@ -21,7 +21,7 @@ Gemma-generated data, so :data:`DONORS` records the licence and
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 __all__ = ["DonorSpec", "DONORS", "assert_donor_is_usable", "get_donor", "LicenceProblem"]
 
@@ -54,6 +54,8 @@ class DonorSpec:
     license: str
     permits_permissive_release: bool
     """Whether a converted derivative may itself be released under Apache-2.0."""
+    norm_eps: float = 1e-6
+    """RMSNorm epsilon is part of the copied function, including Q/K norms."""
     naming_constraint: str = ""
     """A non-empty value means the derived model's name is constrained by the licence."""
     verified: bool = False
@@ -65,11 +67,11 @@ class DonorSpec:
         """Rough parameter count, used to sanity-check a spec before downloading GBs."""
         embed = self.vocab_size * self.d_model * (1 if self.tie_word_embeddings else 2)
         per_layer = (
-            self.d_model * self.n_heads * self.head_dim          # q
+            self.d_model * self.n_heads * self.head_dim  # q
             + 2 * self.d_model * self.n_kv_heads * self.head_dim  # k, v
-            + self.n_heads * self.head_dim * self.d_model         # o
-            + 3 * self.d_model * self.ffn_hidden                  # SwiGLU
-            + 2 * self.d_model                                    # norms
+            + self.n_heads * self.head_dim * self.d_model  # o
+            + 3 * self.d_model * self.ffn_hidden  # SwiGLU
+            + 2 * self.d_model  # norms
         )
         return embed + self.n_layers * per_layer
 
@@ -77,38 +79,84 @@ class DonorSpec:
 #: Candidate donors. Figures unverified — see the module warning.
 DONORS: dict[str, DonorSpec] = {
     "qwen3-1.7b": DonorSpec(
-        name="Qwen3-1.7B", hf_id="Qwen/Qwen3-1.7B",
-        n_layers=28, d_model=2048, n_heads=16, n_kv_heads=8, head_dim=128,
-        ffn_hidden=6144, vocab_size=151936, tie_word_embeddings=True, rope_theta=1000000.0,
-        license="Apache-2.0", permits_permissive_release=True,
+        name="Qwen3-1.7B",
+        hf_id="Qwen/Qwen3-1.7B",
+        n_layers=28,
+        d_model=2048,
+        n_heads=16,
+        n_kv_heads=8,
+        head_dim=128,
+        ffn_hidden=6144,
+        vocab_size=151936,
+        tie_word_embeddings=True,
+        rope_theta=1000000.0,
+        license="Apache-2.0",
+        permits_permissive_release=True,
         notes="The reference competitor. head_dim 128 matches Prophet's attention slots.",
     ),
     "qwen3-4b": DonorSpec(
-        name="Qwen3-4B", hf_id="Qwen/Qwen3-4B",
-        n_layers=36, d_model=2560, n_heads=32, n_kv_heads=8, head_dim=128,
-        ffn_hidden=9728, vocab_size=151936, tie_word_embeddings=True, rope_theta=1000000.0,
-        license="Apache-2.0", permits_permissive_release=True,
+        name="Qwen3-4B",
+        hf_id="Qwen/Qwen3-4B",
+        n_layers=36,
+        d_model=2560,
+        n_heads=32,
+        n_kv_heads=8,
+        head_dim=128,
+        ffn_hidden=9728,
+        vocab_size=151936,
+        tie_word_embeddings=True,
+        rope_theta=1000000.0,
+        license="Apache-2.0",
+        permits_permissive_release=True,
         notes="Stronger donor, but 36 layers of 2560 width is a larger conversion job.",
     ),
     "qwen3-0.6b": DonorSpec(
-        name="Qwen3-0.6B", hf_id="Qwen/Qwen3-0.6B",
-        n_layers=28, d_model=1024, n_heads=16, n_kv_heads=8, head_dim=128,
-        ffn_hidden=3072, vocab_size=151936, tie_word_embeddings=True, rope_theta=1000000.0,
-        license="Apache-2.0", permits_permissive_release=True,
+        name="Qwen3-0.6B",
+        hf_id="Qwen/Qwen3-0.6B",
+        n_layers=28,
+        d_model=1024,
+        n_heads=16,
+        n_kv_heads=8,
+        head_dim=128,
+        ffn_hidden=3072,
+        vocab_size=151936,
+        tie_word_embeddings=True,
+        rope_theta=1000000.0,
+        license="Apache-2.0",
+        permits_permissive_release=True,
         notes="Cheapest conversion target; useful for rehearsing the recipe end to end.",
     ),
     "smollm3-3b": DonorSpec(
-        name="SmolLM3-3B", hf_id="HuggingFaceTB/SmolLM3-3B",
-        n_layers=36, d_model=2048, n_heads=16, n_kv_heads=4, head_dim=128,
-        ffn_hidden=11008, vocab_size=128256, tie_word_embeddings=True, rope_theta=5000000.0,
-        license="Apache-2.0", permits_permissive_release=True,
+        name="SmolLM3-3B",
+        hf_id="HuggingFaceTB/SmolLM3-3B",
+        n_layers=36,
+        d_model=2048,
+        n_heads=16,
+        n_kv_heads=4,
+        head_dim=128,
+        ffn_hidden=11008,
+        vocab_size=128256,
+        tie_word_embeddings=True,
+        rope_theta=5000000.0,
+        license="Apache-2.0",
+        permits_permissive_release=True,
         notes="Fully open training data, which makes contamination auditing tractable.",
     ),
     "llama-3.2-1b": DonorSpec(
-        name="Llama-3.2-1B", hf_id="meta-llama/Llama-3.2-1B",
-        n_layers=16, d_model=2048, n_heads=32, n_kv_heads=8, head_dim=64,
-        ffn_hidden=8192, vocab_size=128256, tie_word_embeddings=True, rope_theta=500000.0,
-        license="Llama 3.2 Community License", permits_permissive_release=False,
+        name="Llama-3.2-1B",
+        hf_id="meta-llama/Llama-3.2-1B",
+        n_layers=16,
+        d_model=2048,
+        n_heads=32,
+        n_kv_heads=8,
+        head_dim=64,
+        ffn_hidden=8192,
+        vocab_size=128256,
+        tie_word_embeddings=True,
+        rope_theta=500000.0,
+        license="Llama 3.2 Community License",
+        permits_permissive_release=False,
+        norm_eps=1e-5,
         naming_constraint="the derived model's name must begin with 'Llama'",
         notes="Usable, but the licence follows the derivative. head_dim 64, not 128.",
     ),

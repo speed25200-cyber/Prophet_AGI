@@ -210,6 +210,13 @@ class RecurrentCoreConfig:
     inject_input_each_step: bool = True
     """Re-add the prelude output at every iteration. Without it, deep recurrence drifts
     away from the input and the loop stops being conditioned on the prompt."""
+    input_adapter: Literal["none", "residual_linear"] = "none"
+    """Optional shared correction W[h, input] to the original h + input reinjection.
+
+    W starts at zero, preserving the original forward function when parent weights
+    are copied. Costs 2*d_model**2 weights, applied once per loop; adds no cache.
+    Experimental and disabled by default. A useful additional-depth gain is unproven.
+    """
     state_init: Literal["zeros", "randn", "prelude"] = "randn"
     """Initial core state **during training**. Random init is a regulariser: it forces the
     loop to converge to the same answer from any starting point, which is what makes the
@@ -319,10 +326,9 @@ class FeedForwardConfig:
 class MemoryConfig:
     """Test-time-updatable memory: the anti-'frozen brain' bet.
 
-    Tier 1 (``fast_weight``) is an in-layer associative memory whose contents are written
-    during the forward pass and survive across a session. Tier 2 is an offline
-    consolidation pass, run outside the model, that distils accumulated session memory
-    into a sparse weight delta.
+    ``fast_weight`` describes volatile in-layer state. ``product_key`` describes a
+    directly writable bounded ledger. The current offline consolidation pass writes
+    context effects into that ledger; it does not yet distil skills into model weights.
     """
 
     enabled: bool = False
@@ -577,6 +583,13 @@ class ProphetConfig:
         """
         errors: list[str] = []
 
+        if self.recurrent.input_adapter not in ("none", "residual_linear"):
+            errors.append("recurrent.input_adapter must be none or residual_linear")
+        if self.recurrent.input_adapter != "none" and not (
+            self.recurrent.enabled and self.recurrent.inject_input_each_step
+        ):
+            errors.append("recurrent.input_adapter requires recurrence and input reinjection")
+
         if self.d_model % self.mixer.n_heads != 0 and self.mixer.head_dim is None:
             errors.append(
                 f"d_model={self.d_model} is not divisible by n_heads={self.mixer.n_heads}; "
@@ -605,8 +618,14 @@ class ProphetConfig:
                     f"require 1 <= train_loop_min ({r.train_loop_min}) "
                     f"<= train_loop_max ({r.train_loop_max})"
                 )
+            if r.default_loop_k < 1:
+                errors.append("recurrent.default_loop_k must be >= 1")
             if r.truncated_backprop_steps < 1:
                 errors.append("recurrent.truncated_backprop_steps must be >= 1")
+            if not math.isfinite(r.halting_loss_weight) or r.halting_loss_weight < 0:
+                errors.append("recurrent.halting_loss_weight must be finite and >= 0")
+            if not math.isfinite(r.halting_target_steps) or r.halting_target_steps <= 1:
+                errors.append("recurrent.halting_target_steps must be finite and > 1")
             if r.token_depth:
                 if not (1 <= r.ingest_depth <= r.train_loop_max):
                     errors.append(
