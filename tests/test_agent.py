@@ -836,3 +836,27 @@ def test_grammar_reports_the_inside_of_a_string_value_and_the_decoder_can_widen(
     assert not loop._sample_here("free text", constrained=False, greedy=True)
     span = AgentLoop(None, tok, reg, AgentConfig(sample_actions=True))
     assert span._sample_here('{"name":"pro', constrained=True, greedy=False)
+
+
+def test_a_partial_key_must_open_a_parameter_not_given_yet():
+    """A decoder walking a prefix of a key already given reaches a dead end at the
+    closing quote; the grammar refuses the prefix itself (docs/33 amendment 3)."""
+    reg = ToolRegistry()
+    reg.add(
+        ToolSchema(
+            "propose",
+            "P",
+            {
+                "type": "object",
+                "properties": {"ask": {"type": "string"}, "keys": {"type": "string"}},
+            },
+        )
+    )
+    grammar = ActionGrammar(reg, compact=True)
+    assert grammar.check('{"name":"propose","args":{"ask":"code","k').viable
+    assert grammar.check('{"name":"propose","args":{"ask":"code","ke').viable
+    dead = grammar.check('{"name":"propose","args":{"ask":"code","a')
+    assert not dead.viable and "unseen" in dead.reason
+    assert not grammar.check('{"name":"propose","args":{"ask":"code","ask":"x"}').viable
+    # A fresh key is still fine, and so is the first key.
+    assert grammar.check('{"name":"propose","args":{"a').viable

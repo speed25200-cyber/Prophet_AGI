@@ -399,8 +399,10 @@ class ActionGrammar:
             if key is None:
                 return seen, i, False, None, False
             if not key.done:
-                if not any(k.startswith(key.value) for k in props):
-                    raise _Dead(f"no parameter of {schema.name} starts with {key.value!r}")
+                # A partial key must open a parameter not given yet: a prefix of a key
+                # already seen is a dead end the decoder would otherwise walk into.
+                if not any(k.startswith(key.value) and k not in seen for k in props):
+                    raise _Dead(f"no unseen parameter of {schema.name} starts with {key.value!r}")
                 return seen, i, False, None, False
             if key.value not in props:
                 raise _Dead(f"{schema.name} has no parameter {key.value!r}")

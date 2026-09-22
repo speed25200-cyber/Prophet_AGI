@@ -174,3 +174,16 @@ Les deux ne s'appliquent qu'aux épisodes de proposition ; le banc et le solveur
 décodage de docs/09. Les tests couvrent l'état « dans une chaîne » de la grammaire, la
 portée de l'échantillonnage et l'élargissement. La règle de calibration de l'amendement 1
 est inchangée ; l'échelle repart au premier barreau (second temps 50 pas, 50 propositions).
+
+## Amendement 3 — 2026-09-22, même calibration, avant tout tour entraîné : une clé déjà donnée
+
+**Ce qui s'est passé.** Avec les valeurs seules échantillonnées, la trace montre un autre
+mur : après `"ask":"code",` le modèle veut réécrire `"file"` ; la grammaire acceptait le
+préfixe `"f` (préfixe d'un paramètre) et ne refusait le doublon qu'à la fermeture de la
+clé, où plus rien n'est viable sauf un antislash. 30 malformées sur 30, pour cette raison.
+
+**Correction, pré-enregistrée.** Un préfixe de clé n'est viable que s'il ouvre un paramètre
+**pas encore donné** (`ActionGrammar`, test). C'est un défaut de la grammaire de décodage,
+pas du proposeur ; il n'affectait pas le décodage glouton des pilotes précédents (qui ne
+répète pas de clé) et ne change aucun de leurs chiffres. Calibration relancée sur la même
+amorce, même règle.
