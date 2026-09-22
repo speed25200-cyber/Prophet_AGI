@@ -614,3 +614,27 @@ recette de référence, `--attempts 3`, **sans** exploration ; bras `closed-clea
 Si H18 passe, le budget de reprise est un levier de la recette de référence, moins cher
 que l'exploration ; s'il échoue, les deux ou trois épisodes explorés de v12 / v13 pèsent
 plus que leur nombre. Lancé après v10c.
+
+## Amendement 22 — 2026-09-22, pendant v10c (oracle), avant tout run v10d : le bassin mixte avec la reprise qui explore
+
+**Ce que v10c a déjà montré** (graine 0, amorce 75 / 150 : `lookup` 0,367 canonique, `files`
+1,000). Bras mixte : `lookup` 0,367 → 0,350, `files` gardé à 1,000 (199 promus, ≈ 150 de
+`files`). Bras mono-`lookup` : `lookup` 0,367 → 0,350 (47 promus), `files` **1,000 → 0,000 au
+tour 1**, jamais récupéré. Bras mono-`files` : `files` 1,000, `lookup` **0,367 → 0,000 au
+tour 1**. L'oubli par omission est total, symétrique et immédiat ; le bassin mixte l'évite.
+Mais `lookup` ne progresse ni seul ni dans le bassin : 8 tâches résolues par tour sur 30,
+sans tendance — le régime de v9 (le vérificateur filtre, il ne contredit pas), sur une
+graine plus basse.
+
+**Pilote v10d, une seule variable par rapport au bras mixte de v10c.** Même amorce, même
+protocole, bras `closed-clean` mixte seul, avec la reprise qui explore de v11b
+(`--copy-topk 3 --copy-explore observations --attempts 3`) — la seule mécanique qui ait
+fait bouger `lookup` sur une graine bloquée (docs/32 §16).
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H19 (i)** mécanisme | Les reprises exploratoires produisent des épisodes `lookup` vérifiés dans le bassin mixte. | explorés `lookup` ≥ 10 sur 5 tours. |
+| **H19 (ii)** `lookup` bouge dans le bassin mixte | Le gain `lookup` dépasse celui du bras mixte v10c avec certitude. | gain `lookup` ≥ +0,100 avec intervalle (60 tâches) excluant zéro. |
+| **H19 (iii)** `files` est gardé | Le bassin mixte protège la famille saturée. | `files` ≥ 0,950 à chaque tour. |
+| **H19 (iv)** rendement | | gain union / gain union de l'oracle mixte v10c ≥ 0,6. |
+| **H19** | | les quatre, sinon échec ; rapportés séparément. Lancé après v14. |
