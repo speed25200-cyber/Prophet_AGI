@@ -405,6 +405,46 @@ tenu à l'écart, de 0,35 à 0,92 de l'oracle, et de +0,44 à +0,07 bit/octet d'
 (3) KLPO, dans sa forme actuelle (enregistrements réutilisés, β fixe), n'a jamais tenu
 cinq tours ; la piste reste ouverte, à une variable par run.
 
+## 10. Pilote v5 : `done` sans argument
+
+Amendement 8 : le schéma de `done` perd sa clé facultative `summary` que rien ne lisait,
+et le scanner comme le validateur traitent un schéma vide comme « aucun paramètre » (ils
+le traitaient comme « tout est permis », ce qui laissait le mode (c) intact au premier
+essai, abandonné et relancé). Même recette que v4 pour le reste ; les mêmes amorces.
+
+**À poids égaux, le mode (c) disparaît** : le modèle amorce de la graine 0 passe de 0,733
+(malformées 17 % / 10 %) à **0,850 (0 % / 0 %)** au tour 0, sans qu'un poids ait changé.
+
+| Bras | Graine | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | Malformées max |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| closed-clean | 0 | 0,850 | 0,817 | 0,950 | 0,950 | 0,967 | 1,000 | **+0,150** [+0,067, +0,250] | +0,062 | 1 % |
+| closed-clean | 2 | 0,567 | 0,550 | 0,567 | 0,583 | 0,667 | 0,667 | **+0,100** [-0,033, +0,233] | +0,082 | 2 % |
+| closed-clean | 3 | 0,700 | 0,933 | 0,967 | 1,000 | 0,983 | 1,000 | **+0,300** [+0,183, +0,417] | +0,058 | 1 % |
+| oracle | 0 | 0,850 | 0,900 | 0,967 | 1,000 | 1,000 | 0,983 | +0,133 [+0,050, +0,233] | +0,060 | 0 % |
+| oracle | 2 | 0,567 | 0,667 | 0,833 | 0,867 | 0,850 | 0,867 | +0,300 [+0,167, +0,433] | +0,082 | 0 % |
+| oracle | 3 | 0,700 | 0,950 | 0,950 | 1,000 | 1,000 | 0,983 | +0,283 [+0,167, +0,400] | +0,056 | 0 % |
+
+**Verdicts v5.**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H9 (i)** aucun tour sous t0 − 0,10 | **passe** | pires tours : 0,817 (t0 0,850), 0,550 (0,567), 0,700 (0,700) |
+| **H9 (ii)** malformées ≤ 5 % à chaque tour | **passe** | maximum 2 % |
+| **H9 (iii)** rendement ≥ 0,8 | **échoue** | 0,767 (+0,183 / +0,239) |
+| **H9** | **échoue** sur (iii) | |
+| **H1**, `closed-clean` | échoue, de peu | intervalle de la graine 2 : [−0,033, +0,233] ; banc cumulé 39 gagnées, 6 perdues |
+
+Deux graines sur trois finissent à **60/60** sur les tâches jamais vues (graines 0 et 3,
+comme l'oracle), l'oubli reste à +0,06–0,08 bit/octet, et plus aucun tour ne recule de
+plus d'une tâche sur soixante : les quatre modes d'échec identifiés sont fermés. Le
+rendement chute pourtant à 0,77, pour deux raisons arithmétiques : sur la graine 0 la
+marge est réduite (départ 0,850, oracle +0,133) ; sur la graine 2 le bras fermé fait
++0,100 quand l'oracle fait +0,300 — les 12 à 21 épisodes vérifiés par tour n'y suffisent
+pas là où 30 trajectoires parfaites suffisent. La graine 2 est le vrai reste : un départ à
+0,567 où chaque tour ne promeut qu'une douzaine d'épisodes et où v4 (+0,267) et v5 (+0,100)
+divergent par le seul tirage des générations. La variance d'échantillonnage à
+30 tâches × 2 tentatives est la limite de ce pilote, pas un défaut de plus.
+
 Pour l'échelle A100 (docs/31 §3), trois choses sont acquises dès maintenant : la marge de
 départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la recette par
 tour doit être mesurée sur l'oubli avant tout (un planning neuf à taux plein par tour est
