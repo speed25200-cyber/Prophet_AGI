@@ -377,3 +377,55 @@ même graine (+0,300) et au bras `closed-clean` v5 (+0,100 [−0,033, +0,233]).
 | Hypothèse | Énoncé mesurable | Critère |
 |---|---|---|
 | **H13 graine dure** | La recette de référence fait passer la graine 2 au-dessus de zéro avec certitude. | (i) gain > 0 avec intervalle excluant zéro ; (ii) aucun tour sous 0,467 ; (iii) rendement contre l'oracle v5 ≥ 0,6. Les trois, sinon échec. |
+
+## Amendement 14 — 2026-09-22, pendant v9, avant tout run v10 : deux familles dans une seule boucle
+
+**Pourquoi.** L'échelle A100 (§3) enchaîne `calc`, `lookup` et `files` : plusieurs familles
+dans la même boucle, le même bassin d'épisodes promus, les mêmes pas d'entraînement. Neuf
+pilotes ont chacun bouclé sur **une** famille. Ce qui n'est pas établi : ce que les épisodes
+d'une famille font à l'autre quand ils partagent le bassin et les 60 pas du tour —
+interférence (la famille progresse moins qu'en boucle seule), transfert (elle progresse
+sans ses propres épisodes) ou oubli par omission (une famille absente des tours recule).
+La question se pose **à compute égal par tour** : c'est le choix que le programme A100
+doit faire entre une boucle sur un bassin mixte et une famille à la fois.
+
+**Pilote v10.** Familles `lookup` + `files`, recette de référence (v7 : taux ÷ 4, grammaire
+compacte, `done` sans argument, promotion canonique, pas de pas répété). Amorce **mixte** :
+*N* trajectoires parfaites de **chaque** famille, entrelacées, *S* pas — calibrée par graine
+comme à l'amendement 10 (tour 0 seul, échelle *N* / *S* = 50 / 100 d'abord ; 25 / 50 si une
+famille sature à ≥ 0,95 ; 100 / 200 si une famille démarre à 0), retenue si le départ est
+strictement entre 0 et 1 sur **chaque** famille. Par tour : 30 tâches de **chaque** famille
+(les mêmes tirages que les pilotes mono-famille de la même graine), 2 tentatives, **60 pas
+pour tous les bras** (le compute d'entraînement du tour ne change pas avec le nombre de
+familles ; la génération, elle, compte double et l'est), rejeu 0,5 ; banc 2 × 30 **par
+famille** (graines 7 et 11), BPB 200 documents ; 5 tours. Graine 0, puis 1 si elle est
+retenue et que le budget CPU le permet (≈ 2 h par graine pour les quatre bras).
+
+Quatre bras, tous à partir de la même amorce mixte, tous mesurés sur les deux familles :
+
+| Bras | Tours sur | Répertoire |
+|---|---|---|
+| `closed-clean` mixte | `lookup` + `files` | `closed-clean-seedN` |
+| `closed-clean` mono `lookup` | `lookup` seul | `closed-clean-lookup-seedN` |
+| `closed-clean` mono `files` | `files` seul | `closed-clean-files-seedN` |
+| `oracle` mixte | `lookup` + `files` (trajectoires parfaites) | `oracle-seedN` |
+
+Le gain d'un bras sur une famille *f* est le gain apparié sur les 60 tâches de banc de *f* ;
+le gain « union » est le gain apparié sur les 120 tâches des deux familles. Le transfert
+(gain d'un bras mono sur la famille qu'il n'entraîne pas) est rapporté sans critère.
+
+| Hypothèse | Énoncé mesurable | Critère |
+|---|---|---|
+| **H14 (i)** la boucle mixte apprend les deux | Sur chaque graine, la boucle mixte progresse sur chaque famille. | gain mixte(*f*) > 0 pour chaque *f*, et l'intervalle du gain union exclut zéro. |
+| **H14 (ii)** pas d'interférence à compute égal | Bassin mixte ≥ une famille à la fois. | moyenne sur les graines de la somme des gains des deux familles : mixte ≥ max(mono `lookup`, mono `files`). |
+| **H14 (iii)** pas d'oubli par omission | Une famille absente des tours ne recule pas. | pour chaque bras mono et chaque graine, sur la famille non entraînée : aucun tour sous succès(tour 0) − 0,10. |
+| **H14 (iv)** rendement | La boucle mixte garde son rendement contre l'oracle mixte. | gain union mixte / gain union oracle ≥ 0,6 (moyennes sur les graines). |
+| **H14** | | les quatre, sinon échec ; chaque ligne est rapportée. |
+
+**Mécanique, dans le même commit que ce texte.** `scripts/closed_loop.py` accepte `--family`
+plusieurs fois (le protocole enregistre `lookup+files` ; une famille seule s'écrit comme
+avant, un run en cours reprend) et `--bench-family` pour mesurer un bras sur des familles
+qu'il n'entraîne pas ; chaque tour tire ses tâches famille par famille, la quarantaine
+classe chaque épisode sous sa famille, le rendu utilise le registre d'outils de la famille
+de l'épisode, le banc rapporte le succès par famille. `scripts/summarize_closed_loop.py`
+calcule les gains par famille et H14 depuis les enregistrements de tours seuls.

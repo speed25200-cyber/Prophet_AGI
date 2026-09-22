@@ -326,3 +326,126 @@ def test_no_repeat_action_flag_reaches_the_protocol_and_the_generation_config(wo
         "calc", temperature=0.0, no_repeat_action=closed_loop.NO_REPEAT_ACTION
     ).no_repeat_action
     closed_loop.NO_REPEAT_ACTION = False
+
+
+def test_two_families_share_one_loop_and_are_benched_apart(work, tmp_path):
+    """docs/31 amendment 14: the rounds draw their tasks family by family, the quarantine
+    files every episode under its own family, the rows are rendered with the registry of
+    the episode's family, and the bench reports each family."""
+    out = tmp_path / "mixed"
+    argv = [
+        "--work",
+        str(work),
+        "--out",
+        str(out),
+        "--arm",
+        "oracle",
+        "--family",
+        "calc",
+        "--family",
+        "lookup",
+        "--config",
+        str(work / "tiny.json"),
+        "--seq-len",
+        str(SEQ_LEN),
+        "--batch-size",
+        "2",
+        "--rounds",
+        "1",
+        "--tasks-per-round",
+        "2",
+        "--attempts",
+        "1",
+        "--steps-per-round",
+        "1",
+        "--seed-episodes",
+        "2",
+        "--seed-steps",
+        "1",
+        "--bench-tasks",
+        "2",
+        "--bpb-docs",
+        "2",
+    ]
+    assert main(argv) == 0
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["family"] == "calc+lookup" and "bench_families" not in protocol
+    rounds = [json.loads(line) for line in (out / "rounds.jsonl").read_text().splitlines()]
+    for record in rounds:
+        assert [b["family"] for b in record["bench"]] == ["calc", "calc", "lookup", "lookup"]
+        assert [b["seed"] for b in record["bench"]] == [7, 11, 7, 11]
+        assert set(record["success_by_family"]) == {"calc", "lookup"}
+        assert record["success_mean"] == pytest.approx(
+            sum(record["success_by_family"].values()) / 2
+        )
+    generation = rounds[1]["generation"]
+    assert generation["tasks"] == 4 and generation["promoted_new"] == 4
+    assert {f: g["promoted_new"] for f, g in generation["by_family"].items()} == {
+        "calc": 2,
+        "lookup": 2,
+    }
+    assert rounds[1]["promoted_total"] == 4 and rounds[1]["train"]["rows"] == 4
+    entries = Quarantine(out / "quarantine.json").promoted()
+    assert sorted(e.family for e in entries) == ["calc", "calc", "lookup", "lookup"]
+    # The amorce holds the perfect trajectories of both families, interleaved.
+    assert json.loads((out / "seed" / "seed.json").read_text())["episodes"]["rows"] == 4
+
+
+def test_the_bench_can_measure_families_the_rounds_do_not_train(work, tmp_path):
+    out = tmp_path / "bench-wide"
+    argv = [
+        "--work",
+        str(work),
+        "--out",
+        str(out),
+        "--arm",
+        "frozen",
+        "--family",
+        "calc",
+        "--bench-family",
+        "calc",
+        "--bench-family",
+        "lookup",
+        "--config",
+        str(work / "tiny.json"),
+        "--seq-len",
+        str(SEQ_LEN),
+        "--batch-size",
+        "2",
+        "--rounds",
+        "1",
+        "--tasks-per-round",
+        "2",
+        "--attempts",
+        "1",
+        "--steps-per-round",
+        "1",
+        "--seed-episodes",
+        "2",
+        "--seed-steps",
+        "1",
+        "--bench-tasks",
+        "2",
+        "--bpb-docs",
+        "2",
+    ]
+    assert main(argv) == 0
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["family"] == "calc" and protocol["bench_families"] == "calc+lookup"
+    rounds = [json.loads(line) for line in (out / "rounds.jsonl").read_text().splitlines()]
+    assert [b["family"] for b in rounds[1]["bench"]] == ["calc", "calc", "lookup", "lookup"]
+    assert rounds[1]["generation"]["tasks"] == 2 and "by_family" not in rounds[1]["generation"]
+    # A family named twice is refused.
+    with pytest.raises(SystemExit):
+        main(argv + ["--family", "calc"])
+
+
+def test_a_single_family_writes_the_protocol_as_before(work, tmp_path):
+    """A run started before ``--family`` could repeat resumes under the new code: its
+    protocol has ``family`` as a plain name and no ``bench_families``."""
+    out = tmp_path / "single"
+    rounds = run(work, out, "frozen", rounds=0)
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["family"] == "calc" and "bench_families" not in protocol
+    assert [b["family"] for b in rounds[0]["bench"]] == ["calc", "calc"]
+    assert rounds[0]["success_by_family"] == {"calc": rounds[0]["success_mean"]}

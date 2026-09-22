@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Summarise a closed-loop pilot (docs/31): the curves per arm and seed, and the five
-pre-registered checks (H1-H4, and H5 when the KLPO arm ran), computed from the round
-records and nothing else.
+"""Summarise a closed-loop pilot (docs/31): the curves per arm and seed, and the
+pre-registered checks (H1-H4; H5 when the KLPO arm ran; H8 when the closed-clean arm
+ran; H14 when several families shared one loop), computed from the round records and
+nothing else. Bench records that carry a ``family`` give the gains per family.
 
     python scripts/summarize_closed_loop.py --root OUT --out OUT/summary.json
 
@@ -22,6 +23,7 @@ ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean")
 COLLAPSE_ALLOWANCE = 0.10
 H8_BPB_ALLOWANCE = 0.02
 H3_ALLOWANCE = 0.05
+H14_YIELD = 0.6
 
 
 def load_runs(root: Path) -> dict[str, dict[int, list[dict]]]:
@@ -37,19 +39,51 @@ def load_runs(root: Path) -> dict[str, dict[int, list[dict]]]:
     return runs
 
 
-def outcomes(round_record: dict) -> list[bool]:
-    """Per-task bench outcomes across the bench seeds, in a fixed order."""
+def outcomes(round_record: dict, family: str | None = None) -> list[bool]:
+    """Per-task bench outcomes across the bench seeds, in a fixed order; of one family
+    when ``family`` is given."""
     flags: list[bool] = []
     for bench in round_record["bench"]:
         if "verified" not in bench:
             raise ValueError("bench record lacks per-task outcomes")
+        if family is not None and bench.get("family") != family:
+            continue
         flags.extend(bool(v) for v in bench["verified"])
     return flags
 
 
-def paired_gain(first: dict, last: dict, *, draws: int = 10_000, seed: int = 0) -> dict:
+def bench_families(round_record: dict) -> list[str] | None:
+    """The families the bench measured, in bench order; ``None`` for records written
+    before benches carried a family."""
+    seen: list[str] = []
+    for bench in round_record["bench"]:
+        if "family" not in bench:
+            return None
+        if bench["family"] not in seen:
+            seen.append(bench["family"])
+    return seen
+
+
+def trained_families(rounds: list[dict]) -> list[str] | None:
+    """The families whose episodes the arm generated or was given, from the first round's
+    generation record; ``None`` when the record does not say (frozen arm, older runs)."""
+    for record in rounds[1:]:
+        by_family = (record.get("generation") or {}).get("by_family")
+        if by_family:
+            return list(by_family)
+    return None
+
+
+def family_success(round_record: dict, family: str) -> float:
+    flags = outcomes(round_record, family)
+    return sum(flags) / len(flags)
+
+
+def paired_gain(
+    first: dict, last: dict, *, family: str | None = None, draws: int = 10_000, seed: int = 0
+) -> dict:
     """Success(last) - success(first) on the same tasks, with a paired bootstrap interval."""
-    a, b = outcomes(first), outcomes(last)
+    a, b = outcomes(first, family), outcomes(last, family)
     if len(a) != len(b) or not a:
         raise ValueError("bench outcomes are not paired")
     n = len(a)
@@ -106,10 +140,21 @@ def summarise(runs: dict[str, dict[int, list[dict]]]) -> dict:
                 "final_success": last["success_mean"],
                 "compute_hours": last["compute_seconds"] / 3600,
             }
+            measured = bench_families(first)
+            if measured:
+                seeds[str(seed)]["by_family"] = {
+                    f: {
+                        "curve": [family_success(r, f) for r in rounds],
+                        "gain": paired_gain(first, last, family=f, seed=seed),
+                    }
+                    for f in measured
+                }
         gains = [s["gain"]["gain"] for s in seeds.values()]
         deltas = [s["bpb_delta"] for s in seeds.values() if s["bpb_delta"] is not None]
         arms[arm] = {
             "seeds": seeds,
+            "trained": trained_families(next(iter(by_seed.values()))),
+            "bench_families": bench_families(next(iter(by_seed.values()))[0]),
             "mean_gain": sum(gains) / len(gains),
             "mean_bpb_delta": sum(deltas) / len(deltas) if deltas else None,
         }
@@ -180,7 +225,91 @@ def summarise(runs: dict[str, dict[int, list[dict]]]) -> dict:
             "closed_bpb_delta": closed["mean_bpb_delta"],
             "pass": bool(no_collapse and gain_ok and drift_ok),
         }
+    checks.update(h14_multi_family(arms))
     return {"arms": arms, "checks": checks}
+
+
+def h14_multi_family(arms: dict[str, dict]) -> dict[str, dict]:
+    """docs/31 amendment 14: one closed arm looping on several families, one closed arm
+    per family looping on that family alone, every arm benched on all of them, and the
+    oracle on the same families. Absent that layout, nothing is reported."""
+    closed_arms = {
+        name: data
+        for name, data in arms.items()
+        if name.startswith("closed") and data["trained"] and data["bench_families"]
+    }
+    mixed = [name for name, data in closed_arms.items() if len(data["trained"]) > 1]
+    if len(mixed) != 1:
+        return {}
+    mixed_name = mixed[0]
+    families = arms[mixed_name]["trained"]
+    monos = {}
+    for f in families:
+        for name, data in closed_arms.items():
+            if data["trained"] == [f] and set(data["bench_families"]) >= set(families):
+                monos[f] = name
+    oracle = arms.get("oracle")
+    if len(monos) != len(families) or not oracle or oracle["trained"] != families:
+        return {}
+    seeds = set(arms[mixed_name]["seeds"])
+    for name in list(monos.values()) + ["oracle"]:
+        seeds &= set(arms[name]["seeds"])
+    if not seeds:
+        return {}
+    seeds = sorted(seeds, key=int)
+
+    def family_gain(name: str, seed: str, f: str) -> float:
+        return arms[name]["seeds"][seed]["by_family"][f]["gain"]["gain"]
+
+    def summed_gain(name: str) -> float:
+        return sum(sum(family_gain(name, s, f) for f in families) for s in seeds) / len(seeds)
+
+    learns_both = all(
+        all(family_gain(mixed_name, s, f) > 0 for f in families)
+        and arms[mixed_name]["seeds"][s]["gain"]["interval_95"][0] > 0
+        for s in seeds
+    )
+    mixed_sum = summed_gain(mixed_name)
+    mono_sums = {name: summed_gain(name) for name in monos.values()}
+    omission = {}
+    no_forgetting = True
+    for f, name in monos.items():
+        for g in families:
+            if g == f:
+                continue
+            for s in seeds:
+                curve_g = arms[name]["seeds"][s]["by_family"][g]["curve"]
+                held = min(curve_g) >= curve_g[0] - COLLAPSE_ALLOWANCE
+                no_forgetting &= held
+                omission[f"{name}/seed{s}/{g}"] = {
+                    "start": curve_g[0],
+                    "min": min(curve_g),
+                    "transfer_gain": family_gain(name, s, g),
+                    "held": held,
+                }
+    mixed_union = sum(arms[mixed_name]["seeds"][s]["gain"]["gain"] for s in seeds) / len(seeds)
+    oracle_union = sum(oracle["seeds"][s]["gain"]["gain"] for s in seeds) / len(seeds)
+    ratio = mixed_union / oracle_union if oracle_union > 0 else None
+    return {
+        "H14_multi_family": {
+            "families": families,
+            "seeds": seeds,
+            "mixed_learns_both_every_seed": learns_both,
+            "summed_gain_mixed": mixed_sum,
+            "summed_gain_mono": mono_sums,
+            "no_interference": mixed_sum >= max(mono_sums.values()),
+            "omission": omission,
+            "no_forgetting_by_omission": no_forgetting,
+            "yield_mixed_over_oracle": ratio,
+            "pass": bool(
+                learns_both
+                and mixed_sum >= max(mono_sums.values())
+                and no_forgetting
+                and ratio is not None
+                and ratio >= H14_YIELD
+            ),
+        }
+    }
 
 
 def markdown(summary: dict) -> str:
@@ -198,6 +327,20 @@ def markdown(summary: dict) -> str:
                 f"{s['gain']['gain']:+.3f} [{low:+.3f}, {high:+.3f}] | {delta} | {s['compute_hours']:.2f} |"
             )
     lines.append("")
+    if any("by_family" in s for data in summary["arms"].values() for s in data["seeds"].values()):
+        lines += [
+            "| Bras | Graine | Famille | Succès 0 → R | Gain [IC 95 %] | Pire tour |",
+            "|---|---:|---|---:|---:|---:|",
+        ]
+        for arm, data in summary["arms"].items():
+            for seed, s in data["seeds"].items():
+                for family, fs in s.get("by_family", {}).items():
+                    low, high = fs["gain"]["interval_95"]
+                    lines.append(
+                        f"| {arm} | {seed} | {family} | {fs['curve'][0]:.3f} → {fs['curve'][-1]:.3f} | "
+                        f"{fs['gain']['gain']:+.3f} [{low:+.3f}, {high:+.3f}] | {min(fs['curve']):.3f} |"
+                    )
+        lines.append("")
     for name, check in summary["checks"].items():
         verdict = check.get("pass")
         label = "passe" if verdict else ("échoue" if verdict is False else "rapporté")

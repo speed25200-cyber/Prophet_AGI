@@ -25,6 +25,12 @@ own variance). All arms start from the same seed model: the base checkpoint fine
 on ``--seed-episodes`` perfect trajectories, so that the loop has a nonzero success
 rate to start from -- a model at zero generates nothing to learn from.
 
+Several families share one loop when ``--family`` is repeated (docs/31 amendment 14):
+each round draws its tasks family by family (the same draws as a single-family run of
+that seed), the quarantine files every episode under its own family, the rows are
+rendered with the tool registry of the episode's family, and the bench reports the
+success per family. ``--bench-family`` measures an arm on families it does not train.
+
 Every round is checkpointed; repeating the command resumes at the next round. The
 report (``rounds.jsonl``, ``report.json``) is the record; nothing here decides.
 """
@@ -102,13 +108,20 @@ def generation_config(
     )
 
 
+def registry_for(family: str):
+    """The tool registry an episode of ``family`` is rendered with: the schemas depend on
+    the family only, so any task of it gives the pinned prompt the loop wrote."""
+    return task_families.tools_for(task_families.make_tasks(1, family=family, seed=0)[0])
+
+
 def rows_from_entries(
-    entries: list[Entry], registry, tokenizer: ProphetTokenizer, *, seq_len: int
+    entries: list[Entry], registries: dict, tokenizer: ProphetTokenizer, *, seq_len: int
 ) -> tuple[list[list[int]], dict]:
-    """Promoted episodes as training rows, one per row, rendered as the loop produced them."""
+    """Promoted episodes as training rows, one per row, rendered as the loop produced them,
+    each with the registry of its family (``registries[entry.family]``)."""
     rows, truncated, longest = [], 0, 0
     for entry in entries:
-        text = render_episode(entry.goal, registry, entry.trajectory)
+        text = render_episode(entry.goal, registries[entry.family], entry.trajectory)
         ids = [tokenizer.bos_id] + tokenizer.encode(text, parse_special=True)
         longest = max(longest, len(ids))
         if len(ids) > seq_len:
@@ -191,6 +204,7 @@ def bench_family(model, tokenizer, family: str, *, n_tasks: int, seed: int) -> d
         verifier_for_task=task_families.verifier_for,
     )
     return {
+        "family": family,
         "seed": seed,
         "tasks": report.n,
         "success_rate": report.success_rate,
@@ -204,19 +218,34 @@ def bench_family(model, tokenizer, family: str, *, n_tasks: int, seed: int) -> d
 
 
 def evaluate(
-    model, tokenizer, family: str, *, work: Path, bench_tasks: int, bpb_docs: int, seq_len: int
+    model,
+    tokenizer,
+    families: list[str],
+    *,
+    work: Path,
+    bench_tasks: int,
+    bpb_docs: int,
+    seq_len: int,
 ) -> dict:
+    """The benches of every family (family-major, then the bench seeds), their mean, the
+    mean per family, and the held-out bits per byte."""
     model.eval()
     benches = [
-        bench_family(model, tokenizer, family, n_tasks=bench_tasks, seed=s) for s in BENCH_SEEDS
+        bench_family(model, tokenizer, family, n_tasks=bench_tasks, seed=s)
+        for family in families
+        for s in BENCH_SEEDS
     ]
     mean = sum(b["success_rate"] for b in benches) / len(benches)
+    by_family = {
+        family: sum(b["success_rate"] for b in benches if b["family"] == family) / len(BENCH_SEEDS)
+        for family in families
+    }
     bpb = (
         heldout_bpb(work, model, tokenizer, seq_len=min(seq_len, 256), max_docs=bpb_docs)
         if bpb_docs
         else None
     )
-    return {"bench": benches, "success_mean": mean, "bpb": bpb}
+    return {"bench": benches, "success_mean": mean, "success_by_family": by_family, "bpb": bpb}
 
 
 def generate_round(
@@ -403,6 +432,21 @@ def oracle_round(family: str, tasks, quarantine: Quarantine, *, round_index: int
     }
 
 
+def merge_generation(parts: dict[str, dict]) -> dict:
+    """One round's generation record from the per-family records: the counts add up,
+    ``attempts`` is common, and the parts stay under ``by_family``."""
+    merged = {
+        key: sum(part[key] for part in parts.values())
+        for key in ("tasks", "episodes", "solved", "promoted_new", "tokens", "seconds")
+    }
+    for key in ("policy_tokens", "rewarded_episodes"):
+        if all(key in part for part in parts.values()):
+            merged[key] = sum(part[key] for part in parts.values())
+    merged["attempts"] = next(iter(parts.values()))["attempts"]
+    merged["by_family"] = parts
+    return merged
+
+
 def write_json(path: Path, value) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, indent=2, default=str) + "\n", encoding="utf-8")
@@ -421,14 +465,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--arm", choices=ARMS, required=True)
-    ap.add_argument("--family", default="calc", choices=sorted(task_families.FAMILIES))
+    ap.add_argument(
+        "--family",
+        action="append",
+        choices=sorted(task_families.FAMILIES),
+        help="task family of the rounds; repeat for several in one loop (default: calc)",
+    )
+    ap.add_argument(
+        "--bench-family",
+        action="append",
+        choices=sorted(task_families.FAMILIES),
+        help="families of the held-out bench (default: the round families)",
+    )
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--config", type=Path, default=CONFIG)
     ap.add_argument("--rounds", type=int, default=6)
     ap.add_argument("--tasks-per-round", type=int, default=40)
     ap.add_argument("--attempts", type=int, default=2)
     ap.add_argument("--steps-per-round", type=int, default=100)
-    ap.add_argument("--seed-episodes", type=int, default=100)
+    ap.add_argument(
+        "--seed-episodes", type=int, default=100, help="perfect trajectories per family"
+    )
     ap.add_argument("--seed-steps", type=int, default=200)
     ap.add_argument(
         "--seed-dir", type=Path, default=None, help="reuse a seed checkpoint trained by another arm"
@@ -482,6 +539,11 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("rounds >= 0, tasks and attempts >= 1, steps >= 0")
     if not 0 <= args.replay_fraction < 1:
         ap.error("replay fraction in [0, 1)")
+    families = args.family or ["calc"]
+    bench_families = args.bench_family or list(families)
+    if len(set(families)) != len(families) or len(set(bench_families)) != len(bench_families):
+        ap.error("a family is named once")
+    registries = {f: registry_for(f) for f in families}
     began = time.time()
     args.out.mkdir(parents=True, exist_ok=True)
     tokenizer = ProphetTokenizer.load(args.work / "tokenizer.json")
@@ -489,9 +551,11 @@ def main(argv: list[str] | None = None) -> int:
     cfg.validate()
     torch.manual_seed(args.seed)
     model = ProphetModel(cfg)
+    # One family writes the protocol as before this option existed, so a run in progress
+    # resumes; several are joined with "+", the bench families only when they differ.
     protocol = {
         "arm": args.arm,
-        "family": args.family,
+        "family": "+".join(families),
         "seed": args.seed,
         "config": cfg.to_dict(),
         "rounds": args.rounds,
@@ -521,6 +585,8 @@ def main(argv: list[str] | None = None) -> int:
             "temperature": args.klpo_temperature,
         },
     }
+    if bench_families != families:
+        protocol["bench_families"] = "+".join(bench_families)
     protocol_path = args.out / "protocol.json"
     if protocol_path.exists():
         if json.loads(protocol_path.read_text()) != json.loads(json.dumps(protocol)):
@@ -536,29 +602,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     manager = CheckpointManager(args.out / "checkpoints")
 
+    def promoted_entries() -> list[Entry]:
+        """The promoted episodes of the round families, in the order they were admitted."""
+        return [e for e in quarantine.promoted() if e.family in families]
+
     def record(entry: dict) -> None:
         rounds.append(entry)
         with rounds_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(entry, default=str) + "\n")
-        print(
-            "ROUND",
-            json.dumps(
-                {
-                    k: entry[k]
-                    for k in ("round", "success_mean", "promoted_total", "compute_seconds")
-                }
-            ),
-            flush=True,
-        )
+        line = {k: entry[k] for k in ("round", "success_mean", "promoted_total", "compute_seconds")}
+        if len(bench_families) > 1:
+            line["by_family"] = entry["success_by_family"]
+        print("ROUND", json.dumps(line), flush=True)
 
     if manager.has_checkpoint():
         state, meta = manager.load_latest()
         model.load_state_dict(state["model"], strict=True)
-        print(
-            "RESUMED",
-            {"round": meta.step, "promoted": len(quarantine.promoted(args.family))},
-            flush=True,
-        )
+        print("RESUMED", {"round": meta.step, "promoted": len(promoted_entries())}, flush=True)
     else:
         # Round 0: the seed model, shared by every arm by construction.
         seed_dir = args.seed_dir or (args.out / "seed")
@@ -586,7 +646,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.seed_episodes,
                     seed=SEED_TASK_BASE + args.seed,
                     seq_len=args.seq_len,
-                    families=[args.family],
+                    families=families,
                 )
                 seed_report["episodes"] = stats
                 seed_report["train"] = train_rows(
@@ -608,7 +668,7 @@ def main(argv: list[str] | None = None) -> int:
         measured = evaluate(
             model,
             tokenizer,
-            args.family,
+            bench_families,
             work=args.work,
             bench_tasks=args.bench_tasks,
             bpb_docs=args.bpb_docs,
@@ -621,7 +681,7 @@ def main(argv: list[str] | None = None) -> int:
                 "seed": seed_report,
                 **measured,
                 "eval_seconds": time.time() - started,
-                "promoted_total": len(quarantine.promoted(args.family)),
+                "promoted_total": len(promoted_entries()),
                 "compute_seconds": 0.0,
                 "generation": None,
                 "train": None,
@@ -641,47 +701,65 @@ def main(argv: list[str] | None = None) -> int:
             print("SESSION_COMPLETE_RESUME_REQUIRED", flush=True)
             return 0
         torch.manual_seed(args.seed * 1_000 + r)
-        tasks = task_families.make_tasks(
-            args.tasks_per_round, family=args.family, seed=ROUND_TASK_BASE * (args.seed + 1) + r
-        )
+        tasks_by_family = {
+            f: task_families.make_tasks(
+                args.tasks_per_round, family=f, seed=ROUND_TASK_BASE * (args.seed + 1) + r
+            )
+            for f in families
+        }
+        n_tasks = sum(len(t) for t in tasks_by_family.values())
         if args.arm in ("closed", "closed-clean"):
-            generation = generate_round(
-                model,
-                tokenizer,
-                args.family,
-                tasks,
-                quarantine,
-                attempts=args.attempts,
-                temperature=args.temperature,
-                round_index=r,
+            generation = merge_generation(
+                {
+                    f: generate_round(
+                        model,
+                        tokenizer,
+                        f,
+                        tasks,
+                        quarantine,
+                        attempts=args.attempts,
+                        temperature=args.temperature,
+                        round_index=r,
+                    )
+                    for f, tasks in tasks_by_family.items()
+                }
             )
             if args.arm == "closed-clean":
                 # Verified but sloppy episodes are not taught (docs/31 amendment 7).
                 demoted = quarantine.discard(
-                    lambda e: (
+                    lambda e, r=r: (
                         entry_round(e) == r and e.promoted and not clean_trajectory(e.trajectory)
                     )
                 )
                 generation["demoted_sloppy"] = demoted
                 generation["promoted_new"] -= demoted
         elif args.arm == "closed-klpo":
-            generation, klpo_episodes = generate_round_klpo(
-                model,
-                tokenizer,
-                args.family,
-                tasks,
-                quarantine,
-                attempts=args.attempts,
-                temperature=args.klpo_temperature,
-                draws=args.klpo_draws,
-                round_index=r,
-            )
+            parts, klpo_episodes = {}, []
+            for f, tasks in tasks_by_family.items():
+                parts[f], family_episodes = generate_round_klpo(
+                    model,
+                    tokenizer,
+                    f,
+                    tasks,
+                    quarantine,
+                    attempts=args.attempts,
+                    temperature=args.klpo_temperature,
+                    draws=args.klpo_draws,
+                    round_index=r,
+                )
+                klpo_episodes.extend(family_episodes)
+            generation = merge_generation(parts)
             write_json(args.out / f"round-{r:03d}-episodes.json", klpo_episodes)
         elif args.arm == "oracle":
-            generation = oracle_round(args.family, tasks, quarantine, round_index=r)
+            generation = merge_generation(
+                {
+                    f: oracle_round(f, tasks, quarantine, round_index=r)
+                    for f, tasks in tasks_by_family.items()
+                }
+            )
         else:
             generation = {
-                "tasks": len(tasks),
+                "tasks": n_tasks,
                 "episodes": 0,
                 "attempts": 0,
                 "solved": 0,
@@ -691,9 +769,9 @@ def main(argv: list[str] | None = None) -> int:
             }
         train = None
         if args.arm != "frozen":
-            promoted = quarantine.promoted(args.family)
-            registry = task_families.tools_for(tasks[0])
-            rows, row_stats = rows_from_entries(promoted, registry, tokenizer, seq_len=args.seq_len)
+            rows, row_stats = rows_from_entries(
+                promoted_entries(), registries, tokenizer, seq_len=args.seq_len
+            )
             train = {
                 **row_stats,
                 **train_rows(
@@ -729,7 +807,7 @@ def main(argv: list[str] | None = None) -> int:
         measured = evaluate(
             model,
             tokenizer,
-            args.family,
+            bench_families,
             work=args.work,
             bench_tasks=args.bench_tasks,
             bpb_docs=args.bpb_docs,
@@ -746,7 +824,7 @@ def main(argv: list[str] | None = None) -> int:
                 "klpo": klpo,
                 **measured,
                 "eval_seconds": time.time() - started,
-                "promoted_total": len(quarantine.promoted(args.family)),
+                "promoted_total": len(promoted_entries()),
                 "compute_seconds": compute,
             }
         )

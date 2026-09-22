@@ -172,3 +172,153 @@ def test_h8_requires_no_collapse_and_no_loss_of_gain(tmp_path):
     h8 = summarise(load_runs(tmp_path))["checks"]["H8_clean"]
     assert h8["no_round_below_start_minus_allowance"] is True and h8["pass"] is True
     assert h8["clean_gain"] == pytest.approx(0.35) and h8["closed_gain"] == pytest.approx(0.3)
+
+
+def family_record(round_index, by_family, *, trained=None, bpb=2.0, compute=0, promoted=0):
+    """A round record whose benches carry their family (docs/31 amendment 14), with the
+    generation record naming the families the arm looped on."""
+    benches = []
+    for family, verified in by_family.items():
+        half = len(verified) // 2
+        benches.append({"family": family, "seed": 7, "tasks": half, "verified": verified[:half]})
+        benches.append(
+            {
+                "family": family,
+                "seed": 11,
+                "tasks": len(verified) - half,
+                "verified": verified[half:],
+            }
+        )
+    flags = [v for verified in by_family.values() for v in verified]
+    generation = {"tokens": 100 * round_index}
+    if trained:
+        generation["by_family"] = {f: {"tasks": 3} for f in trained}
+    return {
+        "round": round_index,
+        "success_mean": sum(flags) / len(flags),
+        "success_by_family": {f: sum(v) / len(v) for f, v in by_family.items()},
+        "bench": benches,
+        "bpb": {"bpb": bpb, "docs": 10},
+        "promoted_total": promoted,
+        "compute_seconds": compute,
+        "generation": generation,
+    }
+
+
+def flags(n_true, n=10):
+    return [True] * n_true + [False] * (n - n_true)
+
+
+def multi_family_layout(root, *, mixed_files_gain=4, mono_lookup_files_final=2, seeds=(0,)):
+    """The v10 layout: a mixed closed-clean arm, one mono arm per family benched on both,
+    the mixed oracle. Round 0 starts every arm at lookup 4/10, files 2/10."""
+    start = {"lookup": flags(4), "files": flags(2)}
+    for seed in seeds:
+        write(
+            root,
+            "closed-clean",
+            seed,
+            [
+                family_record(0, start),
+                family_record(
+                    1,
+                    {"lookup": flags(7), "files": flags(2 + mixed_files_gain)},
+                    trained=["lookup", "files"],
+                    compute=600,
+                    promoted=10,
+                ),
+            ],
+        )
+        write(
+            root,
+            "closed-clean-lookup",
+            seed,
+            [
+                family_record(0, start),
+                family_record(
+                    1,
+                    {"lookup": flags(8), "files": flags(mono_lookup_files_final)},
+                    trained=["lookup"],
+                    compute=500,
+                    promoted=6,
+                ),
+            ],
+        )
+        write(
+            root,
+            "closed-clean-files",
+            seed,
+            [
+                family_record(0, start),
+                family_record(
+                    1, {"lookup": flags(4), "files": flags(5)}, trained=["files"], compute=500
+                ),
+            ],
+        )
+        write(
+            root,
+            "oracle",
+            seed,
+            [
+                family_record(0, start),
+                family_record(
+                    1,
+                    {"lookup": flags(9), "files": flags(8)},
+                    trained=["lookup", "files"],
+                    compute=400,
+                    promoted=12,
+                ),
+            ],
+        )
+
+
+def test_families_get_their_own_gains_and_h14_passes_on_a_loop_that_learns_both(tmp_path):
+    multi_family_layout(tmp_path)
+    summary = summarise(load_runs(tmp_path))
+    mixed = summary["arms"]["closed-clean"]
+    assert mixed["trained"] == ["lookup", "files"] and mixed["bench_families"] == [
+        "lookup",
+        "files",
+    ]
+    by_family = mixed["seeds"]["0"]["by_family"]
+    assert by_family["lookup"]["curve"] == [0.4, 0.7]
+    assert by_family["files"]["gain"]["gain"] == pytest.approx(0.4)
+    assert mixed["seeds"]["0"]["gain"]["gain"] == pytest.approx(0.35)
+    assert summary["arms"]["closed-clean-lookup"]["trained"] == ["lookup"]
+    check = summary["checks"]["H14_multi_family"]
+    assert check["mixed_learns_both_every_seed"] is True
+    assert check["summed_gain_mixed"] == pytest.approx(0.7)
+    assert check["summed_gain_mono"] == {
+        "closed-clean-lookup": pytest.approx(0.4),
+        "closed-clean-files": pytest.approx(0.3),
+    }
+    assert check["no_interference"] is True
+    assert check["omission"]["closed-clean-lookup/seed0/files"]["transfer_gain"] == pytest.approx(
+        0.0
+    )
+    assert check["no_forgetting_by_omission"] is True
+    assert check["yield_mixed_over_oracle"] == pytest.approx(0.35 / 0.55)
+    assert check["pass"] is True
+    text = markdown(summary)
+    assert "| closed-clean | 0 | files | 0.200 → 0.600 |" in text and "H14_multi_family" in text
+
+
+def test_h14_fails_on_interference_or_on_forgetting_by_omission(tmp_path):
+    # The mixed loop gains nothing on files: the mono lookup arm's summed gain wins.
+    multi_family_layout(tmp_path / "interference", mixed_files_gain=0)
+    check = summarise(load_runs(tmp_path / "interference"))["checks"]["H14_multi_family"]
+    assert check["mixed_learns_both_every_seed"] is False
+    assert check["no_interference"] is False and check["pass"] is False
+    # Looping on lookup alone drops files from 0.2 to 0.0: forgetting by omission.
+    multi_family_layout(tmp_path / "omission", mono_lookup_files_final=0)
+    check = summarise(load_runs(tmp_path / "omission"))["checks"]["H14_multi_family"]
+    assert check["no_forgetting_by_omission"] is False and check["pass"] is False
+    assert check["omission"]["closed-clean-lookup/seed0/files"]["held"] is False
+
+
+def test_h14_is_not_reported_without_the_layout(tmp_path):
+    multi_family_layout(tmp_path)
+    import shutil
+
+    shutil.rmtree(tmp_path / "closed-clean-files-seed0")
+    assert "H14_multi_family" not in summarise(load_runs(tmp_path))["checks"]
