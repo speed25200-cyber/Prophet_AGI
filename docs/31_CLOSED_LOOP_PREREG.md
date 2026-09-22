@@ -316,3 +316,9 @@ tourne sur la **première** combinaison (famille, amorce) de cette liste où au 
 graines démarrent entre 0,10 et 0,90 ; les graines retenues sont celles-là. Si aucune
 combinaison ne convient, le résultat est « à 7 M, aucune de ces familles n'offre de marge
 à cette amorce », rapporté avec le tableau des départs. H10 reste tel qu'écrit.
+
+**Résultat de l'échelle (2026-09-22).** `files` à 50 / 100 : départs **0,700 / 0,783 / 0,917**
+(graines 0, 1, 2). Deux graines entre 0,10 et 0,90 : la combinaison est retenue à la
+première marche, les graines 0 et 1 sont celles du pilote v6 ; la graine 2 (0,917) est hors
+de la fenêtre et n'est pas retenue. Les marches suivantes (`files` 25 / 50, `count`) ne
+sont pas explorées, comme écrit.
