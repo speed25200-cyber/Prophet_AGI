@@ -6,7 +6,7 @@ retouché après coup.** Pré-enregistrement et amendements : docs/31. **Date :*
 Base de code : `claude/codex-results-analysis-5jz95y`. Poids de départ : le 7 M de docs/09
 (`prophet-cpu-first-run`, pas 1163), CPU 4 cœurs.
 
-## 0. Ce qu'on sait maintenant, en six lignes
+## 0. Ce qu'on sait maintenant, en sept lignes
 
 1. **La boucle tourne de bout en bout** et se rejoue au bit près : tâches inédites →
    boucle d'agent → vérificateur exécutable → promotion → rendu → entraînement avec rejeu →
@@ -37,6 +37,11 @@ Base de code : `claude/codex-results-analysis-5jz95y`. Poids de départ : le 7 M
    0,583 → **0,817** (+0,233 [+0,100, +0,367]), 6 tâches jamais réussies au lieu de 18, à
    compute égal (+20 % de jetons générés). Dose-réponse sur trois pilotes : 0, 3, 13
    épisodes contradictoires → +0,000, +0,133, +0,233.
+7. **Le proposeur du programme 3 ne démarre pas à 7 M** (§22) : sur les quatre barreaux de
+   l'échelle de calibration, au mieux 9 propositions valides sur 30 (0,30 < 0,5), aucune
+   nouvelle, quand le solveur atteint 0,950 ; la forme d'un appel s'apprend, pas deux
+   listes alignées par position. La sonde a trouvé un défaut de la grammaire de décodage
+   (des caractères de contrôle bruts admis dans une chaîne), corrigé pour tout décodage.
 
 ## 1. Protocole tel qu'exécuté
 
@@ -955,3 +960,74 @@ corrige par l'amorce (plus d'exposition à cette famille) ou par un a priori de 
 (refuser `done` avant toute note, à mesurer), pas par l'exploration du pointeur. Fin de la
 ligne v10 : la boucle multi-familles garde ce qu'elle sait, n'apprend pas plus qu'une boucle
 seule, et ses échecs sont ceux de l'amorce.
+
+## 22. Programme 3 : l'échelle de calibration du proposeur, épuisée
+
+Pré-enregistrement : docs/33, amendements 1 à 8. **Date :** 2026-09-22. Base de code :
+`claude/prophet-program-3-calibration-eadcij`. Poids : le premier run 7 M **reconstruit**
+(amendement 7), même recette que docs/09 sur le texte de cette machine (7 497 documents de
+prose, 2 940 de code, 213 tenus à l'écart), 1 172 pas, 40 min ; bits par octet 4,426 →
+2,082 sur son propre jeu tenu à l'écart (docs/09 : 4,348 → 2,184 sur le sien ; les deux
+jeux diffèrent). Premier temps d'amorce (100 trajectoires parfaites, 200 pas), entraîné
+une fois : banc du générateur 0,667 (canonique 0,667), banc hors distribution 0,267.
+Chaque barreau : second temps sur une copie de ce premier temps, puis les deux bancs et
+une sonde de 30 propositions échantillonnées ; graine 0.
+
+| Second temps (pas / propositions) | Solveur (canonique) | Hors distribution | Sonde, grammaire de l'amendement 7 : malformées / invalides / **valides** | Sonde, grammaire corrigée (amendement 8) : malformées / invalides / **valides** |
+|---|---:|---:|---:|---:|
+| 50 / 50 | 0,883 (0,883) | 0,550 | 30 / 0 / **0** | 27 / 3 / **0** |
+| 100 / 50 | 0,900 (0,883) | 0,600 | 16 / 14 / **0** | 9 / 21 / **0** |
+| 100 / 25 | 0,850 (0,850) | 0,417 | 15 / 15 / **0** | 7 / 23 / **0** |
+| 200 / 100 | 0,950 (0,950) | 0,417 | 3 / 20 / **7** | 0 / 21 / **9** |
+
+Les deux échelles ont les mêmes poids à chaque barreau (perte finale du second temps
+identique au dernier chiffre : l'entraînement ne décode rien) ; les scores des
+bancs y sont identiques aussi : à ces poids, la correction ne change rien au solveur. Compute :
+≈ 2 h 20 CPU en tout, premier run compris.
+
+**Verdict (règle de l'amendement 1).** Aucun barreau ne satisfait les deux conditions. Le
+meilleur, 200 / 100 sous la grammaire corrigée, donne 9 propositions valides sur 30
+(0,30 < 0,5), et son solveur à 0,950 n'est pas strictement sous 0,95. **Le proposeur ne
+démarre pas à 7 M.** H20 au tour 0 vaut au mieux 0,30 ; H25 échouerait aussi : aucune des
+16 propositions valides des deux échelles n'a un nombre de champs ou une clé absents de
+l'amorce. Les barreaux de la session précédente, sur d'autres poids et connus seulement
+par ses messages (**non reproduits**), disaient la même chose : 0 valide sur trois
+barreaux (50 / 50 : 7 / 23 / 0 ; 100 / 50 : solveur 0,733, 17 / 13 / 0 ; 100 / 25 :
+solveur 0,617, hors distribution 0,417, 8 / 22 / 0 ; 200 / 100 : perdu).
+
+**Lecture, depuis les propositions enregistrées (`samples`).**
+
+1. **Un défaut de décodage, réel mais pas décisif** (amendement 8). Sous l'ancienne
+   grammaire, les 30 malformées du premier barreau ont toutes un caractère de contrôle
+   brut dans une chaîne (27 dans la valeur `file`) : le span était mort dès ce jeton. La
+   correction les supprime toutes (0 dans l'échelle rejouée) et fait passer 3 à 8
+   malformées par barreau en invalides ou en valides, dont deux valides de plus au dernier
+   barreau. Elle n'ouvre aucun barreau.
+2. **La forme s'apprend par étapes, le contenu non.** À 50 pas, la valeur `file` se
+   prolonge par le but du solveur (`… .json and note the value of the field year, then
+   finish.`, 18 spans sur 30) et par des fragments du corpus (licences, tableaux). À 100
+   pas, l'appel se ferme le plus souvent, mais les 44 invalides de l'échelle rejouée ont toutes pour nom
+   de fichier `}},`, la fermeture d'appel du solveur glissée dans la valeur, et le contenu
+   est décalé d'un champ : `keys` reçoit une année, `values` les noms de clés, `ask` la
+   liste des clés. À 200 pas et 100 propositions, fichier et clés sont justes (toujours
+   `city,year,code`) ; les erreurs restantes sont aux **bords des listes** : la dernière
+   valeur déborde (`jasper.json`, 13 invalides sur 21) et `ask` garde la virgule de la
+   liste (`year,`, 14 sur 21). Les 9 valides sont des combinaisons nouvelles du
+   vocabulaire du générateur (aucune ne recopie une tâche de l'amorce), toutes à trois
+   champs, avec ses clés.
+3. **Le solveur monte avec le second temps**, de 0,667 à 0,85–0,95 sur son banc et de
+   0,267 à 0,42–0,60 hors distribution : propositions et trajectoires du second temps
+   l'entraînent bien. Au dernier barreau, il sature le haut de la fenêtre de calibration.
+
+**Ce que cela dit, et ce que cela ne dit pas.** Les deux lectures de docs/34 §4 ne sont
+pas entièrement séparées. La validité croît avec l'entraînement du proposeur (0, 0, 0,
+puis 9 valides), ce qui donne en partie raison à la lecture (a), « pas assez de pas ni de
+propositions » ; mais le barreau qui ouvre enfin le proposeur ferme la fenêtre du
+solveur : à 7 M, sur cette échelle, les deux conditions de la règle ne se recouvrent pas.
+Ce qui résiste est la partie du format la plus dure pour un petit modèle : deux listes
+séparées par des virgules et alignées par position. Un format qui supprime cet
+alignement (les champs comme un objet, ou un argument par paire) changerait la grammaire
+des spécifications : piste à pré-enregistrer, non mesurée ici. Le programme 3 passe à
+l'A100 après le programme 2 à 375 M, comme prévu par docs/33 §4, avec la même règle de
+calibration ; la correction de la grammaire vaut pour tout décodage. **Fin des pilotes CPU
+des programmes 2 et 3** (docs/34 §7).
