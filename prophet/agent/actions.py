@@ -413,18 +413,18 @@ class ActionGrammar:
                 # already seen is a dead end the decoder would otherwise walk into.
                 candidates = [k for k in props if k.startswith(key.value) and k not in seen]
                 if self.ordered:
-                    order = list(props)
-                    last = max((order.index(k) for k in seen), default=-1)
-                    candidates = [k for k in candidates if order.index(k) > last]
+                    # Strict order: the next key is the first one not given yet.
+                    candidates = [k for k in candidates if k == next(p for p in props if p not in seen)]
                 if not candidates:
                     raise _Dead(f"no unseen parameter of {schema.name} starts with {key.value!r}")
                 return seen, i, False, None, False
             if key.value not in props:
                 raise _Dead(f"{schema.name} has no parameter {key.value!r}")
             if self.ordered:
-                order = list(props)
-                if any(order.index(k) > order.index(key.value) for k in seen):
-                    raise _Dead(f"{schema.name}: parameter {key.value!r} out of schema order")
+                expected_key = next(k for k in props if k not in seen)
+                if key.value != expected_key:
+                    raise _Dead(f"{schema.name}: expected parameter {expected_key!r}, "
+                                f"found {key.value!r} (schema order)")
             if key.value in seen:
                 raise _Dead(f"duplicate parameter {key.value!r}")
             i = self._ws(s, i)

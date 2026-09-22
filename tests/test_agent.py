@@ -955,11 +955,13 @@ def test_ordered_grammar_requires_the_keys_in_schema_order():
     assert free.check(in_order).complete and free.check(out_of_order).complete
     assert ordered.check(in_order).complete
     dead = ordered.check(out_of_order)
-    assert not dead.viable and "out of schema order" in dead.reason
-    # A partial key that could only be an earlier parameter is dead too; a later one lives.
+    assert not dead.viable and "schema order" in dead.reason
+    # Strict: the next key is the first one not given yet, no skipping ahead.
     assert not ordered.check('{"name":"propose","args":{"keys":"x","f').viable
-    assert ordered.check('{"name":"propose","args":{"keys":"x","a').viable
+    assert not ordered.check('{"name":"propose","args":{"file":"a.json","a').viable
+    assert not ordered.check('{"name":"propose","args":{"file":"a.json","ask":"x"').viable
     assert ordered.check('{"name":"propose","args":{"file":"a.json","k').viable
+    assert ordered.check('{"name":"propose","args":{"file":"a.json","keys":"x","a').viable
     # The loop builds its grammar from the option.
     tok = ProphetTokenizer(merges=[])
     assert AgentLoop(None, tok, reg, AgentConfig(ordered_keys=True)).grammar.ordered
