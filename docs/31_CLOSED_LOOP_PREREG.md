@@ -322,3 +322,20 @@ combinaison ne convient, le résultat est « à 7 M, aucune de ces familles n'of
 première marche, les graines 0 et 1 sont celles du pilote v6 ; la graine 2 (0,917) est hors
 de la fenêtre et n'est pas retenue. Les marches suivantes (`files` 25 / 50, `count`) ne
 sont pas explorées, comme écrit.
+
+## Amendement 11 — 2026-09-22, après v6, avant tout run v7 : pas de pas répété au décodage
+
+**Observation.** Sur `files` (v6), 5 échecs sur 6 du bras `closed-clean` sont une boucle
+sur `note` : la bonne valeur est notée, puis `note` est réémis jusqu'au bout du budget sans
+`done`. Les trajectoires promues (forme canonique) ne contiennent jamais deux pas
+identiques ; le décodeur autorise pourtant de répéter l'action précédente. Troisième
+désaccord entraînement / décodage du même type.
+
+**Correctif, décodage seulement, activable.** `AgentConfig.no_repeat_action` (défaut
+`False`) : quand il est actif, la grammaire du pas *i* exclut le **nom** de l'action du pas
+*i − 1*. Les bras des pilotes l'activent ; l'ancien comportement reste le défaut du code.
+Test : la boucle avec l'option ne peut pas enchaîner deux `note`.
+
+**Pilote v7, une seule variable.** `files`, amorce 50 / 100, graines 0 et 1 (les mêmes
+poids d'amorce), recette v6 plus `no_repeat_action`. Critère **H11** : H10 réévaluée sous
+v7 ((i) intervalles excluant zéro, (ii) rendement ≥ 0,6, (iii) aucun tour sous t0 − 0,10).

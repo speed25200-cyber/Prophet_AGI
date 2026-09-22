@@ -445,6 +445,41 @@ pas là où 30 trajectoires parfaites suffisent. La graine 2 est le vrai reste :
 divergent par le seul tirage des générations. La variance d'échantillonnage à
 30 tâches × 2 tentatives est la limite de ce pilote, pas un défaut de plus.
 
+## 11. Pilote v6 : une seconde famille, `files`
+
+Amendements 9 et 10. À l'amorce de 100 / 200, `files` est résolu d'emblée (1,000 / 0,983 /
+1,000 sur les graines 0, 1, 2) : les 7 % de docs/09 tenaient aux défauts de décodage
+depuis corrigés. L'échelle d'amorce pré-enregistrée retient la première marche, 50 / 100 :
+départs 0,700 / 0,783 / 0,917, graines 0 et 1 dans la fenêtre [0,10, 0,90]. Recette v5
+(taux ÷ 4, grammaire compacte, `done` sans argument, promotion canonique).
+
+| Bras | Graine | t0 | t1 | t2 | t3 | t4 | t5 | Gain [IC 95 %] | Δ BPB | Résolues par tour |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| closed-clean | 0 | 0,700 | 0,817 | 0,850 | 0,883 | 0,817 | 0,800 | **+0,100** [-0,017, +0,217] | +0,068 | 23/22/25/26/25 |
+| closed-clean | 1 | 0,783 | 0,750 | 0,900 | 0,867 | 0,850 | 0,867 | **+0,083** [+0,000, +0,167] | +0,078 | 22/23/26/26/25 |
+| oracle | 0 | 0,700 | 0,933 | 0,983 | 1,000 | 0,983 | 0,967 | +0,267 [+0,150, +0,383] | +0,066 | 30/30/30/30/30 |
+| oracle | 1 | 0,783 | 0,933 | 0,950 | 1,000 | 0,917 | 0,950 | +0,167 [+0,050, +0,283] | +0,065 | 30/30/30/30/30 |
+
+**Verdicts v6.**
+
+| Hypothèse | Verdict | Chiffre |
+|---|---|---|
+| **H10 (i)** gain > 0, intervalle excluant zéro | **échoue** | [−0,017, +0,217] et [+0,000, +0,167] |
+| **H10 (ii)** rendement ≥ 0,6 | **échoue** | 0,423 (+0,092 / +0,217) |
+| **H10 (iii)** aucun tour sous t0 − 0,10 | **passe** | pires tours 0,800 (t0 0,700) et 0,750 (0,783) |
+| **H10** | **échoue** sur (i) et (ii) | |
+
+La boucle **démarre** sur `files` (gains positifs, aucun effondrement, malformées 0 %,
+aucune trajectoire écartée, oubli +0,07) mais plafonne vers 0,85 quand l'oracle atteint
+0,95–0,97. Le diagnostic sur les trente tâches du banc 7 (graine 0, tour 5) est sans
+ambiguïté : **5 des 6 échecs sont la boucle sur `note`** — le bon nom de fichier est noté,
+puis `note` est répété jusqu'au bout des quatre pas sans jamais appeler `done` ; le sixième
+est un argument de `grep` tronqué (`ir` pour `iris`). Aucune donnée bâclée n'est en cause
+(0 trajectoire écartée) : c'est la tête de sélection qui, après une note, ne bascule pas
+vers `done`, ce que le budget de quatre pas transforme en échec. Les trajectoires promues
+ne contiennent jamais deux pas identiques ; le décodeur, lui, l'autorise. Même désaccord
+entraînement / décodage que les blancs (a) et le corps de `done` (c) : d'où l'amendement 11.
+
 Pour l'échelle A100 (docs/31 §3), trois choses sont acquises dès maintenant : la marge de
 départ se calibre avant de lancer (tour 0 seul, par graine et par famille) ; la recette par
 tour doit être mesurée sur l'oubli avant tout (un planning neuf à taux plein par tour est
