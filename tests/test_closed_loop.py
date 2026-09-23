@@ -1213,3 +1213,97 @@ def test_learnability_probe_counts_and_runs(work, tmp_path):
     assert results[0]["all_k"] + results[0]["none"] + results[0]["learnable"] == 4
     with pytest.raises(SystemExit):
         learnability_probe.main(["--work", str(work), "--run", str(out), "--bench", "nope"])
+
+
+def test_train_rows_gives_the_share_rows_a_fixed_part_of_the_stream(work, tmp_path, monkeypatch):
+    """docs/39 amendment 7: with a share, the proposal rows take that fraction of the
+    episode stream however few they are; alone, they are the stream."""
+    captured = []
+
+    class FakeLoader:
+        def __init__(self, sources, **kw):
+            captured.append({s.name: (s.weight, len(s.documents)) for s in sources})
+
+    class FakeTrainer:
+        def __init__(self, model, loader, tc, **kw):
+            self.step, self.skipped_nonfinite = 0, 0
+
+        def train(self):
+            return []
+
+    monkeypatch.setattr(closed_loop, "StreamingLoader", FakeLoader)
+    monkeypatch.setattr(closed_loop, "Trainer", FakeTrainer)
+    tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
+    common = dict(
+        work=work, steps=1, seq_len=8, batch_size=1, replay_fraction=0.0, checkpoint_dir=tmp_path
+    )
+    solutions, proposals = [[1, 2, 3]] * 9, [[4, 5, 6]]
+    closed_loop.train_rows(None, None, tokenizer, solutions, seed=0, **common)
+    closed_loop.train_rows(
+        None, None, tokenizer, solutions, seed=0, share_rows=proposals, share=0.25, **common
+    )
+    closed_loop.train_rows(
+        None, None, tokenizer, [], seed=0, share_rows=proposals, share=0.25, **common
+    )
+    assert captured[0] == {"episodes": (1.0, 9)}
+    assert captured[1] == {"episodes": (0.75, 9), "proposals": (0.25, 1)}
+    assert captured[2] == {"episodes": (1.0, 1)}
+
+
+def test_propose_share_is_read_by_the_round_and_recorded(work, tmp_path):
+    """docs/39 amendment 7: --propose-share reaches the round's training (the promoted
+    proposals and the amorce's, counted), enters protocol.json, and is refused where
+    nothing would read it."""
+    base = [
+        "--work",
+        str(work),
+        "--family",
+        "calc",
+        "--config",
+        str(work / "tiny.json"),
+        "--seq-len",
+        str(SEQ_LEN),
+        "--batch-size",
+        "2",
+        "--tasks-per-round",
+        "2",
+        "--propose-n",
+        "2",
+        "--attempts",
+        "1",
+        "--steps-per-round",
+        "1",
+        "--seed-episodes",
+        "2",
+        "--seed-steps",
+        "1",
+        "--bench-tasks",
+        "2",
+        "--bpb-docs",
+        "2",
+        "--rounds",
+        "1",
+        "--propose-amorce",
+        "2",
+        "--propose-amorce-steps",
+        "1",
+        "--seed-dir",
+        str(tmp_path / "seed"),
+    ]
+    out = tmp_path / "share"
+    assert (
+        main(base + ["--arm", "closed-propose", "--out", str(out), "--propose-share", "0.25"]) == 0
+    )
+    assert json.loads((out / "protocol.json").read_text())["propose_share"] == 0.25
+    rounds = [json.loads(line) for line in (out / "rounds.jsonl").read_text().splitlines()]
+    assert rounds[1]["train"]["share_rows"] >= 2  # at least the amorce's two proposals
+    with pytest.raises(SystemExit):
+        main(
+            base
+            + ["--arm", "closed-clean", "--out", str(tmp_path / "c"), "--propose-share", "0.25"]
+        )
+    with pytest.raises(SystemExit):
+        main(
+            base
+            + ["--arm", "closed-propose", "--out", str(tmp_path / "d"), "--propose-share", "1.5"]
+        )

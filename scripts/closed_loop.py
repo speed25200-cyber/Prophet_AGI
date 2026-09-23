@@ -182,12 +182,18 @@ def train_rows(
     lr_scale: float = 1.0,
     device: str = "cpu",
     replay_names: tuple[str, ...] = ("prose", "code"),
+    share_rows: list[list[int]] | None = None,
+    share: float = 0.0,
 ) -> dict:
     """``steps`` updates on ``rows`` mixed with the base corpus; a fresh schedule each call.
 
     ``lr_scale`` multiplies both peak learning rates (docs/31 amendment 5: the per-round
-    recipe is the suspected cause of the drift and the forgetting).
+    recipe is the suspected cause of the drift and the forgetting). With ``share`` > 0,
+    ``share_rows`` take that fraction of the episode stream whatever their number, and
+    ``rows`` the rest (docs/39 amendment 7: the proposals kept against the solver's).
     """
+    if not rows and share_rows:
+        rows, share_rows, share = share_rows, None, 0.0  # nothing to share the stream with
     if not rows or steps < 1:
         return {
             "steps": 0,
@@ -196,7 +202,16 @@ def train_rows(
             "loss_last": None,
             "rows": len(rows),
         }
-    sources = sources_from_iterables({"episodes": (1.0 - replay_fraction, rows)})
+    if share > 0 and share_rows:
+        episodes = 1.0 - replay_fraction
+        sources = sources_from_iterables(
+            {
+                "episodes": (episodes * (1.0 - share), rows),
+                "proposals": (episodes * share, share_rows),
+            }
+        )
+    else:
+        sources = sources_from_iterables({"episodes": (1.0 - replay_fraction, rows)})
     if replay_fraction > 0:
         sources.append(replay_source(work, tokenizer, replay_fraction, names=replay_names))
     loader = StreamingLoader(sources, seq_len=seq_len, batch_size=batch_size, seed=seed)
@@ -915,6 +930,13 @@ def main(argv: list[str] | None = None) -> int:
         + ", ".join(OOD_BENCHES)
         + " (docs/39 amendment 5)",
     )
+    ap.add_argument(
+        "--propose-share",
+        type=float,
+        default=0.0,
+        help="fraction of the episode stream given to proposal rows (the promoted proposals "
+        "and the amorce's) every round, however many there are (docs/39 amendment 7)",
+    )
     ap.add_argument("--bench-tasks", type=int, default=40)
     ap.add_argument("--bpb-docs", type=int, default=200)
     ap.add_argument("--seq-len", type=int, default=512)
@@ -1042,6 +1064,14 @@ def main(argv: list[str] | None = None) -> int:
         protocol["calc_max_digits"] = args.calc_max_digits
     if extra_benches:
         protocol["extra_bench"] = list(extra_benches)
+    if args.propose_share:
+        if (
+            args.arm != "closed-propose"
+            or not 0 < args.propose_share < 1
+            or not args.propose_amorce
+        ):
+            ap.error("--propose-share in (0, 1), for closed-propose with a --propose-amorce")
+        protocol["propose_share"] = args.propose_share
     if args.arm == "closed-propose":
         protocol["propose"] = {"n": propose_n}
     if args.propose_amorce:
@@ -1433,9 +1463,29 @@ def main(argv: list[str] | None = None) -> int:
             }
         train = None
         if args.arm != "frozen":
+            entries = promoted_entries()
+            share_rows = None
+            if args.propose_share > 0:
+                # docs/39 amendment 7: the proposals -- the promoted ones and the amorce's,
+                # so that the format never vanishes -- keep a fixed share of the stream.
+                proposed = [e for e in entries if e.family.startswith("propose-")]
+                entries = [e for e in entries if not e.family.startswith("propose-")]
+                share_rows = (
+                    rows_from_entries(proposed, registries, tokenizer, seq_len=args.seq_len)[0]
+                    + proposal_rows(
+                        tokenizer,
+                        args.propose_amorce,
+                        family=families[0],
+                        seed=SEED_TASK_BASE + args.seed,
+                        seq_len=args.seq_len,
+                        fmt=args.propose_format,
+                    )[0]
+                )
             rows, row_stats = rows_from_entries(
-                promoted_entries(), registries, tokenizer, seq_len=args.seq_len
+                entries, registries, tokenizer, seq_len=args.seq_len
             )
+            if share_rows is not None:
+                row_stats["share_rows"] = len(share_rows)
             train = {
                 **row_stats,
                 **train_rows(
@@ -1453,6 +1503,8 @@ def main(argv: list[str] | None = None) -> int:
                     lr_scale=args.lr_scale,
                     device=args.device,
                     replay_names=replay_names,
+                    share_rows=share_rows,
+                    share=args.propose_share,
                 ),
             }
         klpo = None

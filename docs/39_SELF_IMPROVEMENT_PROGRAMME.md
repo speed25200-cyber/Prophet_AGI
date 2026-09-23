@@ -659,3 +659,33 @@ pour le dire.
 
 Coût : quelques minutes d'A100. C'est la première mesure à faire sur ce checkpoint, avant
 tout run de proposition.
+
+## Amendement 7 — 2026-09-23 : SI-1d, pré-enregistrée — une part fixe pour les propositions
+
+**Le mur (c)** : le proposeur oublie son format quand les épisodes du solveur dominent
+l'entraînement. À la graine 1, c'est arrivé **trois fois sur trois** : SI-1b, SI-1c et
+SI-8a, chaque fois au tour 2, avec 0 proposition valide. Au tour 1 de SI-1c, les
+propositions faisaient 2,5 % des lignes d'épisodes (3 sur 120).
+
+**Une option nouvelle**, lue par le code et testée : `--propose-share f`. À chaque tour,
+les propositions (les promues, plus celles de l'amorce, pour que le format ne disparaisse
+jamais) reçoivent la fraction *f* du flux d'épisodes, quel que soit leur nombre. Le reste
+va aux solutions. Elle n'entre dans `protocol.json` que si elle est posée, et elle est
+refusée hors `closed-propose` ou sans amorce.
+
+**SI-1d.** Recette de SI-1c à la graine 1 (120 propositions, plafond 4, 5 tours). La
+seule variable est `--propose-share 0.2`. Témoin : le `closed-clean` de la réplication,
+graine 1.
+
+| | Critère |
+|---|---|
+| **V** (le mur) | au moins 0,5 de propositions valides **à chaque tour** (SI-1c graine 1 : 0,0 au tour 2) |
+| **H26c′** | banc à quatre chiffres au tour 5 : différence avec le témoin, intervalle bootstrap excluant zéro (SI-1c graine 1 : +0,80) |
+| rapporté | propositions nouvelles et promues par tour : la part fixe ancre-t-elle le proposeur sur son amorce ? |
+
+**Lecture pré-écrite.**
+- **V passe et H26c′ tient** : l'oubli du format est un déséquilibre de données, et la
+  part fixe le corrige. Elle entre dans la recette des boucles longues (SI-8).
+- **V passe mais la nouveauté s'effondre** : les propositions de l'amorce ancrent le
+  proposeur. On gardera une part réservée aux seules propositions promues.
+- **V échoue** : l'oubli ne tient pas à la proportion des données.
