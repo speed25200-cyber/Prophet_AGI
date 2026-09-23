@@ -173,3 +173,44 @@ def test_hard_bench_is_out_of_the_generators_distribution_and_deterministic():
         assert task.goal.startswith("Read ") and "the field " in task.goal
     # The solver's usual tools serve it.
     assert "read_file" in task_families.tools_for(hard[0]).names
+
+
+def test_calc_proposals_are_one_field_whose_answer_the_executor_computes():
+    """docs/39 SI-1: a calc proposal is one expression; the rules are grammar only, the
+    answer is the executor's, and novelty is two operators or an integer outside the
+    generator's 10-998 range (H25c)."""
+    from prophet.agent.propose import CalcSpec
+
+    for task in task_families.make_tasks(20, family="calc", seed=4):
+        spec = spec_from_task(task)
+        assert isinstance(spec, CalcSpec) and validate("calc", spec.as_args()) == spec
+        again = task_from_spec(spec, name=task.name)
+        assert again.goal == task.goal and again.answer == task.answer
+        assert not novel(spec, [])  # the generator's own form is never new
+    spec = validate("calc", {"expression": " 12 * 34 + 5 "})
+    assert spec.expression == "12 * 34 + 5" and spec.size() == 3 and novel(spec, [])
+    assert task_from_spec(spec, name="p").answer == "413"
+    assert novel(validate("calc", {"expression": "1234 - 5"}), [])  # out of 10-998
+    for bad in ("12*34", "12 / 3", "12", "99999 + 1", "1 + 2 + 3 + 4 + 5", 42):
+        assert isinstance(validate("calc", {"expression": bad}), str), bad
+    reg = propose_registry("calc")
+    body = render_episode(propose_goal("calc"), reg, proposal_trajectory(spec))
+    body = body.split("<|call|>")[1].split("<|/call|>")[0]
+    assert json.loads(body) == {"name": "propose_calc", "args": {"expression": "12 * 34 + 5"}}
+    assert ActionGrammar(reg, compact=True, ordered=True).check(body).complete
+
+
+def test_the_calc_hard_bench_has_three_operands_and_is_deterministic():
+    from prophet.agent.propose import make_hard, make_hard_calc
+
+    a, b = make_hard_calc(10, seed=17), make_hard("calc", 10, seed=17)
+    assert [t.goal for t in a] == [t.goal for t in b]
+    for task in a:
+        assert task.family == "calc" and len(task.extra["expression"].split()) == 5
+        assert task.answer == str(eval(task.extra["expression"]))  # noqa: S307
+    generator = {
+        t.extra["expression"] for t in task_families.make_tasks(500, family="calc", seed=1)
+    }
+    assert not generator & {t.extra["expression"] for t in a}
+    with pytest.raises(KeyError):
+        make_hard("files", 2)

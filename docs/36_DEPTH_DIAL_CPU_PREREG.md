@@ -147,3 +147,36 @@ C'est la seule différence avec la recette d'origine, qu'on reprend telle quelle
 pas, sans échauffement, huit modèles (deux cœurs × deux calendriers × graines 0 et 1). Le
 contrôle et H29 à H31 sont **inchangés**. Si le contrôle échoue encore (< 0,9 à 1 saut),
 H29 à H31 restent non conclusives, cette fois sans cause connue.
+
+## Résultats de l'amendement 3 — 2026-09-23 : le contrôle passe pour le cœur GDN, échoue pour le cœur attention ; H29 à H31 restent non conclusives
+
+Recette de petite largeur, 6 000 pas, 512 exemples par *h*.
+
+| Bras | *h* = 1 (contrôle) | 2 | 3 | 4 | 5 | 6 |
+|---|---:|---:|---:|---:|---:|---:|
+| `gdn-fixed`, graine 0 | **1,000** | **0,994** | **0,926** | 0,273 | 0,256 | 0,236 |
+| `gdn-tied`, graine 0 | **0,996** | 0,361 | 0,270 | 0,336 | 0,275 | 0,402 |
+| `attn-fixed`, graine 0 | 0,109 | 0,219 | 0,236 | 0,357 | 0,240 | 0,451 |
+| `attn-tied`, graine 0 | 0,107 | 0,230 | 0,244 | 0,365 | 0,229 | 0,459 |
+| `gdn-fixed`, graine 1 (rejoué) | **0,994** | 0,227 | 0,385 | 0,320 | 0,314 | 0,361 |
+| `gdn-tied`, graine 1 (rejoué) | **1,000** | 0,219 | 0,348 | 0,279 | 0,449 | 0,244 |
+| `attn-fixed`, graine 1 | 0,127 | 0,236 | 0,289 | 0,359 | 0,219 | 0,482 |
+| `attn-tied`, graine 1 | 0,117 | 0,236 | 0,287 | 0,369 | 0,227 | 0,514 |
+
+**Incident.** Les deux bras GDN de la graine 1 ont d'abord été tronqués, à 880 et 180 pas,
+par un diagnostic lancé en parallèle, contre la règle d'un seul processus torch à la fois.
+Leurs chiffres tronqués sont écartés, et ils ont été rejoués seuls. Les six autres modèles
+ont fait leurs 6 000 pas.
+
+**Verdict.** Le contrôle passe pour les quatre modèles à cœur GDN et échoue pour les quatre
+à cœur attention. H29 à H31 comparent justement les deux cœurs : elles restent **non
+conclusives**. La cause de l'échec du cœur attention n'est pas l'enveloppe récurrente
+(docs/38 §6). Elle tient à la pile de blocs d'attention elle-même à cette taille, et n'est
+pas isolée.
+
+**Ce qui se lit sur le cœur GDN.** Il apprend la consultation simple à coup sûr (4 sur 4),
+mais ne compose que rarement. Un seul modèle sur quatre fait 2 et 3 sauts (`gdn-fixed`,
+graine 0 : 0,994 et 0,926), et aucun ne porte au-delà des sauts entraînés. Sa composition,
+quand elle a lieu, peut venir des trois blocs d'attention hors de la boucle, qui suffisent
+à trois sauts. Au-delà, là où le cœur devrait contribuer, rien. C'est compatible avec H4 à
+l'échelle, qui prédit qu'un cœur à état borné ne compose pas. Ce n'est pas une preuve.

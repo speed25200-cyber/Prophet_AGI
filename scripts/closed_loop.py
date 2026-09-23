@@ -55,7 +55,7 @@ from prophet.agent.loop import (
 )
 from prophet.agent.propose import (  # noqa: E402
     FORMATS,
-    make_hard_lookup,
+    make_hard,
     novel,
     proposal_trajectory,
     propose_goal,
@@ -258,10 +258,12 @@ def evaluate(
     seq_len: int,
     device: str = "cpu",
     hard: bool = False,
+    hard_family: str = "lookup",
 ) -> dict:
     """The benches of every family (family-major, then the bench seeds), their mean, the
     mean per family, and the held-out bits per byte; with ``hard``, the out-of-distribution
-    lookup bench of docs/33 as well (``bench_hard``, ``success_hard``)."""
+    bench of docs/33 (``hard_family`` lookup) or docs/39 (calc) as well (``bench_hard``,
+    ``success_hard``)."""
     model.eval()
     benches = [
         bench_family(model, tokenizer, family, n_tasks=bench_tasks, seed=s)
@@ -297,10 +299,10 @@ def evaluate(
             bench_family(
                 model,
                 tokenizer,
-                "lookup",
+                hard_family,
                 n_tasks=bench_tasks,
                 seed=s,
-                tasks=make_hard_lookup(bench_tasks, seed=s),
+                tasks=make_hard(hard_family, bench_tasks, seed=s),
             )
             for s in HARD_BENCH_SEEDS
         ]
@@ -616,9 +618,7 @@ def propose_round(
         seen.add(verdict.signature())
         counts["valid"] += 1
         counts["novel"] += int(novel(verdict, amorce_specs))
-        counts["n_fields"][str(len(verdict.keys))] = (
-            counts["n_fields"].get(str(len(verdict.keys)), 0) + 1
-        )
+        counts["n_fields"][str(verdict.size())] = counts["n_fields"].get(str(verdict.size()), 0) + 1
         proposals.append((verdict, task_from_spec(verdict, name=f"proposed-{round_index}-{i}")))
     return proposals, counts
 
@@ -890,8 +890,13 @@ def main(argv: list[str] | None = None) -> int:
     if len(set(families)) != len(families) or len(set(bench_families)) != len(bench_families):
         ap.error("a family is named once")
     registries = {f: registry_for(f) for f in families}
-    if args.arm == "closed-propose" and families != ["lookup"]:
-        ap.error("closed-propose proposes lookup tasks only (docs/33 §5): --family lookup")
+    if args.arm == "closed-propose" and families not in (["lookup"], ["calc"]):
+        ap.error(
+            "closed-propose proposes one family, lookup (docs/33) or calc (docs/39): "
+            "--family lookup or --family calc"
+        )
+    if args.hard_bench and families[0] not in ("lookup", "calc"):
+        ap.error("--hard-bench exists for lookup and calc only")
     training_families = list(families)
     if args.arm == "closed-propose":
         for f in families:
@@ -1143,6 +1148,7 @@ def main(argv: list[str] | None = None) -> int:
             seq_len=args.seq_len,
             device=args.device,
             hard=args.hard_bench,
+            hard_family=families[0],
         )
         manager.save({"model": model.state_dict(), "step": 0}, 0)
         probe = None
@@ -1386,6 +1392,7 @@ def main(argv: list[str] | None = None) -> int:
             seq_len=args.seq_len,
             device=args.device,
             hard=args.hard_bench,
+            hard_family=families[0],
         )
         compute += generation["seconds"] + (train["seconds"] if train else 0.0)
         compute += klpo["seconds"] if klpo else 0.0

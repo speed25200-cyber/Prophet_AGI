@@ -769,6 +769,59 @@ def test_a_gpu_run_records_its_card_so_a_resume_on_another_refuses(monkeypatch):
     assert device_protocol("cuda") != a100
 
 
+def test_closed_propose_runs_on_calc_with_its_own_hard_bench(work, tmp_path):
+    """docs/39 SI-1: the proposal arm accepts calc, trains its two-stage amorce with calc
+    proposals, probes them, and measures the three-operand bench."""
+    out = tmp_path / "calc"
+    argv = [
+        "--work",
+        str(work),
+        "--out",
+        str(out),
+        "--arm",
+        "closed-propose",
+        "--family",
+        "calc",
+        "--config",
+        str(work / "tiny.json"),
+        "--seq-len",
+        str(SEQ_LEN),
+        "--batch-size",
+        "2",
+        "--tasks-per-round",
+        "2",
+        "--propose-n",
+        "2",
+        "--attempts",
+        "1",
+        "--steps-per-round",
+        "1",
+        "--seed-episodes",
+        "2",
+        "--seed-steps",
+        "1",
+        "--bench-tasks",
+        "2",
+        "--bpb-docs",
+        "2",
+        "--rounds",
+        "0",
+        "--propose-amorce",
+        "2",
+        "--propose-amorce-steps",
+        "1",
+        "--hard-bench",
+        "--seed-dir",
+        str(tmp_path / "calc-seed"),
+    ]
+    assert main(argv) == 0
+    r0 = json.loads((out / "rounds.jsonl").read_text().splitlines()[0])
+    assert r0["proposal_probe"]["emitted"] == 2
+    assert all(b["family"] == "calc" for b in r0["bench_hard"])
+    with pytest.raises(SystemExit):
+        main([a if a != "calc" else "files" for a in argv])
+
+
 def test_proposals_are_promoted_only_when_solved_on_a_retry(work, tmp_path):
     from prophet.agent.propose import task_from_spec, validate
     from prophet.agent.quarantine import Quarantine as Q
@@ -852,9 +905,10 @@ def test_closed_propose_arm_runs_with_a_proposal_amorce_and_the_hard_bench(work,
         == proposals["valid"]
     )
     assert proposals["promoted"] <= proposals["solved_retry"]
-    # A closed-propose arm refuses any other family.
+    # A closed-propose arm refuses a family without a proposal grammar (lookup and calc
+    # have one: docs/33, docs/39).
     with pytest.raises(SystemExit):
-        main([a if a != "lookup" else "calc" for a in argv])
+        main([a if a != "lookup" else "files" for a in argv])
 
 
 def test_two_stage_amorce_is_recorded_once_and_reused_and_the_probe_is_recorded(work, tmp_path):

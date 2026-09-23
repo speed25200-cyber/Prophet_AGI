@@ -86,3 +86,19 @@ L'initialisation seule ne suffit pas. À `init_std` 0,06, en retirant les autres
   avec un résultat.
 - La recette de miniature qui apprend : `init_std` ≈ 0,5/√*d* (0,06 à *d* = 64),
   embeddings déliés, pas de GQA. docs/36 est relancé avec elle (amendement 3).
+
+## 6. Complément, 2026-09-23 : l'enveloppe récurrente n'est pas en cause, la pile à quatre blocs l'est
+
+Recette de petite largeur, 8 paires, 3 000 pas, 4 graines. Quatre blocs d'attention
+alternant fenêtre glissante et globale, **sans récurrence** : **0 sur 4**. Les mêmes blocs,
+celui du milieu en cœur récurrent à *k* = 1 : **0 sur 4**. Envelopper un bloc d'attention
+en cœur ne change donc rien. C'est la pile à quatre blocs elle-même qui n'apprend pas ici,
+là où deux blocs d'attention globale apprennent 4 sur 4 (§3). Le témoin à cœur GDN a été
+arrêté sans être mesuré : il tournait en même temps que la suite de tests, contre la règle
+d'un seul processus torch à la fois. Le verdict n'en dépendait pas.
+
+La cause dans la pile à quatre blocs (profondeur, fenêtre glissante) n'est pas isolée. Les
+bras à cœur attention de docs/36 (amendement 3 : 0,107 à 0,127 à 1 saut, sur 4 modèles sur
+4) en portent la marque. Les bras à cœur GDN, dont le prélude et la coda sont les mêmes
+blocs d'attention, apprennent pourtant la consultation (4 sur 4). Cela reste à comprendre
+avant toute miniature d'un cœur attention.
