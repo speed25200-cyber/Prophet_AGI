@@ -109,6 +109,8 @@ Il n'a jamais tourné sur GPU.
 | Pourquoi la réplication échoue : le proposeur n'écrit pas de nouveauté au départ | **établi** | propositions nouvelles au tour 1 : 5/29 à la graine 0, 0/30 et 0/29 aux graines 1 et 2 ; le mécanisme ne démarre pas | 39 §3 |
 | SI-1c : 120 propositions par tour rendent le mécanisme fiable | **réfuté** (2 graines sur 3) | graines 0 et 1 : écart +0,717 et **+0,800** (la graine 1 ne démarrait pas avec 30) ; graine 2 : 0,000, aucune nouvelle promue | 39 §3 |
 | **Règle des six runs** : la boucle dépasse son générateur si et seulement si au moins une proposition nouvelle est rattrapée et promue | **établi à 7 M** (`calc`) | 3 runs avec ≥ 2 promues : +0,72 à +0,80 ; 3 runs sans : 0,000 à +0,067 | 39 §3 |
+| **SI-8a : plafond des règles relevé, la boucle monte les marches suivantes** | **établi à la graine 0**, graine 1 en cours | cinq chiffres : +0,367 [+0,217 ; +0,517] contre le plafond 4 ; six : +0,133 [+0,050 ; +0,217] ; propositions promues jusqu'à 8 chiffres | 39 §3 |
+| Sans propositions au-delà, le progrès s'érode | **observé** (graine 0) | cinq chiffres au plafond 4 : 0,55 (tour 1) → 0,32 (tour 10) ; au plafond 8 : de 0,68 à 0,80 | 39 §3 |
 | SI-1b : le proposeur bouge quand sa récompense est versée | **observé**, critère M échoué | récompense versée aux tours 1–2 (sur les 5 puis 1 propositions nouvelles) ; part de nouvelles 17 % → 52 % ; puis plus de bord : le solveur a rattrapé | 39 §3 |
 | SI-1b, H23c : le gain se transfère à un autre axe (troisième opérande) | **réfuté à 7 M** | 0,0 (4 gagnées, 4 perdues) ; aucune proposition à deux opérateurs sur 135 | 39 §3 |
 | Deux défauts qui tuaient SI-1 : échappement dans un nom d'outil ; porte de copie entraînée là où le proposeur ne l'interroge pas | **trouvés et corrigés** | 30 malformées sur 30 ; logit de la porte +9,32 → −1,16, banc du solveur 1,0 → 0,0 | 39 amend. 1 |
@@ -121,6 +123,7 @@ banc hors de sa distribution. Sans elle, proposer n'est qu'un générateur plus 
 | Hypothèse | Statut | Chiffres | Réf. |
 |---|---|---|---|
 | Un affinage agentique sans rejeu détruit la langue | **établi** | 2,18 → **7,36** bit/octet (un modèle vierge : 4,35) ; avec rejeu 2,61 mais succès 15 %/25 % | 10 §2 |
+| Avec rejeu 0,5, l'oubli croît avec la longueur de la boucle | **observé** (SI-8a graine 0, les deux bras) | ΔBPB +0,10 en 5 tours, **+0,37 en 10 tours** ; le mur d'une boucle longue | 39 §3 |
 | Porter l'état entre épisodes aide | **réfuté** sans entraînement dédié | 57,5 % → **0 %** au banc, poids gelés | CLAUDE.md (tableau des défauts) |
 | Mémoire à deux niveaux, écriture « sommeil » sans gradient (R03, E2) | **ouvert** | ≈ 5 h + évaluations ; 20 h financées | 07, 06 |
 | Distiller dans les poids (W3), ratio σ transfert / rappel | **non testé** | W3-E0 à E6 : 13,5 A100-h | W3 §7 |
