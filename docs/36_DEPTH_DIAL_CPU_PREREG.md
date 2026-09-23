@@ -123,3 +123,14 @@ inchangés.
 H31 sont jugées dessus. Le modèle de vérification compte comme l'un des huit, puisque même
 bras, même graine, même recette. Sinon, H29 à H31 restent non conclusives à cette échelle,
 et la question reste à H4 du programme 1.
+
+## Résultat de l'amendement 2 — 2026-09-23 : la vérification échoue, H29 à H31 restent non conclusives
+
+`attn-tied`, graine 0, 20 000 pas dont 2 000 sur 1 saut seul : **0,104** à 1 saut
+(0,234 / 0,240 / 0,367 / 0,244 / 0,469 de 2 à 6), une perte restée entre 2,33 et 2,06 du
+pas 2 000 au pas 16 000. Pas même pendant l'échauffement sur 1 saut, le modèle n'a trouvé
+la consultation. Comme l'amendement le prévoyait, les huit modèles ne sont pas relancés :
+**H29, H30 et H31 restent non conclusives sur CPU**, et la composition par la profondeur
+sera mesurée par H4 du programme 1, à 375M. Le même obstacle arrête le contrôle de docs/37 :
+à cette taille, nos couches d'attention apprennent mal une consultation qu'un transformeur
+minimal apprend en 700 pas (docs/37, diagnostic).
