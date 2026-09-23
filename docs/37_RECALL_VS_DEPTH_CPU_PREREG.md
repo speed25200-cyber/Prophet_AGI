@@ -43,6 +43,50 @@ grand) pour tout ce qui se retient, et réserver la profondeur à ce qui se comp
 une réplication à plus grande échelle. Un test de mécanisme, à 10⁵ paramètres, sur une
 graine.
 
-## 3. Résultats
+## 3. Résultats — exécution du 2026-09-23 : le contrôle échoue, H32 n'est **pas** décidée
 
-*(à venir)*
+Précision du rappel (hasard 1/16), 256 séquences × 8 requêtes par *m*, 4 000 pas, graine 0.
+
+| Bras | *m* = 4 | 8 | 16 | 32 |
+|---|---:|---:|---:|---:|
+| état, *d_k* = 8, *k* = 1 | 0,837 | 0,682 | 0,445 | 0,237 |
+| état, *d_k* = 8, *k* = 4 | 0,999 | 0,979 | 0,902 | 0,691 |
+| état, *d_k* = 16, *k* = 1 | 1,000 | 0,995 | 0,977 | 0,908 |
+| état, *d_k* = 16, *k* = 4 | 1,000 | 0,995 | 0,973 | 0,908 |
+| état, *d_k* = 32, *k* = 1 | 1,000 | 0,996 | 0,961 | 0,839 |
+| état, *d_k* = 32, *k* = 4 | 1,000 | 0,997 | 0,979 | 0,901 |
+| **contrôle** disposition, *k* = 1 | 0,310 | 0,250 | 0,184 | 0,154 |
+| **contrôle** disposition, *k* = 4 | 0,314 | 0,247 | 0,191 | 0,160 |
+
+**Verdict, selon la règle écrite avant le lancement.** Le contrôle échoue : les bras avec
+attention n'atteignent pas 0,9. Les bras « état » ne se lisent donc pas comme un verdict,
+et **H32 n'est ni passée ni échouée**. À titre descriptif seulement : à *d_k* = 8, boucler
+quatre fois rattrape l'essentiel d'un état trop petit (+0,34 en moyenne) ; à *d_k* = 16 et
+32, rien (−0,00 et +0,02). C'est le contraire de F4 pour un petit état, et l'accord avec F4
+pour un état suffisant. Il faut le confirmer avec un contrôle qui passe.
+
+**Pourquoi le contrôle échoue : un diagnostic, pas un défaut.** Même tâche à 8 paires
+fixes, 4 000 pas, même optimiseur, graine 0 (script de brouillon, chiffres ici) :
+
+| Modèle | Précision | Perte aux pas 500 / 1 000 / 2 000 / 3 000 |
+|---|---:|---|
+| transformeur minimal écrit à la main (positions apprises, `nn.MultiheadAttention`), 82k paramètres | **1,000** | 2,006 / 0,027 / 0,000 / 0,000 |
+| `ProphetModel`, attention seule (RoPE, 2 couches), 79k | 0,955 | 1,959 / 1,814 / 1,272 / 0,147 |
+| `ProphetModel`, disposition des sondes (fenêtre, NoPE, *sink*, cœur GDN), 154k | 0,889 | 1,828 / 1,431 / 0,830 / 0,378 |
+| `ProphetModel`, GDN seul, 156k | 0,978 | 0,896 / 0,293 / 0,127 / 0,111 |
+
+Nos couches d'attention **apprennent** la consultation : elles ne sont pas cassées. Mais
+elles la trouvent environ 3× plus tard qu'un transformeur minimal, et plus tard que la règle
+delta. Sur la tâche mélangée des sondes (longueurs de 4 à 32 paires), 4 000 pas ne leur
+suffisent pas. Même lecture pour la sonde des sauts (docs/36), dont aucun bras attention
+n'a appris le saut simple en 6 000 pas. L'écart de vitesse avec un transformeur minimal
+(positions, GQA, initialisation) est lui-même une question ouverte à petite échelle ; rien
+ne dit qu'il existe à 375M.
+
+## Amendement 1 — 2026-09-23, après l'exécution, avant toute relance : le contrôle d'abord
+
+La recette passe à **12 000 pas** ; tout le reste est inchangé. **Le contrôle est relancé
+seul d'abord** (les deux bras « disposition »). S'il passe (≥ 0,9 à chaque *m*), les six bras
+« état » sont relancés sous la même recette, et H32 est jugée sur cette seconde exécution.
+Sinon, H32 reste non décidée sur CPU, et les chiffres descriptifs ci-dessus sont tout ce que
+cette miniature donne.
