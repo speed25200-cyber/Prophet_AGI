@@ -83,6 +83,17 @@ n'a appris le saut simple en 6 000 pas. L'écart de vitesse avec un transformeur
 (positions, GQA, initialisation) est lui-même une question ouverte à petite échelle ; rien
 ne dit qu'il existe à 375M.
 
+**Une cause écartée : l'échelle d'initialisation.** Toutes les couches linéaires sont
+initialisées à 0,02 : l'échelle 1/√*d* à 375M (*d* = 1 792 : 0,024), mais 6× sous elle à
+*d* = 64 (0,125). Testé, 3 000 pas, un cœur :
+- **attention seule** : 0,933 à `init_std` = 0,02, contre **0,237** à 0,125 ;
+- **disposition** : 0,804 contre **0,236**.
+
+Plus grande, l'initialisation empêche l'apprentissage au lieu de l'accélérer. La lenteur
+relative de nos couches d'attention vient d'ailleurs (positions RoPE, GQA, normalisation :
+non testé), et les miniatures de docs/10 à *d* = 64 ne sont pas remises en cause par ce
+biais.
+
 ## Amendement 1 — 2026-09-23, après l'exécution, avant toute relance : le contrôle d'abord
 
 La recette passe à **12 000 pas** ; tout le reste est inchangé. **Le contrôle est relancé
