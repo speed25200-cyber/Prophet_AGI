@@ -722,3 +722,30 @@ confirmer avant d'en dire quoi que ce soit.
 - (a), la rareté des nouvelles : reste ;
 - (b), la récompense qui s'éteint : reste ;
 - (d), l'axe de la structure : reste. À 7 M, c'est un mur de capacité (amendement 6).
+
+## Amendement 8 — 2026-09-24 : SI-8b, pré-enregistrée — plus de rejeu contre l'oubli d'une boucle longue
+
+**Le mur (C4, docs/35)** : avec un rejeu de 0,5, l'oubli de la langue croît avec la
+longueur de la boucle. ΔBPB vaut +0,10 en 5 tours et +0,37 en 10 tours (SI-8a graine 0,
+dans les deux bras). Une boucle « sans fin » qui use sa langue de 0,04 bit/octet par tour
+n'est pas sans fin.
+
+**SI-8b.** Recette de SI-8a, graine 0, plafond 8, 10 tours, bancs à chaque tour. La
+seule variable est `--replay-fraction 0.75` au lieu de 0,5. Le nombre de pas par tour est
+inchangé (60), si bien qu'une ligne d'épisode sur deux cède sa place au corpus de base.
+Le témoin est SI-8a graine 0 : plafond 8 pour l'oubli, plafond 4 pour la marche.
+
+| | Critère |
+|---|---|
+| **F** (le mur) | ΔBPB au tour 10 ≤ **+0,185**, soit la moitié de celui de SI-8a (+0,371) |
+| **S1′** (la marche tient) | banc à cinq chiffres au tour 10 : différence avec le plafond 4 de SI-8a, intervalle bootstrap excluant zéro |
+| rapporté | la courbe ΔBPB tour par tour, les bancs à 4, 5 et 6 chiffres, les propositions promues par longueur |
+
+**Lecture pré-écrite.**
+- **F et S1′ passent** : le rejeu suffit à tenir la langue sur 10 tours sans perdre la
+  marche. On mesure alors la pente de l'oubli par tour, pour savoir s'il reste un mur à
+  plus long terme.
+- **F passe, S1′ échoue** : le rejeu tient la langue en ralentissant la boucle. Le
+  compromis est à régler, ou il faut une mémoire hors gradient (SI-6).
+- **F échoue** : même à 0,75, l'oubli d'une boucle longue n'est pas une affaire de
+  proportion. C'est l'argument pour la mémoire (R03, SI-6) sur A100.
