@@ -572,3 +572,43 @@ Sont rapportés en plus :
 - **S1 échoue** : relever le plafond ne fait pas bouger la boucle. Soit le proposeur
   n'écrit pas de nombres de cinq chiffres, soit la reprise ne les rattrape pas ; le
   tableau de S3 le dira.
+
+### SI-8a, graine 0, 2026-09-23 (amendement 5) — S1, S2 et S3 passent ; graine 1 en cours
+
+Deux bras de 10 tours, ≈ 2 h 10 de CPU chacun (compte : 3 356 s et 3 066 s). Bancs
+mesurés à chaque tour, 60 tâches ; différences au tour 10, tâche par tâche.
+
+| Banc | tour 0 | plafond 8, tours 1 → 10 | plafond 4, tours 1 → 10 | différence au tour 10 [IC 95 %] |
+|---|---:|---|---|---|
+| 4 chiffres | 0,05 | 0,92 · 0,93 · 0,93 · 0,93 · 0,93 · 0,93 · 0,97 · 0,97 · 0,97 · **0,98** | 0,88 · 0,88 · 0,95 · 0,95 · 0,93 · 0,95 · 0,95 · 0,92 · 0,97 · **0,98** | 0,000 [−0,05 ; +0,05] |
+| **5 chiffres** | 0,15 | 0,62 · 0,70 · 0,75 · **0,80** · 0,73 · 0,73 · 0,75 · 0,72 · 0,72 · **0,68** | 0,55 · 0,47 · 0,52 · 0,47 · 0,52 · 0,43 · 0,42 · 0,45 · 0,38 · **0,32** | **+0,367** [+0,217 ; +0,517] — **S1 passe** |
+| **6 chiffres** | 0,03 | 0,48 · 0,38 · 0,45 · 0,38 · 0,37 · 0,35 · 0,32 · 0,33 · 0,37 · **0,37** | 0,35 · 0,28 · 0,32 · 0,30 · 0,27 · 0,27 · 0,25 · 0,25 · 0,25 · **0,23** | **+0,133** [+0,050 ; +0,217] — **S2 passe** |
+
+**S3 passe.** Longueur (en chiffres) des propositions promues, tour par tour, pour le
+plafond 8 :
+
+| tour | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| promues | 4 ×12 | 6 ×3, 5 | 7 ×4, 6, 4 | 7, 6 ×2, 5 | 7, 6 | 4 | 8, 7, 5 ×2 | 8, 7, 6 ×3 | 7, 5 ×2 | 7 ×2, 5, 3 |
+
+Parmi les propositions valides, celles à trois chiffres passent de 87 sur 104 au tour 1 à
+9 sur 105 au tour 10.
+
+**Gardes.** Le banc du générateur finit à 0,95 (plafond 8), exactement le seuil, contre
+0,983 au plafond 4. ΔBPB vaut +0,371, contre +0,377 au plafond 4. La validité reste
+≥ 0,66 à chaque tour.
+
+**Ce que la graine 0 montre.**
+1. **La boucle franchit l'ancien plafond quand les règles le permettent, sans tâche
+   humaine.** Le proposeur monte (4 → 6 → 7 → 8 chiffres promus), et le solveur garde
+   sur cinq chiffres un gain que le témoin perd.
+2. **Sans propositions au-delà, le progrès s'érode.** Au plafond 4, la généralisation
+   du tour 1 (0,55 sur cinq chiffres) retombe à 0,32 : la boucle se spécialise sur ce
+   qu'elle voit. Au plafond 8, elle tient entre 0,68 et 0,80.
+3. **Deux murs.**
+   - **La marche à six chiffres plafonne vers 0,35.** Le proposeur promeut des nombres
+     de 6 à 8 chiffres, mais un seul opérande à la fois ; le banc en combine deux, et
+     leurs produits vont jusqu'à 12 chiffres. Diagnostic à faire.
+   - **L'oubli de la langue croît avec les tours** : ΔBPB +0,10 à 5 tours (SI-1c), +0,37
+     à 10 tours, **dans les deux bras**. Ce n'est pas l'effet de proposer. C'est la
+     condition C4 (docs/35) qui devient le mur d'une boucle longue.
