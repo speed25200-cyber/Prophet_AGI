@@ -520,3 +520,55 @@ réplication et SI-1c, **six runs** donnent la même règle, sans exception :
   l'entraînement ;
 - (d) le plafond des règles : quatre chiffres, et l'axe des opérateurs, que la
   récompense ne paie pas.
+
+## Amendement 5 — 2026-09-23, après SI-1c : SI-8a, pré-enregistrée — relever le plafond des règles
+
+**La question du but, posée directement** : quand les règles le permettent, la frontière
+continue-t-elle d'avancer ? Aux graines 0 et 1, la boucle a appris les nombres de quatre
+chiffres, **le plafond des règles** (`\d{1,4}`). Si ce plafond est relevé, une boucle qui
+s'améliore elle-même devrait monter la marche suivante (cinq chiffres, puis six), toujours
+sans tâche humaine.
+
+**Trois ajouts**, chacun lu par le code et testé :
+- `--calc-max-digits` (`calc_rules`, `validate(max_digits=)`) : le plafond des règles de
+  proposition ; 4 par défaut, c'est-à-dire les règles de SI-1 exactement ;
+- `make_hard_calc_digits(digits=)` et `make_bench` : les bancs `calc-digits5` à
+  `calc-digits8`, deux opérandes de *d* chiffres, graines 17 et 19 ;
+- `--extra-bench` : ces bancs mesurés **à chaque tour**, pour lire la marche tour par tour
+  plutôt que sur le dernier checkpoint.
+
+**SI-8a.** La seule variable est `--calc-max-digits 8`. Tout le reste reprend la recette de
+SI-1c :
+- 120 propositions par tour, fins de mot sur les reprises, amorces déjà calibrées ;
+- mais **10 tours** au lieu de 5 : SI-8 porte sur la pente ;
+- bancs à chaque tour : `calc-digits` (4 chiffres), `calc-digits5`, `calc-digits6`.
+
+Deux bras par graine :
+- **plafond 8** ;
+- **plafond 4** (témoin) : le même run avec les règles d'avant. Il sépare « proposer des
+  nombres de cinq chiffres » de « généraliser depuis quatre ».
+
+Graine 0 d'abord, puis graine 1, les deux graines où le mécanisme a démarré en SI-1c.
+Environ 2 h de CPU par bras.
+
+**Critères**, à chaque graine :
+
+| | Critère |
+|---|---|
+| **S1** (une marche) | banc à cinq chiffres au tour 10 : différence plafond 8 − plafond 4, tâche par tâche, intervalle bootstrap à 95 % excluant zéro |
+| **S2** (deux marches) | la même chose sur le banc à six chiffres |
+| **S3** (le proposeur monte) | au moins une proposition promue a un entier de plus de quatre chiffres |
+| garde | banc du générateur ≥ 0,95 ; ΔBPB du bras plafond 8 ≤ celui du témoin + 0,02 ; validité ≥ 0,5 à chaque tour |
+
+Sont rapportés en plus :
+- le tour où chaque banc dépasse 0,5 ;
+- la distribution des longueurs de nombres proposés, tour par tour.
+
+**Lecture pré-écrite.**
+- **S1 et S2 passent** : la boucle franchit l'ancien plafond sur deux marches, sans tâche
+  humaine. Ce serait la première marche d'escalier mesurée dans ce dépôt.
+- **S1 passe, S2 échoue** : une marche. On nomme ce qui arrête la seconde : la rareté
+  des propositions, une reprise qui ne rattrape pas, ou une récompense qui s'éteint.
+- **S1 échoue** : relever le plafond ne fait pas bouger la boucle. Soit le proposeur
+  n'écrit pas de nombres de cinq chiffres, soit la reprise ne les rattrape pas ; le
+  tableau de S3 le dira.

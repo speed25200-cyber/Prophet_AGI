@@ -44,11 +44,18 @@ __all__ = [
     "make_hard",
     "make_hard_calc",
     "make_hard_calc_digits",
+    "CALC_MAX_DIGITS",
+    "OOD_BENCHES",
+    "calc_rules",
+    "make_bench",
 ]
 
 FAMILIES = ("lookup", "calc")
 CALC_EXPRESSION = re.compile(r"^\d{1,4}( [+*-] \d{1,4}){1,3}$")
 CALC_MAX_LENGTH = 32
+CALC_MAX_DIGITS = 4
+"""The rules' ceiling on an integer's digits; SI-1 to SI-1c ran under it, docs/39
+amendment 5 raises it (``calc_rules``)."""
 GENERATOR_OPERANDS = (10, 998)
 """The calc generator draws two integers in this range, one operator (tasks._make_calc)."""
 FORMATS = ("lists", "object")
@@ -199,10 +206,21 @@ def propose_registry(family: str, fmt: str = "lists") -> ToolRegistry:
     return reg
 
 
-def validate(family: str, args: Any) -> Spec | CalcSpec | str:
+def calc_rules(max_digits: int = CALC_MAX_DIGITS) -> tuple[re.Pattern[str], int]:
+    """The calc expression pattern and length cap for integers of up to ``max_digits``
+    digits. The default is exactly the rules of SI-1 (docs/39 §2)."""
+    if max_digits < 1:
+        raise ValueError(f"max_digits must be positive, got {max_digits}")
+    if max_digits == CALC_MAX_DIGITS:
+        return CALC_EXPRESSION, CALC_MAX_LENGTH
+    pattern = re.compile(rf"^\d{{1,{max_digits}}}( [+*-] \d{{1,{max_digits}}}){{1,3}}$")
+    return pattern, max(CALC_MAX_LENGTH, 4 * max_digits + 9)
+
+
+def validate(family: str, args: Any, *, max_digits: int = CALC_MAX_DIGITS) -> Spec | CalcSpec | str:
     """The rules. Returns a :class:`Spec` (or :class:`CalcSpec`), or the reason the proposal
     is refused. None of these is a judgement of interest or difficulty: only what a task
-    must be to exist."""
+    must be to exist. ``max_digits`` is the calc rules' ceiling (``calc_rules``)."""
     if family not in FAMILIES:
         return f"no proposal grammar for family {family!r}"
     if not isinstance(args, dict):
@@ -212,8 +230,12 @@ def validate(family: str, args: Any) -> Spec | CalcSpec | str:
         if not isinstance(expression, str):
             return "missing or non-string expression"
         expression = expression.strip()
-        if len(expression) > CALC_MAX_LENGTH or not CALC_EXPRESSION.match(expression):
-            return "expression must be 2 to 4 integers of 1 to 4 digits joined by ' + ', ' - ' or ' * '"
+        pattern, cap = calc_rules(max_digits)
+        if len(expression) > cap or not pattern.match(expression):
+            return (
+                f"expression must be 2 to 4 integers of 1 to {max_digits} digits joined by "
+                "' + ', ' - ' or ' * '"
+            )
         if _safe_calc(expression).startswith("error"):
             return "the executor refuses the expression"
         return CalcSpec("calc", expression)
@@ -374,20 +396,24 @@ def make_hard_calc(n: int, *, seed: int = 0) -> list[Task]:
     return tasks
 
 
-def make_hard_calc_digits(n: int, *, seed: int = 0) -> list[Task]:
+def make_hard_calc_digits(n: int, *, seed: int = 0, digits: int = 4) -> list[Task]:
     """A second out-of-distribution calc bench (docs/39 amendment 2): two operands of four
-    digits, which the generator never writes either (it draws 10 to 998). The axis a
-    retry can rescue -- a copy cut inside a number -- where ``make_hard_calc`` measures
-    the third operand. Same template, tool and verifier as ``calc``."""
-    rng = random.Random(f"calc-digits-{seed}")
+    digits -- or ``digits`` (amendment 5) -- which the generator never writes (it draws 10
+    to 998). The axis a retry can rescue -- a copy cut inside a number -- where
+    ``make_hard_calc`` measures the third operand. Same template, tool and verifier as
+    ``calc``. Four digits keeps the names and draws of amendment 2."""
+    if digits < 4:
+        raise ValueError("the generator already writes integers of up to three digits")
+    tag = "calc-digits" if digits == 4 else f"calc-digits{digits}"
+    rng = random.Random(f"{tag}-{seed}")
     tasks = []
     for i in range(n):
-        a, b = (rng.randrange(1000, 10000) for _ in range(2))
+        a, b = (rng.randrange(10 ** (digits - 1), 10**digits) for _ in range(2))
         expression = f"{a} {rng.choice('+-*')} {b}"
         goal = f"Compute {expression} with the calc tool, note the result, then finish."
         tasks.append(
             Task(
-                f"calc-digits-{seed}-{i}",
+                f"{tag}-{seed}-{i}",
                 "calc",
                 goal,
                 _safe_calc(expression),
@@ -396,6 +422,22 @@ def make_hard_calc_digits(n: int, *, seed: int = 0) -> list[Task]:
             )
         )
     return tasks
+
+
+OOD_BENCHES = ("calc-hard", "calc-digits") + tuple(f"calc-digits{d}" for d in range(5, 9))
+"""The out-of-distribution calc benches by name: three operands, and two operands of 4
+(``calc-digits``) to 8 digits."""
+
+
+def make_bench(name: str, n: int, *, seed: int = 0) -> list[Task]:
+    """An out-of-distribution bench of ``OOD_BENCHES`` by name."""
+    if name == "calc-hard":
+        return make_hard_calc(n, seed=seed)
+    if name == "calc-digits":
+        return make_hard_calc_digits(n, seed=seed)
+    if name in OOD_BENCHES:
+        return make_hard_calc_digits(n, seed=seed, digits=int(name.removeprefix("calc-digits")))
+    raise KeyError(f"no out-of-distribution bench named {name!r}")
 
 
 def make_hard(family: str, n: int, *, seed: int = 0) -> list[Task]:

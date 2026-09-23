@@ -229,3 +229,49 @@ def test_the_calc_digits_bench_has_two_four_digit_operands_and_is_deterministic(
         assert len(left) == len(right) == 4 and op in "+-*"
         assert task.family == "calc" and task.answer == str(eval(task.extra["expression"]))  # noqa: S307
         assert novel(CalcSpec("calc", task.extra["expression"]), [])
+
+
+def test_calc_rules_ceiling_and_the_benches_by_digits():
+    """docs/39 amendment 5: the rules' ceiling on digits can be raised; the default is the
+    rules of SI-1 exactly, and the benches of d digits are named and deterministic."""
+    from prophet.agent.propose import (
+        CALC_EXPRESSION,
+        CALC_MAX_LENGTH,
+        OOD_BENCHES,
+        CalcSpec,
+        calc_rules,
+        make_bench,
+        make_hard_calc,
+        make_hard_calc_digits,
+    )
+
+    assert calc_rules() == (CALC_EXPRESSION, CALC_MAX_LENGTH)
+    big = {"expression": "123456 + 7"}
+    assert isinstance(validate("calc", big), str)
+    assert validate("calc", big, max_digits=6) == CalcSpec("calc", "123456 + 7")
+    assert isinstance(validate("calc", {"expression": "1234567 + 7"}, max_digits=6), str)
+    longest = " * ".join(["99999999"] * 4)
+    assert validate("calc", {"expression": longest}, max_digits=8) == CalcSpec("calc", longest)
+    with pytest.raises(ValueError):
+        calc_rules(0)
+    # Four digits keeps amendment 2's names and draws; the others are new streams.
+    assert [t.goal for t in make_bench("calc-digits", 5, seed=17)] == [
+        t.goal for t in make_hard_calc_digits(5, seed=17)
+    ]
+    assert [t.goal for t in make_bench("calc-hard", 3, seed=19)] == [
+        t.goal for t in make_hard_calc(3, seed=19)
+    ]
+    for d in range(5, 9):
+        tasks = make_bench(f"calc-digits{d}", 10, seed=17)
+        assert [t.goal for t in tasks] == [
+            t.goal for t in make_bench(f"calc-digits{d}", 10, seed=17)
+        ]
+        for task in tasks:
+            left, _, right = task.extra["expression"].split()
+            assert len(left) == len(right) == d and task.name.startswith(f"calc-digits{d}-17-")
+            assert task.answer == str(eval(task.extra["expression"]))  # noqa: S307
+    assert len(OOD_BENCHES) == 6
+    with pytest.raises(KeyError):
+        make_bench("calc-digits9", 1)
+    with pytest.raises(ValueError):
+        make_hard_calc_digits(1, digits=3)

@@ -54,7 +54,10 @@ from prophet.agent.loop import (
     AgentLoop,  # noqa: E402
 )
 from prophet.agent.propose import (  # noqa: E402
+    CALC_MAX_DIGITS,
     FORMATS,
+    OOD_BENCHES,
+    make_bench,
     make_hard,
     novel,
     proposal_trajectory,
@@ -92,6 +95,7 @@ PROPOSE_COPY_KEYS = {"none": (), "ask": ("ask",)}
 """--propose-copy -> the proposal keys the copy pointer may fill. Decoding and training
 both read it: the gate is trained on a proposal only where the proposer asks it."""
 GATE_KEYS: dict[str, tuple[str, ...]] | None = None  # set by main(); read by train_rows
+MAX_DIGITS = CALC_MAX_DIGITS  # set by main() from --calc-max-digits; read by propose_round
 ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean", "closed-propose")
 BENCH_SEEDS = (7, 11)
 HARD_BENCH_SEEDS = (17, 19)  # the out-of-distribution bench of docs/33, never trained on
@@ -268,6 +272,7 @@ def evaluate(
     device: str = "cpu",
     hard: bool = False,
     hard_family: str = "lookup",
+    extra: tuple[str, ...] = (),
 ) -> dict:
     """The benches of every family (family-major, then the bench seeds), their mean, the
     mean per family, and the held-out bits per byte; with ``hard``, the out-of-distribution
@@ -317,6 +322,26 @@ def evaluate(
         ]
         measured["bench_hard"] = hard_benches
         measured["success_hard"] = sum(b["success_rate"] for b in hard_benches) / len(hard_benches)
+    # Further out-of-distribution benches, every round (docs/39 amendment 5: a staircase is
+    # read round by round, not from the last checkpoint).
+    if extra:
+        measured["bench_extra"] = {}
+        for name in extra:
+            runs = [
+                bench_family(
+                    model,
+                    tokenizer,
+                    "calc",
+                    n_tasks=bench_tasks,
+                    seed=s,
+                    tasks=make_bench(name, bench_tasks, seed=s),
+                )
+                for s in HARD_BENCH_SEEDS
+            ]
+            measured["bench_extra"][name] = {
+                "success": sum(b["success_rate"] for b in runs) / len(runs),
+                "verified": [v for b in runs for v in b["verified"]],
+            }
     return measured
 
 
@@ -617,7 +642,7 @@ def propose_round(
             span = getattr(step, "span", "") if action is None else action.name
             samples.append({"verdict": "malformed", "span": span})
             continue
-        verdict = validate(family, action.args)
+        verdict = validate(family, action.args, max_digits=MAX_DIGITS)
         if isinstance(verdict, str):
             counts["invalid"] += 1
             samples.append({"verdict": "invalid", "reason": verdict, "args": action.args})
@@ -877,6 +902,19 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="also measure the out-of-distribution lookup bench of docs/33 every round",
     )
+    ap.add_argument(
+        "--calc-max-digits",
+        type=int,
+        default=CALC_MAX_DIGITS,
+        help="the calc proposal rules' ceiling on an integer's digits (docs/39 amendment 5)",
+    )
+    ap.add_argument(
+        "--extra-bench",
+        default="",
+        help="comma-separated out-of-distribution benches measured every round, among "
+        + ", ".join(OOD_BENCHES)
+        + " (docs/39 amendment 5)",
+    )
     ap.add_argument("--bench-tasks", type=int, default=40)
     ap.add_argument("--bpb-docs", type=int, default=200)
     ap.add_argument("--seq-len", type=int, default=512)
@@ -900,7 +938,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     global NO_REPEAT_ACTION, NO_REPEAT_EMITTED, SAMPLE_COPY, COPY_BOUNDARIES, GATE_KEYS
-    global COPY_END_BOUNDARIES
+    global COPY_END_BOUNDARIES, MAX_DIGITS
     NO_REPEAT_ACTION = bool(args.no_repeat_action)
     NO_REPEAT_EMITTED = bool(args.no_repeat_emitted)
     if NO_REPEAT_EMITTED and not NO_REPEAT_ACTION:
@@ -908,6 +946,12 @@ def main(argv: list[str] | None = None) -> int:
     SAMPLE_COPY = bool(args.sample_copy)
     COPY_BOUNDARIES = args.copy_boundaries
     COPY_END_BOUNDARIES = args.copy_end_boundaries
+    if not 4 <= args.calc_max_digits <= 8:
+        ap.error("--calc-max-digits from 4 (the rules of SI-1) to 8")
+    MAX_DIGITS = args.calc_max_digits
+    extra_benches = tuple(b for b in args.extra_bench.split(",") if b)
+    if set(extra_benches) - set(OOD_BENCHES):
+        ap.error(f"--extra-bench takes names among {', '.join(OOD_BENCHES)}")
     if args.rounds < 0 or args.tasks_per_round < 1 or args.attempts < 1 or args.steps_per_round < 0:
         ap.error("rounds >= 0, tasks and attempts >= 1, steps >= 0")
     if not 0 <= args.replay_fraction < 1:
@@ -994,6 +1038,10 @@ def main(argv: list[str] | None = None) -> int:
         protocol["copy_boundaries"] = args.copy_boundaries
     if args.copy_end_boundaries != "off":
         protocol["copy_end_boundaries"] = args.copy_end_boundaries
+    if args.calc_max_digits != CALC_MAX_DIGITS:
+        protocol["calc_max_digits"] = args.calc_max_digits
+    if extra_benches:
+        protocol["extra_bench"] = list(extra_benches)
     if args.arm == "closed-propose":
         protocol["propose"] = {"n": propose_n}
     if args.propose_amorce:
@@ -1041,6 +1089,8 @@ def main(argv: list[str] | None = None) -> int:
             line["canonical"] = entry["canonical_by_family"]
         if "success_hard" in entry:
             line["hard"] = entry["success_hard"]
+        if entry.get("bench_extra"):
+            line["extra"] = {k: round(v["success"], 3) for k, v in entry["bench_extra"].items()}
         if (entry.get("generation") or {}).get("proposals"):
             p = entry["generation"]["proposals"]
             line["proposals"] = {k: p[k] for k in ("valid", "solved_retry", "promoted")}
@@ -1185,6 +1235,7 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             hard=args.hard_bench,
             hard_family=families[0],
+            extra=extra_benches,
         )
         manager.save({"model": model.state_dict(), "step": 0}, 0)
         probe = None
@@ -1431,6 +1482,7 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             hard=args.hard_bench,
             hard_family=families[0],
+            extra=extra_benches,
         )
         compute += generation["seconds"] + (train["seconds"] if train else 0.0)
         compute += klpo["seconds"] if klpo else 0.0

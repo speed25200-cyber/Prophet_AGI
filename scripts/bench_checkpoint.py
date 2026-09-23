@@ -19,14 +19,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from prophet.agent.propose import make_hard_calc, make_hard_calc_digits  # noqa: E402
+from prophet.agent.propose import OOD_BENCHES, make_bench  # noqa: E402
 from prophet.config import ProphetConfig  # noqa: E402
 from prophet.data.tokenizer import ProphetTokenizer  # noqa: E402
 from prophet.modeling.model import ProphetModel  # noqa: E402
 from prophet.train.checkpoint import CheckpointManager  # noqa: E402
 from scripts import closed_loop  # noqa: E402
-
-BENCHES = {"calc-hard": make_hard_calc, "calc-digits": make_hard_calc_digits}
 
 
 def main(argv: list[str] | None = None) -> dict:
@@ -36,7 +34,7 @@ def main(argv: list[str] | None = None) -> dict:
     ap.add_argument(
         "--checkpoints", type=Path, help="checkpoint directory (default: RUN/checkpoints)"
     )
-    ap.add_argument("--bench", choices=sorted(BENCHES), required=True)
+    ap.add_argument("--bench", choices=OOD_BENCHES, required=True)
     ap.add_argument("--seeds", default="17,19")
     ap.add_argument("--n", type=int, default=30, help="tasks per seed")
     args = ap.parse_args(argv)
@@ -53,7 +51,7 @@ def main(argv: list[str] | None = None) -> dict:
     model.eval()
     verified: list[bool] = []
     for seed in (int(s) for s in args.seeds.split(",")):
-        tasks = BENCHES[args.bench](args.n, seed=seed)
+        tasks = make_bench(args.bench, args.n, seed=seed)
         record = closed_loop.bench_family(
             model, tokenizer, "calc", n_tasks=args.n, seed=seed, tasks=tasks
         )

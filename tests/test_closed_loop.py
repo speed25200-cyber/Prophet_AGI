@@ -1141,3 +1141,47 @@ def test_bench_checkpoint_replays_the_runs_greedy_bench_on_an_ood_set(work, tmp_
     assert closed_loop.COPY_END_BOUNDARIES == "explore" and closed_loop.NO_REPEAT_ACTION is False
     with pytest.raises(SystemExit):
         bench_checkpoint.main(["--work", str(work), "--run", str(out), "--bench", "nope"])
+
+
+def test_the_rules_ceiling_and_the_extra_benches_are_read_and_recorded(work, tmp_path, monkeypatch):
+    """docs/39 amendment 5: --calc-max-digits reaches the proposal rules, --extra-bench is
+    measured every round; both enter protocol.json only when set, and nonsense is refused."""
+    import types
+
+    from prophet.agent import loop as loop_module
+    from prophet.agent.actions import Action
+    from scripts.closed_loop import propose_round
+
+    out = tmp_path / "extra"
+    rounds = run(work, out, "frozen", rounds=0, calc_max_digits=6, extra_bench="calc-digits5")
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["calc_max_digits"] == 6 and protocol["extra_bench"] == ["calc-digits5"]
+    extra = rounds[0]["bench_extra"]["calc-digits5"]
+    assert 0.0 <= extra["success"] <= 1.0 and len(extra["verified"]) == 2 * 2  # 2 seeds x 2
+    plain = tmp_path / "plain"
+    rounds = run(work, plain, "frozen", rounds=0)
+    protocol = json.loads((plain / "protocol.json").read_text())
+    assert "calc_max_digits" not in protocol and "extra_bench" not in protocol
+    assert "bench_extra" not in rounds[0]
+    for bad in (["--calc-max-digits", "3"], ["--extra-bench", "calc-digits9"]):
+        with pytest.raises(SystemExit):
+            run(
+                work, tmp_path / "bad", "frozen", rounds=0, **{bad[0][2:].replace("-", "_"): bad[1]}
+            )
+
+    # The proposal rules read the ceiling main() set.
+    def fake_run(self, goal, **kw):
+        step = types.SimpleNamespace(
+            action=Action("propose_calc", {"expression": "123456 + 7"}), gated=""
+        )
+        return types.SimpleNamespace(steps=[step], tokens=1)
+
+    monkeypatch.setattr(loop_module.AgentLoop, "run", fake_run)
+    tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
+    model = ProphetModel(agent_tiny_config()).eval()
+    for digits, valid in ((4, 0), (6, 1)):
+        monkeypatch.setattr(closed_loop, "MAX_DIGITS", digits)
+        _, counts = propose_round(
+            model, tokenizer, "calc", 1, seen=set(), amorce_specs=[], temperature=0.7, round_index=1
+        )
+        assert counts["valid"] == valid, digits
