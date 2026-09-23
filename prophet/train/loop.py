@@ -101,6 +101,12 @@ class TrainConfig:
     gate_weight: float | None = None
     jumped_lm_weight: float | None = None
     """Action-head terms (A3); ``None`` takes the model config's ``heads`` weights."""
+    gate_keys: dict[str, tuple[str, ...]] | None = None
+    """Tool name -> the top-level argument keys where the decoder asks the copy gate for
+    that tool; its other values train neither gate nor pointers
+    (``build_action_targets``). ``None`` supervises every value of every call. A
+    proposer that decodes without copying must not teach "no copy" under a key its
+    solver copies (docs/39 amendment 1)."""
     """Weight on the halting objective. Zero disables it; the model config's
     ``recurrent.halting_loss_weight`` is the value to mirror here when halting is on."""
     ponder_target_steps: float = 4.0
@@ -291,6 +297,8 @@ class Trainer:
                        "max_wall_seconds", "device"}
         contract = {**{k: v for k, v in asdict(self.cfg).items() if k not in operational},
                     "device_type": self.device.type, "schedule": asdict(self.schedule)}
+        if contract["gate_keys"] is None:
+            del contract["gate_keys"]  # added later: checkpoints saved before it still resume
         if self.distillation is not None:
             contract["distillation"] = self.distillation.fingerprint()
         if self._run_identity is not None:
@@ -473,7 +481,9 @@ class Trainer:
                     forward_kw = dict(loop_k=k, token_depth=self.token_depth(batch, k))
                 action_targets = None
                 if self._action:
-                    action_targets = build_action_targets(batch, self.tokenizer)
+                    action_targets = build_action_targets(
+                        batch, self.tokenizer, gate_keys=self.cfg.gate_keys
+                    )
                     forward_kw.update(action_targets.forward_kwargs())
                 if self.cfg.segment_by_bos:
                     forward_kw["segment_ids"] = segment_ids_from_bos(batch, self.tokenizer.bos_id)

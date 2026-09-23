@@ -956,6 +956,9 @@ def test_two_stage_amorce_is_recorded_once_and_reused_and_the_probe_is_recorded(
         "2",
     ] + argv_extra
     assert main(argv) == 0
+    # The proposer decodes without copying, so its calls train no copy gate (docs/39
+    # amendment 1); the solver's calls train it everywhere.
+    assert closed_loop.GATE_KEYS == {"propose_lookup": ()}
     recorded = json.loads((seed_dir / "seed.json").read_text())
     assert recorded["episodes"]["rows"] == 2 and "proposals" not in recorded
     stage = recorded["proposal_stage"]
@@ -999,3 +1002,36 @@ def test_two_stage_amorce_is_recorded_once_and_reused_and_the_probe_is_recorded(
         == "object"
     )
     assert json.loads((fresh / "seed.json").read_text())["proposal_stage"]["format"] == "object"
+
+
+def test_train_rows_hands_the_gate_keys_to_the_trainer(work, tmp_path, monkeypatch):
+    """main() derives GATE_KEYS from --propose-copy (docs/39 amendment 1); every
+    training call of the run carries it."""
+    captured = []
+
+    class FakeTrainer:
+        def __init__(self, model, loader, tc, **kw):
+            captured.append(tc)
+            self.step, self.skipped_nonfinite = 0, 0
+
+        def train(self):
+            return []
+
+    monkeypatch.setattr(closed_loop, "Trainer", FakeTrainer)
+    monkeypatch.setattr(closed_loop, "GATE_KEYS", {"propose_calc": ()})
+    tokenizer = ProphetTokenizer.load(work / "tokenizer.json")
+    closed_loop.train_rows(
+        None,
+        None,
+        tokenizer,
+        [[1, 2, 3]],
+        work=work,
+        steps=1,
+        seq_len=8,
+        batch_size=1,
+        replay_fraction=0.0,
+        checkpoint_dir=tmp_path,
+        seed=0,
+    )
+    assert [tc.gate_keys for tc in captured] == [{"propose_calc": ()}]
+    assert closed_loop.PROPOSE_COPY_KEYS == {"none": (), "ask": ("ask",)}

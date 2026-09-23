@@ -700,6 +700,29 @@ def test_grammar_refuses_inside_strings_what_json_refuses():
     assert nested.check('{"name":"tag","args":{"items":["a\\u00').viable
 
 
+def test_grammar_refuses_escapes_in_tool_names_and_keys():
+    """docs/39 amendment 1: an incomplete \\u escape in a tool name was viable, though no
+    hex digit completes it into a prefix of any tool. Every calc proposal of the first
+    SI-1 rung died on ``{"name":"propose_\\udde``. Names and keys belong to finite sets
+    the renderer writes without escapes: the grammar refuses any escape there, and
+    keeps accepting escapes in values."""
+    from prophet.agent.propose import propose_schema
+
+    g = ActionGrammar(ToolRegistry([propose_schema("calc")]))
+    for bad in ('{"name":"propose_\\udde', '{"name":"propose_\\u', '{"name":"\\u0070'):
+        assert not g.check(bad).viable, bad
+    assert not g.check('{"\\u006eame"').viable  # the top-level keys too
+    assert not g.check('{"name":"propose_calc","args":{"ex\\u').viable
+    assert not g.check('{"name":"propose_calc","args":{"ex\\u0070').viable
+    full = '{"name":"propose_calc","args":{"expression":"1 + 2\\u0020"}}'
+    assert g.check(full).complete and g.complete(full) is not None
+    state = g.check('{"name":"propose_calc","args":{"expression":"1\\u00')
+    assert state.viable and state.in_string
+    reg = ActionGrammar(registry())
+    assert not reg.check('{"name":"read_file","args":{"pa\\u').viable
+    assert reg.check('{"name":"read_file","args":{"path":"caf\\u00e9.py"}}').complete
+
+
 def test_nested_arrays_and_objects_are_scanned_as_strict_json():
     """docs/33 amendment 9: the container scanner only counted brackets and strings, so
     {"a""b"}, [1 2] or a mismatched bracket were "complete" calls json.loads refuses.

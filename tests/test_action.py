@@ -127,6 +127,44 @@ def test_targets_are_read_off_the_token_stream():
     assert not bool(jumped[nocall_pos])
 
 
+def test_gate_keys_train_the_gate_only_where_the_decoder_asks_it():
+    """docs/39 amendment 1: a proposer decodes without copying, yet its calls trained the
+    copy gate to "no copy" under ``expression`` -- the key the calc solver copies -- and
+    50 amorce steps closed the solver's gate: 1.0 -> 0.0 on its bench, the same invented
+    expression written for every task. ``gate_keys`` names where a tool's gate is asked;
+    elsewhere its values keep the language-model loss and train no gate, no pointer."""
+    from prophet.agent.propose import propose_schema
+
+    reg = ToolRegistry()
+    reg.add(ToolSchema("calc", "Compute", {
+        "type": "object", "properties": {"expression": {"type": "string"}},
+        "required": ["expression"],
+    }))
+    reg.add(propose_schema("calc"))
+    text = (
+        "<|system|>Goal: compute 12 + 3\n" + reg.render() + "<|assistant|>"
+        + '<|call|>{"name":"propose_calc","args":{"expression":"12 + 3"}}<|/call|>'
+        + "<|tool|>ok<|assistant|>"
+        + '<|call|>{"name":"calc","args":{"expression":"12 + 3"}}<|/call|>'
+    )
+    batch = torch.tensor([TOK.encode(text, parse_special=True)])
+    every = build_action_targets(batch, TOK)
+    assert every.gate_target.tolist() == [[1.0, 1.0]]
+    assert every.counts == {"decisions": 2, "calls_matched": 2, "values": 2, "copyable": 2}
+    asked = build_action_targets(batch, TOK, gate_keys={"propose_calc": ()})
+    assert asked.gate_target.tolist() == [[1.0]]  # the solver's call only
+    assert asked.counts == {"decisions": 2, "calls_matched": 2, "values": 1, "copyable": 1}
+    assert asked.gate_positions.tolist() == every.gate_positions[:, 1:].tolist()
+    assert asked.copy_positions.tolist() == every.copy_positions[:, 1:].tolist()
+    # The proposal's value is still generated, so it keeps the language-model loss.
+    assert torch.equal(asked.jumped, every.jumped)
+    assert asked.selection.tolist() == every.selection.tolist()
+    # A key the decoder asks is supervised as before.
+    ask = build_action_targets(batch, TOK, gate_keys={"propose_calc": ("expression",)})
+    assert ask.gate_target.tolist() == every.gate_target.tolist()
+    assert ask.copy_start.tolist() == every.copy_start.tolist()
+
+
 def test_unknown_tool_name_selects_none_and_a_truncated_call_is_unsupervised():
     text = '<|tool_def|>{"name":"a"}<|/tool_def|><|call|>{"name":"zzz","args":{}}<|/call|><|call|>{"name":"a"'
     t = build_action_targets(torch.tensor([TOK.encode(text, parse_special=True)]), TOK)
@@ -224,6 +262,34 @@ def test_trainer_needs_the_tokenizer_and_then_trains_a_step(tmp_path):
     assert trainer.cfg.sel_weight == cfg.heads.sel_loss_weight
     history = trainer.train(max_steps=1)
     assert history and "loss/action" in history[-1].extra
+
+
+def test_trainer_passes_gate_keys_and_keeps_old_contracts(tmp_path, monkeypatch):
+    """TrainConfig.gate_keys reaches build_action_targets; unset, it stays out of the
+    training contract, so a checkpoint saved before the field existed still resumes."""
+    import prophet.train.loop as train_loop
+
+    cfg = _cfg()
+    ids, _ = _stream()
+    seen = []
+    real = train_loop.build_action_targets
+
+    def spy(batch, tokenizer, *, gate_keys=None):
+        seen.append(gate_keys)
+        return real(batch, tokenizer, gate_keys=gate_keys)
+
+    monkeypatch.setattr(train_loop, "build_action_targets", spy)
+    loader = StreamingLoader(sources_from_iterables({"a": (1.0, [ids] * 4)}), seq_len=len(ids))
+    keys = {"read_file": ("path",)}
+    tc = TrainConfig(total_steps=1, seq_len=len(ids), checkpoint_dir=str(tmp_path), device="cpu",
+                     gate_keys=keys)
+    trainer = Trainer(ProphetModel(cfg), loader, tc, model_config=cfg, tokenizer=TOK)
+    trainer.train(max_steps=1)
+    assert seen == [keys]
+    assert trainer.training_contract()["gate_keys"] == keys
+    plain = Trainer(ProphetModel(cfg), loader, dataclasses.replace(tc, gate_keys=None),
+                    model_config=cfg, tokenizer=TOK)
+    assert "gate_keys" not in plain.training_contract()
 
 
 # --------------------------------------------------------------------------------------

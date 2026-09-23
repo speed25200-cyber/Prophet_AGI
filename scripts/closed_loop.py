@@ -87,6 +87,10 @@ SAMPLE_COPY = False  # set by main() from --sample-copy; generation only (the be
 NO_REPEAT_ACTION = False  # set by main() from --no-repeat-action; read by generation_config callers
 NO_REPEAT_EMITTED = False  # set by main() from --no-repeat-emitted; bench and generation alike
 COPY_BOUNDARIES = "off"  # set by main() from --copy-boundaries; bench and generation alike
+PROPOSE_COPY_KEYS = {"none": (), "ask": ("ask",)}
+"""--propose-copy -> the proposal keys the copy pointer may fill. Decoding and training
+both read it: the gate is trained on a proposal only where the proposer asks it."""
+GATE_KEYS: dict[str, tuple[str, ...]] | None = None  # set by main(); read by train_rows
 ARMS = ("closed", "oracle", "frozen", "closed-klpo", "closed-clean", "closed-propose")
 BENCH_SEEDS = (7, 11)
 HARD_BENCH_SEEDS = (17, 19)  # the out-of-distribution bench of docs/33, never trained on
@@ -202,6 +206,7 @@ def train_rows(
         device=device,
         mtp_weight=0.0,
         seed=seed,
+        gate_keys=GATE_KEYS,
     )
     trainer = Trainer(model, loader, tc, model_config=cfg, tokenizer=tokenizer)
     started = time.time()
@@ -570,10 +575,11 @@ def propose_round(
     cfg.sample_scope = "values"  # structure greedy, values drawn (docs/33 amendment 2)
     cfg.decoder_widen = True
     cfg.sample_topk = PROPOSE_SAMPLE_TOPK  # docs/33 amendment 4
-    cfg.allow_copy = False  # values are invented, not read from the prompt (amendment 5)
-    if copy == "ask":
-        # ...except ask, a reference to a key just written (amendment 10).
-        cfg.allow_copy, cfg.copy_keys = True, ("ask",)
+    # Values are invented, not read from the prompt (amendment 5), except ask with
+    # --propose-copy ask, a reference to a key just written (amendment 10).
+    cfg.allow_copy = bool(PROPOSE_COPY_KEYS[copy])
+    if cfg.allow_copy:
+        cfg.copy_keys = PROPOSE_COPY_KEYS[copy]
     cfg.ordered_keys = True  # keys in schema order, as rendered (amendment 6)
     # A proposal call is ~60 tokens; the bench's 64-token action budget cut nearly every
     # sampled one (docs/33 amendment 1).
@@ -874,7 +880,7 @@ def main(argv: list[str] | None = None) -> int:
         "--klpo-temperature", type=float, default=1.0, help="sampling temperature of the KLPO arm"
     )
     args = ap.parse_args(argv)
-    global NO_REPEAT_ACTION, NO_REPEAT_EMITTED, SAMPLE_COPY, COPY_BOUNDARIES
+    global NO_REPEAT_ACTION, NO_REPEAT_EMITTED, SAMPLE_COPY, COPY_BOUNDARIES, GATE_KEYS
     NO_REPEAT_ACTION = bool(args.no_repeat_action)
     NO_REPEAT_EMITTED = bool(args.no_repeat_emitted)
     if NO_REPEAT_EMITTED and not NO_REPEAT_ACTION:
@@ -886,6 +892,9 @@ def main(argv: list[str] | None = None) -> int:
     if not 0 <= args.replay_fraction < 1:
         ap.error("replay fraction in [0, 1)")
     families = args.family or ["calc"]
+    # A proposal call trains the copy gate only under the keys its decoder asks
+    # (docs/39 amendment 1); every other call, the solver's included, at every value.
+    GATE_KEYS = {f"propose_{family}": PROPOSE_COPY_KEYS[args.propose_copy] for family in families}
     bench_families = args.bench_family or list(families)
     if len(set(families)) != len(families) or len(set(bench_families)) != len(bench_families):
         ap.error("a family is named once")

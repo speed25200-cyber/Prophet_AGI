@@ -65,7 +65,7 @@ third_party/    Copies de référence non modifiées (KLPO), empreintes et commi
 
 ## Ce que ce dépôt a appris à ses dépens
 
-Vingt-trois défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
+Vingt-cinq défauts **silencieux** ont été trouvés en construisant — chacun s'entraînait
 normalement (ou plantait à la première étape sur A100) et aurait produit un modèle fluide
 et faux :
 
@@ -94,6 +94,8 @@ et faux :
 | Grammaire d'action déclarant viable une chaîne contenant un retour à la ligne brut ou un échappement inconnu, que `json.loads` refuse toujours : le span était mort dès ce jeton et le décodeur le poursuivait jusqu'au bout du budget (27 propositions sur 30 malformées au premier barreau) ; un test consacrait même une tabulation brute « complète » | la sonde de propositions enregistrant chaque span (docs/33 amendements 7–8) ; la grammaire refuse ce que JSON refuse, testé contre `json.loads` |
 | `no_repeat_action` interdisant au pas suivant l'action *inscrite* : un `done` refusé est inscrit comme le `verify` qui le remplace, et le modèle réémettait `done`, refusé encore — 16 échecs sur 20 au banc, lus comme « une étape que la politique n'émet pas » | un diagnostic en lecture seule du banc glouton (docs/32 §24) ; `no_repeat_emitted` : 0,667 → 0,967 à poids égaux, ce mode 16 → 0 |
 | Miniatures CPU à *d* = 64 entraînées avec `init_std` 0,02, des embeddings liés et du GQA : l'attention y apprend une consultation sur 1 graine sur 4 (un transformeur minimal : 4 sur 4), et les bras à attention échouaient pour cette seule raison ; `FeedForwardConfig.activation` n'était lu par rien | les contrôles ratés de docs/36–37, puis un balayage ingrédient par ingrédient sur 4 graines (docs/38) ; `design_warnings()` signale ce régime, `validate()` refuse une activation non construite |
+| Grammaire admettant un échappement `\u` incomplet dans un **nom d'outil** : aucun chiffre ne le complète en préfixe d'un nom, et 30 propositions sur 30 mouraient sur `{"name":"propose_\udde` | la sonde de propositions du premier barreau SI-1 (docs/39 amendement 1) ; noms et clés refusent tout échappement, les valeurs les gardent |
+| Propositions entraînant la porte de copie à « ne pas copier » alors que le proposeur décode sans copie, sous `expression`, la clé que le solveur `calc` copie : 50 pas d'amorce, banc du solveur 1,0 → 0,0, la même expression inventée écrite pour chaque tâche | rejouer le banc du checkpoint avec la grammaire corrigée, puis lire la porte (docs/39 amendement 1) ; `TrainConfig.gate_keys` : la porte n'est entraînée que là où le décodeur l'interroge |
 
 **Règle qui en découle :** un champ de configuration que rien ne lit est un bug, pas une
 réserve. Toute nouvelle option doit être lue par le code qui l'honore *et* couverte par

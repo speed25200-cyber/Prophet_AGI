@@ -304,7 +304,7 @@ class ActionGrammar:
             return PrefixState(True)
         # "name"
         i = self._ws(s, i)
-        key, i = _scan_string(s, i)
+        key, i = _scan_string(s, i, identifier=True)
         if key is None:
             return PrefixState(True)
         if key.done and key.value != "name":
@@ -318,7 +318,7 @@ class ActionGrammar:
         if i2 is None:
             return PrefixState(True)
         i = self._ws(s, i2)
-        name, i = _scan_string(s, i)
+        name, i = _scan_string(s, i, identifier=True)
         if name is None:
             return PrefixState(True)
         if not name.done:
@@ -340,7 +340,7 @@ class ActionGrammar:
         if i is None:
             return PrefixState(True)
         i = self._ws(s, i)
-        key, i = _scan_string(s, i)
+        key, i = _scan_string(s, i, identifier=True)
         if key is None:
             return PrefixState(True)
         if not key.done:
@@ -405,7 +405,7 @@ class ActionGrammar:
                 # An empty schema means "no parameters", not "anything goes": the renderer
                 # never writes a key here, so the decoder must not admit one (docs/32, mode c).
                 raise _Dead(f"{schema.name} takes no parameters")
-            key, i = _scan_string(s, i)
+            key, i = _scan_string(s, i, identifier=True)
             if key is None:
                 return seen, i, False, None, False
             if not key.done:
@@ -497,7 +497,11 @@ def _check_string_char(c: str) -> None:
         raise _Dead(f"raw control character {c!r} in a string")
 
 
-def _scan_string(s: str, i: int) -> tuple[_Str | None, int]:
+def _scan_string(s: str, i: int, *, identifier: bool = False) -> tuple[_Str | None, int]:
+    """Scan a JSON string. ``identifier`` marks a tool name or a parameter key: a finite
+    set the renderer writes without escapes. An escape there is refused outright: an
+    incomplete ``\\u`` is otherwise viable while no hex digit completes it into a prefix
+    of any name (docs/39 amendment 1: every calc proposal died on ``"propose_\\udde``)."""
     if i >= len(s):
         return None, i
     if s[i] != '"':
@@ -507,6 +511,8 @@ def _scan_string(s: str, i: int) -> tuple[_Str | None, int]:
     while j < len(s):
         c = s[j]
         if c == "\\":
+            if identifier:
+                raise _Dead("escape in a tool name or a parameter key")
             end = _escape_end(s, j)
             if end is None:
                 return _Str("".join(out), False), j

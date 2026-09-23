@@ -24,6 +24,7 @@ data format exists to drift from the first.
 from __future__ import annotations
 
 import json
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 
 import torch
@@ -185,7 +186,9 @@ def _value_char_span(text: str, start: int, value) -> tuple[int, int] | None:
     return at, at + len(literal)
 
 
-def build_action_targets(ids: Tensor, tokenizer) -> ActionTargets:
+def build_action_targets(
+    ids: Tensor, tokenizer, *, gate_keys: Mapping[str, Collection[str]] | None = None
+) -> ActionTargets:
     """Derive selection, copy and gate targets from a batch of token ids.
 
     For every ``<|call|>`` the JSON up to ``<|/call|>`` is parsed; its ``name`` is
@@ -195,6 +198,13 @@ def build_action_targets(ids: Tensor, tokenizer) -> ActionTargets:
     the call -- the last such occurrence, so a fresh tool result wins over an old one.
     Values that occur but not on token boundaries are not copyable and train the gate
     to say so. ``<|nocall|>`` is a decision with target 0.
+
+    ``gate_keys`` maps a tool name to the top-level argument keys where the decoder asks
+    the copy gate for that tool; its other values train neither the gate nor the
+    pointers (they stay under the language-model loss). Tools it does not name are
+    supervised at every value. A proposer decodes without copying: supervising its gate
+    to "no copy" under ``expression``, the key the calc solver copies, closed the
+    solver's gate (docs/39 amendment 1).
     """
     sid = special_ids()
     open_def, close_def = sid["<|tool_def|>"], sid["<|/tool_def|>"]
@@ -253,13 +263,14 @@ def build_action_targets(ids: Tensor, tokenizer) -> ActionTargets:
                 selections.append(-100)
                 continue
             name = str(call.get("name", ""))
+            asked = None if gate_keys is None else gate_keys.get(name)
             index = next((k + 1 for k, (_, n) in enumerate(schemas) if n == name), 0)
             if index:
                 counts["calls_matched"] += 1
             selections.append(index)
             # Everything inside the call is "jumped" except the argument values.
             jumped[r, t + 1 : j] = True
-            for _, value in _walk_values(call.get("args", {})):
+            for path, value in _walk_values(call.get("args", {})):
                 if isinstance(value, (dict, list)) or value is None:
                     continue
                 span = _value_char_span(text, body_start, value)
@@ -280,8 +291,10 @@ def build_action_targets(ids: Tensor, tokenizer) -> ActionTargets:
                 head = _token_at(spans, lead)
                 if head is None or head < 1:
                     continue
-                counts["values"] += 1
                 jumped[r, first : last + 1] = False
+                if asked is not None and path.split(".")[0].split("[")[0] not in asked:
+                    continue  # the decoder never asks the gate here
+                counts["values"] += 1
                 value_start = head - 1  # the position whose state emits <|copy|> or not
                 literal = text[span[0] : span[1]]
                 # Last token-aligned verbatim occurrence strictly before the call. A

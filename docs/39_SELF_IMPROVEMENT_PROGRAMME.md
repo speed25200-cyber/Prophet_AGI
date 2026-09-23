@@ -86,3 +86,62 @@ qui explorent, `no_repeat_emitted`).
 ## 3. Résultats
 
 *(à venir)*
+
+## Amendement 1 — 2026-09-23, après le premier barreau, avant tout tour entraîné : deux défauts
+
+Le premier barreau (50 pas, *P* = 50, graine 0) est mort, et pour deux raisons sans rapport
+avec la question posée. Les deux sont des défauts du dépôt, corrigés avec leurs tests. Le
+barreau ne compte pas.
+
+**1. La grammaire laissait un nom d'outil commencer un échappement.**
+- La sonde : **30 propositions malformées sur 30**, toutes arrêtées sur le même span,
+  `{"name":"propose_\udde`.
+- Dans une chaîne, la grammaire admettait `\u` incomplet (docs/33 amendement 8). Mais dans
+  un nom d'outil, aucun chiffre hexadécimal ne complète `\udde` en préfixe d'un nom
+  existant. Le span était donc mort dès ce jeton, sous une grammaire qui le disait viable.
+- **Correctif** : un nom d'outil ou une clé d'argument appartient à un ensemble fini que le
+  rendu écrit sans échappement. La grammaire y refuse tout échappement, et continue de les
+  admettre dans les valeurs (`_scan_string(identifier=True)`, test
+  `test_grammar_refuses_escapes_in_tool_names_and_keys`).
+
+**2. Les propositions apprenaient au solveur à ne plus copier.**
+- Le banc du solveur est tombé de **1,0 à 0,0**, et le banc hors distribution de 0,767 à
+  0,0.
+- Rejoué avec la grammaire corrigée, le même checkpoint échoue encore sur les 30 tâches
+  (graine 7), toutes de la même façon : il appelle `calc` avec **la même expression,
+  `548 + 104`**, quelle que soit la tâche, et note 652. L'expression n'est plus copiée du
+  but : elle est générée.
+- **La cause.** Dans une trajectoire de proposition, l'expression est inventée : elle
+  n'apparaît nulle part avant l'appel. `build_action_targets` entraînait donc la porte de
+  copie à « ne pas copier » à cet endroit. Or :
+  - le proposeur décode **sans copie** (`allow_copy = False`, docs/33 amendement 5) : cette
+    supervision entraînait une porte qu'il n'interroge jamais ;
+  - la clé est `expression`, **celle-là même** sous laquelle le solveur copie l'expression
+    du but.
+
+  Cinquante pas ont suffi à fermer la porte du solveur. **Lue directement** à l'endroit où
+  le solveur l'interroge (10 tâches, graine 7), elle vaut :
+  - après le premier temps : logit **+9,32** (9,30 à 9,32), 10 copies sur 10 ;
+  - après le barreau : **−1,16** (−1,40 à −1,09), 0 copie sur 10.
+
+  `lookup` ne partage aucune clé entre proposeur et solveur ; l'effet n'y a pas été mesuré.
+- **Correctif** : `TrainConfig.gate_keys` indique, outil par outil, les clés où le
+  décodeur interroge la porte. Ailleurs, les valeurs gardent la perte du modèle de langue
+  mais n'entraînent ni la porte ni les pointeurs. Il n'entre dans le contrat
+  d'entraînement que s'il est posé, pour que les checkpoints antérieurs se reprennent.
+  `closed_loop.py` le dérive de la table `PROPOSE_COPY_KEYS`, que lit aussi le décodage
+  des propositions : `propose_calc` n'a aucune clé, `propose_lookup` a `ask` sous
+  `--propose-copy ask`. Tests :
+  - `test_gate_keys_train_the_gate_only_where_the_decoder_asks_it` ;
+  - `test_trainer_passes_gate_keys_and_keeps_old_contracts` ;
+  - `test_train_rows_hands_the_gate_keys_to_the_trainer`.
+
+**Ce qui est relancé, sans rien d'autre de changé.** L'échelle de §2, barreaux dans le même
+ordre et mêmes critères, puis les trois bras si un barreau passe. Le premier temps de
+l'amorce (100 trajectoires, 200 pas) est réutilisé : il ne contient aucune proposition. Ses
+chiffres (banc 1,0, hors distribution 0,767) ont été lus sous l'ancienne grammaire. Chaque
+barreau relit les siens.
+
+**Lecture pré-écrite.** Si le premier barreau fait encore tomber le banc du solveur sous la
+fenêtre, la porte n'était pas seule en cause : on s'arrête pour diagnostiquer, sans régler
+de paramètre.
