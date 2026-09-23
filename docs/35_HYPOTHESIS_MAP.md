@@ -63,6 +63,9 @@ Statuts : **établi** (chiffre reproduit ou démontré), **réfuté** (critère 
 | La conversion d'un donneur garde sa qualité | **réfuté** | meilleur récupéré 4,297 contre 3,158 nats pour le donneur ; ARC-Easy 35 % contre 61 % ; élaguer 8 couches (5,188) bat tout partage | 18–22 |
 | Récurrence sur donneur retenu, identité exacte à *k* = 1 | **établi (identité)**, qualité **non testée** | logits identiques au bit près | 28 |
 | Registre d'attention à mémoire constante | **établi (mémoire)**, rappel faible | 34,4 Go → 0,062 Go à 8,4M tokens ; rappel +5,2 ± 1,2 points (NoPE) | 10 §1–2 |
+| Le cœur bouclé compose des consultations, et *k* lié aux sauts porte au-delà (H29–H31, miniature d'H4 et de W2-A5/A6) | **non conclusif** (contrôle à 1 saut raté par 7 modèles sur 8) ; relance pré-enregistrée | le seul modèle qui consulte (GDN, *k* lié) ne compose pas : 0,21 à 2 sauts | 36 |
+| Boucler remplace la taille d'état pour le rappel (H32, F4 de W2 contredite ?) | **non décidé** (contrôle avec attention raté) ; relance du contrôle en cours | descriptif : à *d_k* = 8, *k* = 4 rattrape +0,34 ; à *d_k* ≥ 16, rien | 37 |
+| Nos couches d'attention apprennent une consultation à petite taille | **établi**, mais ≈ 3× plus lentement qu'un transformeur minimal ; l'échelle d'initialisation n'en est pas la cause | 0,955 contre 1,000 à 4 000 pas ; `init_std` 0,125 : 0,237 | 37 |
 
 **Le test qui tranche C1 : le programme 1** (docs/29 ; ≈ 70 + 6 A100-h). Il compare, à
 blocs exécutés égaux, un cœur GDN à état borné, un cœur attention et une pile de 920,7M,
@@ -146,7 +149,9 @@ retiré. Chaque fois qu'une courbe s'aplatit, le dépôt a nommé le mur. Aujour
 
 ## 3. L'ordre des tests : le plus d'information par heure de compute
 
-**Sur CPU, maintenant, gratuit :**
+**Sur CPU, maintenant, gratuit :** (mis à jour : les miniatures de W2 se font sur CPU, docs/36 et 37 ;
+W2-A2, le comptage modulo 3, et W2-A7, la troncature du gradient, aussi ; W2-A3, S₅, demande
+d'abord un mélangeur à produits de Householder, non implémenté)
 
 1. ~~H26, le format objet, puis H27, la clé copiée~~ : faits (32 §23). Le proposeur ne
    démarre pas à 7 M ; le CPU s'arrête pour le programme 3. H21 à H25, et donc H23, le
