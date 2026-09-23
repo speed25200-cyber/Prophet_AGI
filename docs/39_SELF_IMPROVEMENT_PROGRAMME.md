@@ -689,3 +689,36 @@ graine 1.
 - **V passe mais la nouveauté s'effondre** : les propositions de l'amorce ancrent le
   proposeur. On gardera une part réservée aux seules propositions promues.
 - **V échoue** : l'oubli ne tient pas à la proportion des données.
+
+### SI-1d, 2026-09-23 (amendement 7) — **V passe, H26c′ tient** : la part fixe corrige l'oubli du format
+
+Graine 1, recette de SI-1c, `--propose-share 0.2`. Environ 55 min de CPU (1 642 s
+comptées). La part contient 53 lignes : les 50 propositions de l'amorce et les 3 promues.
+
+| | SI-1c, graine 1 (sans part) | **SI-1d (part 0,2)** |
+|---|---|---|
+| **V** : validité, tours 1 à 5 | 0,975 ; **0,0** ; 0,92 ; 0,69 ; 0,61 | **0,975 ; 0,967 ; 0,95 ; 0,925 ; 0,967** — passe |
+| **H26c′** : quatre chiffres au tour 5 (témoin 0,133) | 0,933 | **0,850**, différence **+0,717** [+0,583 ; +0,833] — passe |
+| trois opérandes au tour 5 (témoin 0,717) | 0,817 | 0,833, différence +0,117 [+0,050 ; +0,200] |
+| nouvelles par tour | 2, 0, 0, 2, 7 | 2, 0, 0, 6, 1 |
+| promues par tour | 3, 0, 0, 0, 0 | 3, 0, 0, 0, 0 |
+| ΔBPB | +0,108 | +0,115 |
+| banc du générateur | 1,0 | 1,0 |
+
+**La lecture pré-écrite qui s'applique** : l'oubli du format est un déséquilibre de
+données, et la part fixe le corrige. Elle entre dans la recette des boucles longues.
+
+**Ce qu'elle coûte, mesuré.** Sur quatre chiffres, SI-1d moins SI-1c vaut −0,083
+[−0,167 ; −0,017] : donner 20 % du flux aux propositions retire un peu d'apprentissage au
+solveur. L'ancrage sur l'amorce, lui, ne se voit pas : la nouveauté suit le même profil
+qu'en SI-1c.
+
+**Observation, non pré-enregistrée** : sur trois opérandes, l'écart avec le témoin a
+pour la première fois un intervalle au-dessus de zéro à cette graine (+0,117). À
+confirmer avant d'en dire quoi que ce soit.
+
+**Les murs, mis à jour :**
+- (c), l'oubli du format : **levé**, par la part fixe ;
+- (a), la rareté des nouvelles : reste ;
+- (b), la récompense qui s'éteint : reste ;
+- (d), l'axe de la structure : reste. À 7 M, c'est un mur de capacité (amendement 6).
