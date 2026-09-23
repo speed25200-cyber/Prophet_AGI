@@ -107,7 +107,8 @@ Il n'a jamais tourné sur GPU.
 | Pourquoi : la récompense du proposeur n'a jamais été versée | **établi** | 0 proposition résolue à une reprise en 5 tours : l'exploration tire le début du span, et les échecs sont des fins coupées | 39 §3 |
 | SI-1b, H26c : quand une reprise peut rattraper, la boucle qui propose va au-delà du générateur | **établi à la graine 0, non reproduit** | graine 0 : 0,05 → **0,967** (témoin 0,217), écart entre bras +0,75 [+0,63 ; +0,85] ; graines 1 et 2 : écart +0,067, intervalles incluant zéro | 39 §3, amend. 2–3 |
 | Pourquoi la réplication échoue : le proposeur n'écrit pas de nouveauté au départ | **établi** | propositions nouvelles au tour 1 : 5/29 à la graine 0, 0/30 et 0/29 aux graines 1 et 2 ; le mécanisme ne démarre pas | 39 §3 |
-| SI-1c : 120 propositions par tour rendent le mécanisme fiable | **en cours** | sonde : 7 nouvelles sur 112 valides à la graine 1 (0 sur 30 avant), les premières à deux opérateurs | 39 amend. 4 |
+| SI-1c : 120 propositions par tour rendent le mécanisme fiable | **réfuté** (2 graines sur 3) | graines 0 et 1 : écart +0,717 et **+0,800** (la graine 1 ne démarrait pas avec 30) ; graine 2 : 0,000, aucune nouvelle promue | 39 §3 |
+| **Règle des six runs** : la boucle dépasse son générateur si et seulement si au moins une proposition nouvelle est rattrapée et promue | **établi à 7 M** (`calc`) | 3 runs avec ≥ 2 promues : +0,72 à +0,80 ; 3 runs sans : 0,000 à +0,067 | 39 §3 |
 | SI-1b : le proposeur bouge quand sa récompense est versée | **observé**, critère M échoué | récompense versée aux tours 1–2 (sur les 5 puis 1 propositions nouvelles) ; part de nouvelles 17 % → 52 % ; puis plus de bord : le solveur a rattrapé | 39 §3 |
 | SI-1b, H23c : le gain se transfère à un autre axe (troisième opérande) | **réfuté à 7 M** | 0,0 (4 gagnées, 4 perdues) ; aucune proposition à deux opérateurs sur 135 | 39 §3 |
 | Deux défauts qui tuaient SI-1 : échappement dans un nom d'outil ; porte de copie entraînée là où le proposeur ne l'interroge pas | **trouvés et corrigés** | 30 malformées sur 30 ; logit de la porte +9,32 → −1,16, banc du solveur 1,0 → 0,0 | 39 amend. 1 |
@@ -175,10 +176,11 @@ d'abord un mélangeur à produits de Householder, non implémenté)
    contrôle ≥ 350 M, où la récurrence sert ; à 7 M boucler n'achète rien (2,184 contre
    2,179), un AUROC n'y dirait rien de l'échelle visée. Il tourne en minutes sur le
    checkpoint du programme 1.
-4. ~~SI-1, SI-1b et sa réplication, le proposeur `calc`~~ : faits (39 §3). Une boucle
-   qui propose ses tâches a dépassé son générateur, à une graine sur trois. Le mur est
-   l'exploration du proposeur. SI-1c (120 propositions par tour, 39 amendement 4) est en
-   cours.
+4. ~~SI-1, SI-1b, sa réplication, SI-1c~~ : faits (39 §3). La boucle dépasse son
+   générateur quand au moins une proposition nouvelle est rattrapée et promue : c'est
+   arrivé dans 3 runs sur 6. Quatre murs sont nommés (39 §3, SI-1c) : la rareté des
+   nouvelles au départ, la récompense qui s'éteint, l'oubli du format, le plafond des
+   règles.
 
 **Sur A100, dès qu'une session est disponible** (docs/34 §9 pour le choix de la carte) :
 

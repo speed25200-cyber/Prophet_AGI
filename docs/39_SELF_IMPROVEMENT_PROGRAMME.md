@@ -459,3 +459,64 @@ de témoin tels quels. Le compute est compté, et il est plus élevé pour `clos
   nombre minimal de propositions nouvelles pour que la récompense soit versée.
 - **M′ passe mais pas H26c′** : la récompense versée ne suffit pas.
 - **H23c′ passe** : les propositions à deux opérateurs ouvrent l'axe de la structure.
+
+### SI-1c, 2026-09-23 (amendement 4) — critère de succès **échoué**, lecture pré-écrite confirmée
+
+`closed-propose` avec 120 propositions par tour, graines 0, 1 et 2. Chaque graine tient en
+≈ 50 min de CPU (27 à 28 min de compute compté). Les témoins `closed-clean` sont ceux de
+SI-1b et de la réplication. Bancs a posteriori, 60 tâches. La différence entre bras est
+calculée tâche par tâche au tour 5, avec un intervalle bootstrap à 95 %.
+
+| Graine | **M′** : nouvelles promues | nouvelles par tour | quatre chiffres : `propose` / `clean` | **H26c′** : différence [IC 95 %] | H23c′ : trois opérandes | validité par tour |
+|---|---:|---|---|---|---|---|
+| 0 | **15** | 16, 26, 51, 57, 51 | 0,933 / 0,217 | **+0,717** [+0,600 ; +0,833] — passe | +0,050 [−0,033 ; +0,133] | 0,86 → 0,66 |
+| 1 | **2** | 2, 0, 0, 2, 7 | 0,933 / 0,133 | **+0,800** [+0,700 ; +0,900] — passe | +0,100 [0,000 ; +0,200] | 0,98 ; **0,0** ; 0,92 ; 0,69 ; 0,61 |
+| 2 | **0** | 3, 1, 0, 0, 1 | 0,300 / 0,300 | 0,000 [−0,117 ; +0,117] — échoue | +0,050 [−0,067 ; +0,183] | 0,88 → 0,90 |
+
+Autres critères : le banc du générateur reste ≥ 0,983 partout (H22c). ΔBPB vaut +0,098,
++0,108 et +0,123, contre +0,095 à +0,126 pour les témoins (H24c). H20c échoue à la graine
+1 (tour 2 : 0 valide).
+
+**Verdict pré-enregistré** : SI-1c devait réussir à chacune des trois graines. Elle échoue
+à la graine 2.
+
+**La lecture pré-écrite qui s'applique** : « H26c′ passe là où M′ passe, et seulement
+là : le mur est quantitatif ». C'est exactement ce qu'on observe. En comptant SI-1b, sa
+réplication et SI-1c, **six runs** donnent la même règle, sans exception :
+
+| Run | nouvelles promues | écart entre bras, quatre chiffres |
+|---|---:|---|
+| SI-1b graine 0 | 6 | +0,750 |
+| SI-1c graine 0 | 15 | +0,717 |
+| SI-1c graine 1 | 2 | +0,800 |
+| SI-1b graine 1 | 0 | +0,067 (intervalle incluant zéro) |
+| SI-1b graine 2 | 0 | +0,067 (intervalle incluant zéro) |
+| SI-1c graine 2 | 0 | 0,000 |
+
+**Ce que cela établit, à 7 M, sur `calc` :**
+1. **Une boucle qui propose ses tâches va au-delà de son générateur dès qu'une seule
+   proposition nouvelle est rattrapée et promue.** Deux suffisent (graine 1) : leurs
+   épisodes rattrapés apprennent au solveur à copier des nombres de quatre chiffres, et
+   le banc passe de 0,017 à 0,933, sans tâche humaine. Le témoin nourri par le
+   générateur atteint 0,133.
+2. **Que cela arrive reste une question de tirage.**
+   - Tirer 120 propositions au lieu de 30 a fait démarrer la graine 1, qui ne démarrait
+     pas.
+   - La graine 2 n'a écrit que 5 propositions nouvelles en 5 tours, et la seule à quatre
+     chiffres (`876 * 2463`) n'a pas été rattrapée.
+3. **Les propositions à deux opérateurs apparaissent** (graine 2 : `386 * 266 + 535`,
+   deux sur les 5 tours). Mais elles sont résolues du premier coup, donc jamais
+   récompensées. La récompense « résolue à une reprise » ne pousse pas le proposeur sur
+   un axe que le solveur sait déjà faire.
+4. **Le proposeur noyé peut oublier de proposer** : graine 1, tour 2, 0 valide sur 120,
+   comme dans la réplication. Au tour 1, il a été entraîné sur 117 solutions pour 3
+   propositions.
+
+**Les murs, nommés à ce point :**
+- (a) la rareté des propositions nouvelles rattrapables au départ ;
+- (b) une récompense qui s'éteint quand le solveur rattrape (graine 0, tours 4 et 5 : 0
+  promue sur plus de 50 nouvelles) ;
+- (c) l'oubli du format de proposition quand les épisodes du solveur dominent
+  l'entraînement ;
+- (d) le plafond des règles : quatre chiffres, et l'axe des opérateurs, que la
+  récompense ne paie pas.
