@@ -612,3 +612,50 @@ Parmi les propositions valides, celles à trois chiffres passent de 87 sur 104 a
    - **L'oubli de la langue croît avec les tours** : ΔBPB +0,10 à 5 tours (SI-1c), +0,37
      à 10 tours, **dans les deux bras**. Ce n'est pas l'effet de proposer. C'est la
      condition C4 (docs/35) qui devient le mur d'une boucle longue.
+
+**SI-8a, graine 1 : arrêtée à la demande de l'utilisateur au tour 2** du bras plafond 8.
+Elle ne compte ni pour ni contre, et elle est reprenable depuis son checkpoint. Ce qu'on
+avait vu jusque-là :
+- au tour 1, 3 promues, avec 0,95, 0,65 et 0,467 sur les bancs à 4, 5 et 6 chiffres ;
+- au tour 2, **0 proposition valide sur 120** : l'oubli du format à cette graine, pour la
+  troisième fois en trois runs.
+
+## Amendement 6 — 2026-09-23 : le remède publié (récompense échantillonnée) ne lève pas le mur à 7 M ; porte pré-enregistrée pour 375 M
+
+**La question.** Les murs (b) et (d) viennent d'une récompense qui ne paie qu'un échec
+rattrapé à une reprise. Absolute Zero paie autrement : une tâche que le solveur réussit
+**parfois** sur *k* essais tirés au hasard (0 < réussites < *k*). Ce signal n'existe que
+si l'échantillonnage rattrape une partie des échecs gloutons.
+
+**Sonde en lecture seule** (`scripts/learnability_probe.py`, testé) sur le checkpoint final
+de SI-8a graine 0, plafond 8 : 60 tâches par banc, un essai glouton, puis *k* = 4 essais
+où le pointeur de copie est tiré à 0,7.
+
+| Banc | réussites gloutonnes | 4 sur 4 | 0 sur 4 | « apprenables » (0 < w < 4) | échecs gloutons rattrapés par au moins un tirage |
+|---|---:|---:|---:|---:|---:|
+| trois opérandes | 42 | 37 | 16 | 7 | **2 sur 18** |
+| six chiffres | 22 | 11 | 39 | 10 | **1 sur 38** |
+
+Tirer aussi les valeurs de l'action ne change aucun chiffre : elles viennent de la
+copie.
+
+**Lecture.** À 7 M, les échecs à la frontière sont **systématiques** : un opérande omis,
+un nombre coupé. Aucun tirage ne les rattrape. Les tâches « apprenables » au sens d'AZR
+sont surtout des réussites gloutonnes que le tirage dégrade. Une récompense
+échantillonnée paierait donc du bruit, pas la frontière.
+
+À cette taille, la boucle n'avance que sur les axes où une règle de décodage rend l'échec
+rattrapable, comme les fins de mot l'ont fait pour les chiffres. C'est un mur de
+**capacité**, pas de mécanisme. Il appelle l'échelle, et c'est la mesure qui manquait
+pour le dire.
+
+**Porte SI-9, pré-enregistrée pour le programme 1.** Même sonde sur le checkpoint de
+375 M, après son amorce agentique : `calc-hard` et `calc-digits6`, *k* = 4, 60 tâches.
+- **Critère d'ouverture** : au moins 25 % des échecs gloutons rattrapés par au moins un
+  tirage, sur l'un des deux bancs. La frontière est alors stochastique, et une
+  récompense échantillonnée peut la payer.
+- **Sinon**, la boucle à 375 M garde la récompense par reprise et ses règles
+  structurelles. Le mur de capacité est alors mesuré à deux échelles.
+
+Coût : quelques minutes d'A100. C'est la première mesure à faire sur ce checkpoint, avant
+tout run de proposition.

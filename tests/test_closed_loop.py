@@ -1185,3 +1185,31 @@ def test_the_rules_ceiling_and_the_extra_benches_are_read_and_recorded(work, tmp
             model, tokenizer, "calc", 1, seen=set(), amorce_specs=[], temperature=0.7, round_index=1
         )
         assert counts["valid"] == valid, digits
+
+
+def test_learnability_probe_counts_and_runs(work, tmp_path):
+    """docs/39 amendment 6: the probe reads per-task successes into what a learnability
+    reward could pay -- tasks sometimes solved, greedy failures some sample rescues -- and
+    runs end to end on a run directory."""
+    from scripts import learnability_probe
+
+    greedy = [True, True, False, False, False]
+    wins = [4, 2, 0, 1, 3]
+    assert learnability_probe.counts(greedy, wins, 4) == {
+        "tasks": 5,
+        "greedy": 2,
+        "all_k": 1,
+        "none": 1,
+        "learnable": 3,
+        "greedy_failures": 3,
+        "rescued_by_sampling": 2,
+    }
+    out = tmp_path / "frozen"
+    run(work, out, "frozen", rounds=0)
+    results = learnability_probe.main(
+        ["--work", str(work), "--run", str(out), "--bench", "calc-hard", "--n", "2", "--k", "2"]
+    )
+    assert len(results) == 1 and results[0]["tasks"] == 4 and results[0]["round"] == 0
+    assert results[0]["all_k"] + results[0]["none"] + results[0]["learnable"] == 4
+    with pytest.raises(SystemExit):
+        learnability_probe.main(["--work", str(work), "--run", str(out), "--bench", "nope"])
