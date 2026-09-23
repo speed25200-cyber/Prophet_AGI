@@ -352,3 +352,60 @@ bancs sont les mêmes pour toutes les graines (générateur 7 et 11, hors distri
 **Critère de réplication** : H26c passe **à chacune** des deux graines. M, H23c et H25c sont
 rapportés graine par graine. Si une graine ne passe pas un barreau de calibration, elle est
 rapportée comme telle et ne compte ni pour ni contre.
+
+### Réplication de SI-1b, 2026-09-23 (amendement 3) — **non reproduite**
+
+Graines 1 et 2, même protocole. Les deux passent le premier barreau (banc 1,0 ; hors
+distribution 0,80 et 0,667 ; 30 propositions valides sur 30, 1 et 0 nouvelles à la sonde).
+Chaque run tient en ≈ 1 h 20 de CPU. La graine 1 a été interrompue par un redémarrage du
+conteneur au tour 5 de `closed-propose`, puis reprise depuis son checkpoint du tour 4.
+
+Banc à quatre chiffres (60 tâches). La dernière colonne donne la différence entre les deux
+bras au tour 5, tâche par tâche : ce calcul n'est **pas pré-enregistré**, il est rapporté
+parce que le critère écrit s'est révélé trop faible (voir plus bas).
+
+| Graine | tour 0 | `closed-propose`, gain [IC 95 %] | `closed-clean`, gain | **H26c** | différence au tour 5 [IC 95 %] |
+|---|---:|---|---|---|---|
+| 0 (SI-1b) | 0,050 | **+0,917** [+0,833 ; +0,983] | +0,167 | passe | **+0,750** [+0,633 ; +0,850] |
+| 1 | 0,017 | +0,183 [+0,083 ; +0,283] | +0,117 | passe (à la lettre) | +0,067 [−0,033 ; +0,167] |
+| 2 | 0,283 | +0,083 [−0,050 ; +0,217] | +0,017 | **échoue** | +0,067 [−0,050 ; +0,183] |
+
+Le mécanisme, graine par graine :
+
+| Graine | propositions nouvelles, tour par tour | rattrapées à une reprise | promues |
+|---|---|---|---|
+| 0 | 5/29, 10/27, 8/28, 11/26, 13/25 | 5, 1, 0, 0, 0 | 6 |
+| 1 | 0/30, **0/0, 0/0, 0/0**, 0/29 | 0 | 0 |
+| 2 | 0/29, 0/29, 3/27, 0/29, 0/27 | 1 (une tâche non nouvelle) | 1 |
+
+**Verdict pré-enregistré** : H26c doit passer à chacune des deux graines. Elle échoue à la
+graine 2. **La réplication échoue.**
+
+**Ce qu'on en lit.**
+1. **Le résultat de la graine 0 tient pour cette graine.** L'écart entre les bras est
+   +0,75, et son intervalle est loin de zéro.
+2. **Il dépend d'un événement de hasard : que le proposeur écrive des propositions
+   nouvelles dès le tour 1.** Aux graines 1 et 2, il n'en écrit presque aucune. Rien n'est
+   donc à rattraper, la récompense n'est jamais versée pour une nouveauté, et le mécanisme
+   ne démarre pas. Le mur n'est plus la reprise (levé par l'amendement 2) : **c'est
+   l'exploration du proposeur.** Sa part de nouvelles au départ vaut 5/29 à la graine 0,
+   0/30 et 0/29 aux graines 1 et 2.
+3. **Le critère H26c était trop faible**, et on le rapporte comme tel. Il compare deux
+   gains ponctuels, sans intervalle sur leur différence. À la graine 1, il passe alors que
+   le proposeur n'a écrit aucune proposition nouvelle en 5 tours : l'écart de +0,067
+   (4 tâches sur 60) est celui de deux bras sans mécanisme. Un critère futur portera sur
+   l'intervalle de la différence entre bras.
+4. **Un proposeur non récompensé peut oublier de proposer.** Graine 1, tours 2 à 4 :
+   0 proposition valide sur 30. Le modèle, appelé à proposer, écrit l'action réservée
+   `note`, comme le deuxième pas du solveur. Aucune trajectoire de proposition n'entre à
+   l'entraînement quand rien n'est promu, et les solutions du tour 1 poussent le format
+   dehors. Il revient seul au tour 5.
+
+   **Hypothèse d'une fuite d'état testée, réfutée.** Le retour coïncidait avec le
+   redémarrage du conteneur, d'où le soupçon d'un état hors des poids qui passerait d'une
+   phase à l'autre. Mais sur les poids du tour 4, le modèle chargé à neuf, puis après un
+   banc du solveur, propose 28 valides sur 30 dans les deux cas. Après 60 pas
+   d'entraînement, en mémoire et rechargé : 23 et 23. C'est une dynamique
+   d'entraînement, pas un défaut.
+5. **Observation non pré-enregistrée, à confirmer.** À la graine 2, proposer aide le banc
+   à trois opérandes : +0,100 contre −0,033, différence +0,133 [+0,033 ; +0,250].
