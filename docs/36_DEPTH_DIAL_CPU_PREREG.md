@@ -66,6 +66,43 @@ exacte parmi 28 positions en souffre, précisément ce que les bras attention do
 docs/10 §1 l'avait appris sur le banc de l'aiguille, et `depth_cpu.py` la coupe. Elle est
 coupée ici aussi (test). Rien d'autre ne change : mêmes bras, même recette, mêmes critères.
 
-## 3. Résultats
+## 3. Résultats — exécution du 2026-09-23 (après l'amendement 1) : **non conclusif**
 
-*(à venir)*
+Précision par nombre de sauts, 512 exemples par *h*, chaque bras mesuré à son propre *k*.
+Hasard : 0,125. Environ 150k paramètres, 6 000 pas, 3,5 à 7,3 min par modèle.
+
+| Bras | *h* = 1 (contrôle) | 2 | 3 | 4 | 5 | 6 | Perte finale |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `gdn-fixed`, graine 0 | 0,145 | 0,225 | 0,238 | 0,373 | 0,242 | 0,459 | 2,074 |
+| `gdn-tied`, graine 0 | **1,000** | 0,211 | 0,311 | 0,256 | 0,422 | 0,252 | **1,295** |
+| `attn-fixed`, graine 0 | 0,102 | 0,232 | 0,240 | 0,375 | 0,240 | 0,469 | 2,084 |
+| `attn-tied`, graine 0 | 0,109 | 0,232 | 0,244 | 0,377 | 0,240 | 0,471 | 2,080 |
+| `gdn-fixed`, graine 1 | 0,219 | 0,229 | 0,260 | 0,330 | 0,236 | 0,410 | 2,020 |
+| `gdn-tied`, graine 1 | 0,203 | 0,230 | 0,273 | 0,359 | 0,232 | 0,479 | 2,012 |
+| `attn-fixed`, graine 1 | 0,133 | 0,244 | 0,289 | 0,375 | 0,225 | 0,518 | 2,079 |
+| `attn-tied`, graine 1 | 0,123 | 0,244 | 0,289 | 0,377 | 0,225 | 0,518 | 2,075 |
+
+**Verdict : le contrôle échoue sur 7 modèles sur 8.** À 1 saut, une seule consultation que
+la coda attention fait seule, un seul modèle apprend la tâche (`gdn-tied`, graine 0 : 1,000,
+avec une chute de perte entre les pas 2 000 et 4 000). Comme la lecture pré-écrite le
+prévoyait, c'est la recette qui est en cause : **H29, H30 et H31 ne sont pas décidables**
+sur ces chiffres, et aucune n'est déclarée passée ni échouée.
+
+**Ce qui se lit quand même.**
+1. Les sept modèles qui n'apprennent pas la consultation apprennent un raccourci : répondre
+   à peu près le nœud de départ. Leur précision suit la probabilité qu'une permutation de 8
+   ramène au départ en *h* pas : haute aux sauts pairs (0,37 à 4, 0,41–0,52 à 6), basse aux
+   impairs. C'est la signature d'un modèle qui n'a pas trouvé la consultation, pas d'un
+   modèle qui compose mal.
+2. Le seul modèle qui consulte (`gdn-tied`, graine 0) ne compose pas : 0,21 à 2 sauts,
+   0,31 à 3. Au balayage des mêmes poids, *k* = 1 à 6, 3 sauts restent entre 0,27 et 0,34.
+   C'est ce que H4 prédit pour un cœur à état borné. Mais sur un seul modèle, et sans bras
+   attention qui ait appris la base à comparer, ce n'est **pas** un résultat.
+3. L'apprentissage de la consultation est une transition brusque, à la date aléatoire,
+   comme pour l'apparition des têtes d'induction. À 6 000 pas, elle est rarement franchie à
+   cette taille.
+
+**Suite (amendement 2, à écrire avant toute relance).** Allonger la recette, et vérifier
+d'abord sur un seul bras (`attn-tied`, graine 0) que le contrôle passe (≥ 0,9 à 1 saut)
+avant de relancer les huit modèles. Si le contrôle ne passe toujours pas, la question reste
+à H4 du programme 1, à 375M.
