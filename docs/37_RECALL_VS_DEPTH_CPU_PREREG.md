@@ -101,3 +101,17 @@ seul d'abord** (les deux bras « disposition »). S'il passe (≥ 0,9 à chaque 
 « état » sont relancés sous la même recette, et H32 est jugée sur cette seconde exécution.
 Sinon, H32 reste non décidée sur CPU, et les chiffres descriptifs ci-dessus sont tout ce que
 cette miniature donne.
+
+## Résultat de l'amendement 1 — 2026-09-23 : le contrôle échoue encore, H32 reste non décidée
+
+Contrôle relancé seul à 12 000 pas. `layout`, *d_k* = 16, *k* = 1 : **0,499 / 0,332 /
+0,260 / 0,188** à *m* = 4 / 8 / 16 / 32, contre 0,310 / 0,250 / 0,184 / 0,154 à 4 000 pas.
+Ce bras seul fait échouer le critère (≥ 0,9 à chaque *m*, pour chaque bras), si bien que le
+bras *k* = 4 a été arrêté sans être mesuré : il ne pouvait plus changer le verdict.
+
+**H32 reste non décidée sur CPU**, comme l'amendement le prévoyait. Les bras « état »
+restent descriptifs : à un petit état, boucler rattrape ; à un état suffisant, rien. Reste
+ouverte une question de mécanisme : notre disposition avec attention apprend le rappel à
+8 paires fixes (0,889), pas sur les longueurs mélangées de 4 à 32 paires, même en 12 000
+pas. Le rappel multi-clés et sa dépendance à *k* seront mesurés sur le checkpoint du
+programme 1, où l'attention est à l'échelle pour laquelle elle a été réglée.
