@@ -63,3 +63,26 @@ def test_a_run_reports_every_hop_count_for_every_arm_and_seed(tmp_path):
         assert set(arm["k_sweep"]) == {"2", "3", "4"}
     with pytest.raises(SystemExit):
         h.main(["--out", str(tmp_path), "--arms", "rnn-tied"])
+
+
+def test_the_one_hop_warm_start_feeds_one_hop_batches_first(monkeypatch):
+    seen = []
+    real = h.batch
+
+    def spy(rng, *, n, hops):
+        seen.append(hops)
+        return real(rng, n=n, hops=hops)
+
+    monkeypatch.setattr(h, "batch", spy)
+    h.train(
+        "gdn",
+        "tied",
+        steps=7,
+        minutes=1,
+        seed=0,
+        lr=1e-3,
+        warmup=1,
+        warm_hops1=4,
+        log=lambda _: None,
+    )
+    assert seen[:4] == [1, 1, 1, 1] and set(seen[4:]) <= set(h.TRAIN_HOPS) and len(seen) == 7

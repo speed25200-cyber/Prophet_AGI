@@ -141,6 +141,7 @@ def train(
     lr: float,
     warmup: int,
     batch_size: int = 32,
+    warm_hops1: int = 0,
     log=print,
 ) -> tuple[ProphetModel, dict]:
     torch.manual_seed(seed)
@@ -151,7 +152,10 @@ def train(
     rng = random.Random(seed)
     started, losses = time.time(), []
     for step in range(steps):
-        hops = TRAIN_HOPS[step % len(TRAIN_HOPS)]  # one hop count per batch: k is per batch
+        # One hop count per batch (k is per batch); the first ``warm_hops1`` steps see one
+        # hop only, where answering the start node earns nothing and only the look-up pays
+        # (docs/36 amendment 2).
+        hops = 1 if step < warm_hops1 else TRAIN_HOPS[step % len(TRAIN_HOPS)]
         ids, answers = batch(rng, n=batch_size, hops=hops)
         logits = model(ids, loop_k=loop_k(schedule, hops)).logits[:, -1]
         loss = torch.nn.functional.cross_entropy(logits.float(), answers)
@@ -203,6 +207,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seeds", default="0,1", help="comma-separated; every arm per seed")
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--warmup", type=int, default=100)
+    ap.add_argument(
+        "--warm-hops1",
+        type=int,
+        default=0,
+        help="first steps on one hop only, before the mixed hops (docs/36 amendment 2)",
+    )
     args = ap.parse_args(argv)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -234,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
                 seed=seed,
                 lr=args.lr,
                 warmup=args.warmup,
+                warm_hops1=args.warm_hops1,
             )
             by_hops = {
                 h: accuracy(model, hops=h, k=loop_k(schedule, h), n=args.eval_n, seed=seed)

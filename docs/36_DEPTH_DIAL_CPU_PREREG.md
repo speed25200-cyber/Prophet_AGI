@@ -106,3 +106,20 @@ sur ces chiffres, et aucune n'est déclarée passée ni échouée.
 d'abord sur un seul bras (`attn-tied`, graine 0) que le contrôle passe (≥ 0,9 à 1 saut)
 avant de relancer les huit modèles. Si le contrôle ne passe toujours pas, la question reste
 à H4 du programme 1, à 375M.
+
+## Amendement 2 — 2026-09-23, après l'exécution non conclusive, avant toute relance : une recette qui apprend la base
+
+**Ce qui change**, la recette seulement. Bras, tâche, mesures et critères H29 à H31 sont
+inchangés.
+- **20 000 pas** au lieu de 6 000.
+- **Les 2 000 premiers pas sur 1 saut seul** (`--warm-hops1 2000`), puis le mélange
+  {1, 2, 3}. À 1 saut, répondre le nœud de départ ne rapporte presque rien (1/8 des
+  nœuds sont fixes). Seule la consultation paie, alors que les lots à 2 sauts du mélange
+  récompensaient le raccourci que sept modèles sur huit ont appris.
+- Plafond de 40 min par modèle.
+
+**Vérification avant la relance.** Un seul modèle, `attn-tied` en graine 0. S'il dépasse
+0,9 à 1 saut, les huit modèles sont relancés sous cette recette (≈ 2,5 h de CPU) et H29 à
+H31 sont jugées dessus. Le modèle de vérification compte comme l'un des huit, puisque même
+bras, même graine, même recette. Sinon, H29 à H31 restent non conclusives à cette échelle,
+et la question reste à H4 du programme 1.
