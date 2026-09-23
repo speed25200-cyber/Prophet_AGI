@@ -134,3 +134,16 @@ la consultation. Comme l'amendement le prévoyait, les huit modèles ne sont pas
 sera mesurée par H4 du programme 1, à 375M. Le même obstacle arrête le contrôle de docs/37 :
 à cette taille, nos couches d'attention apprennent mal une consultation qu'un transformeur
 minimal apprend en 700 pas (docs/37, diagnostic).
+
+## Amendement 3 — 2026-09-23, avant toute relance : la recette de petite largeur (docs/38)
+
+**Cause trouvée.** Les échecs du contrôle n'étaient pas une question de longueur. À *d* =
+64, `init_std` 0,02, les embeddings liés et le GQA rendent l'apprentissage d'une
+consultation aléatoire (docs/38). Corrigés, notre attention apprend un rappel à 8 paires en
+725 à 823 pas sur 4 graines sur 4, comme un transformeur minimal.
+
+**Relance** avec `--small-width-recipe` : `init_std` 0,06, embeddings déliés, 4 têtes KV.
+C'est la seule différence avec la recette d'origine, qu'on reprend telle quelle : 6 000
+pas, sans échauffement, huit modèles (deux cœurs × deux calendriers × graines 0 et 1). Le
+contrôle et H29 à H31 sont **inchangés**. Si le contrôle échoue encore (< 0,9 à 1 saut),
+H29 à H31 restent non conclusives, cette fois sans cause connue.

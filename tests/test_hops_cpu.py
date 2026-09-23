@@ -86,3 +86,15 @@ def test_the_one_hop_warm_start_feeds_one_hop_batches_first(monkeypatch):
         log=lambda _: None,
     )
     assert seen[:4] == [1, 1, 1, 1] and set(seen[4:]) <= set(h.TRAIN_HOPS) and len(seen) == 7
+
+
+def test_the_small_width_recipe_leaves_the_attention_arms_no_warning():
+    """docs/38: under the first recipe the attention arms sit in the regime where a
+    look-up is learned unreliably, and design_warnings says so; the small-width recipe
+    clears it (docs/36 amendment 3)."""
+    for core in ("attn", "gdn"):
+        assert any("small width" in w for w in h.config(core).design_warnings())
+        cfg = h.config(core, **h.SMALL_WIDTH)
+        assert not any("small width" in w for w in cfg.design_warnings())
+        assert cfg.init_std == 0.06 and not cfg.frontend.tie_word_embeddings
+        assert cfg.mixer.n_kv_heads == cfg.mixer.n_heads

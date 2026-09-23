@@ -446,3 +446,14 @@ qu'il donne aujourd'hui, à une échelle où les trois paris perdent ou font jeu
 reste est un GPU et le réseau. Tout ce qui précède tourne sur 4 cœurs, ce qui suffit à
 prouver la mécanique et à trouver ses défauts, et à rien d'autre. Les nombres qui comptent
 sortiront de `prophet.plan`, dans l'ordre qu'il donne.
+
+
+---
+
+**Réserve datée du 2026-09-23 (docs/38), sans rien réécrire ci-dessus.** Les miniatures CPU
+de ce document à *d* = 64 ont été entraînées avec `init_std` 0,02, des embeddings liés et
+du GQA. À cette largeur, cette combinaison rend l'apprentissage d'une consultation par
+**l'attention** aléatoire (1 graine sur 4, contre 4 sur 4 une fois corrigée). Ce qui y est
+conclu sur les bras à attention reste à reprendre avec la recette de docs/38 : le banc de
+l'aiguille (§1) et, en §3a″, la variante « attention dans le cœur » (45,5 %). Les
+conclusions sur la règle delta ne sont pas touchées.

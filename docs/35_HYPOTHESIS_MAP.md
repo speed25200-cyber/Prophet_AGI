@@ -65,7 +65,7 @@ Statuts : **établi** (chiffre reproduit ou démontré), **réfuté** (critère 
 | Registre d'attention à mémoire constante | **établi (mémoire)**, rappel faible | 34,4 Go → 0,062 Go à 8,4M tokens ; rappel +5,2 ± 1,2 points (NoPE) | 10 §1–2 |
 | Le cœur bouclé compose des consultations, et *k* lié aux sauts porte au-delà (H29–H31, miniature d'H4 et de W2-A5/A6) | **non conclusif** (contrôle à 1 saut raté par 7 modèles sur 8) ; relance pré-enregistrée | le seul modèle qui consulte (GDN, *k* lié) ne compose pas : 0,21 à 2 sauts | 36 |
 | Boucler remplace la taille d'état pour le rappel (H32, F4 de W2 contredite ?) | **non décidé** (contrôle avec attention raté) ; relance du contrôle en cours | descriptif : à *d_k* = 8, *k* = 4 rattrape +0,34 ; à *d_k* ≥ 16, rien | 37 |
-| Nos couches d'attention apprennent une consultation à petite taille | **établi**, mais ≈ 3× plus lentement qu'un transformeur minimal ; l'échelle d'initialisation n'en est pas la cause | 0,955 contre 1,000 à 4 000 pas ; `init_std` 0,125 : 0,237 | 37 |
+| Nos couches d'attention apprennent une consultation à petite taille | **établi sous condition** : à *d* = 64, `init_std` 0,02 + embeddings liés + GQA la rendent aléatoire (1 graine sur 4) ; corrigés, 4 sur 4 en ≈ 800 pas, comme un transformeur minimal. Les miniatures à attention du dépôt (docs/10, 36, 37) sont à reprendre | 38 |
 
 **Le test qui tranche C1 : le programme 1** (docs/29 ; ≈ 70 + 6 A100-h). Il compare, à
 blocs exécutés égaux, un cœur GDN à état borné, un cœur attention et une pile de 920,7M,

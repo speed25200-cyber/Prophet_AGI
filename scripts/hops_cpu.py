@@ -52,6 +52,7 @@ SEP, Q, EQ = NODES + 1, NODES + 2, NODES + 3
 HOP0 = NODES + 4  # HOP0 + h - 1 is the token that declares h hops
 VOCAB = HOP0 + MAX_HOPS
 TRAIN_HOPS = (1, 2, 3)
+SMALL_WIDTH = {"init_std": 0.06, "tied": False, "kv_heads": 4}  # docs/38
 FIXED_K = 4
 LENGTH = 3 * TABLE + 4
 
@@ -82,19 +83,24 @@ def batch(rng: random.Random, *, n: int, hops: int) -> tuple[torch.Tensor, torch
     return torch.tensor([r[0] for r in rows]), torch.tensor([r[1] for r in rows])
 
 
-def config(core: str) -> ProphetConfig:
+def config(
+    core: str, *, init_std: float = 0.02, tied: bool = True, kv_heads: int = 2
+) -> ProphetConfig:
     """The programme 1 layout at toy width: attention prelude (1 block), looped core (1
-    block, GDN or full attention), attention coda (2 blocks)."""
+    block, GDN or full attention), attention coda (2 blocks). The defaults are the first
+    recipe; docs/36 amendment 3 runs the small-width one of docs/38 (init 0.06, untied
+    embeddings, no GQA), under which attention learns a look-up at this width."""
     return ProphetConfig(
         name=f"hops-{core}",
         d_model=64,
         n_layers=4,
         max_seq_len=64,
-        frontend=FrontendConfig(vocab_size=VOCAB, tie_word_embeddings=True),
+        init_std=init_std,
+        frontend=FrontendConfig(vocab_size=VOCAB, tie_word_embeddings=tied),
         mixer=MixerConfig(
             pattern=["swa", "full_attn"],
             n_heads=4,
-            n_kv_heads=2,
+            n_kv_heads=kv_heads,
             qk_norm=False,  # at head_dim 16 it caps the logit at 4 (docs/10 §1)
             sliding_window=LENGTH,
             attention_sink_tokens=1,
@@ -142,10 +148,11 @@ def train(
     warmup: int,
     batch_size: int = 32,
     warm_hops1: int = 0,
+    recipe: dict | None = None,
     log=print,
 ) -> tuple[ProphetModel, dict]:
     torch.manual_seed(seed)
-    cfg = config(core)
+    cfg = config(core, **(recipe or {}))
     cfg.validate()
     model = ProphetModel(cfg).train()
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
@@ -208,6 +215,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--warmup", type=int, default=100)
     ap.add_argument(
+        "--small-width-recipe",
+        action="store_true",
+        help="init_std 0.06, untied embeddings, 4 KV heads (docs/38; docs/36 amendment 3)",
+    )
+    ap.add_argument(
         "--warm-hops1",
         type=int,
         default=0,
@@ -245,6 +257,7 @@ def main(argv: list[str] | None = None) -> int:
                 lr=args.lr,
                 warmup=args.warmup,
                 warm_hops1=args.warm_hops1,
+                recipe=SMALL_WIDTH if args.small_width_recipe else None,
             )
             by_hops = {
                 h: accuracy(model, hops=h, k=loop_k(schedule, h), n=args.eval_n, seed=seed)

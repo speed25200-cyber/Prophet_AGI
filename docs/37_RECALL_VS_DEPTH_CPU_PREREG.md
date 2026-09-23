@@ -115,3 +115,14 @@ ouverte une question de mécanisme : notre disposition avec attention apprend le
 8 paires fixes (0,889), pas sur les longueurs mélangées de 4 à 32 paires, même en 12 000
 pas. Le rappel multi-clés et sa dépendance à *k* seront mesurés sur le checkpoint du
 programme 1, où l'attention est à l'échelle pour laquelle elle a été réglée.
+
+## Correction — 2026-09-23 : l'initialisation n'était pas « écartée »
+
+La note « une cause écartée : l'échelle d'initialisation » ci-dessus est **fausse**, et
+elle reste en place, barrée par celle-ci. Elle comparait `init_std` 0,02 et 0,125 sur une
+seule graine, celle où la configuration de base apprenait par chance (1 graine sur 4). Sur
+4 graines (docs/38), `init_std` 0,02 empêche un transformeur minimal d'apprendre (0 sur 4) ;
+dans notre modèle, l'initialisation, les embeddings liés et le GQA ensemble rendent la
+consultation aléatoire, et leur correction la rend sûre (4 sur 4). Le contrôle de ce
+document a échoué pour cette raison. Sa relance avec la recette de petite largeur est à
+pré-enregistrer comme amendement 2 avant tout lancement.

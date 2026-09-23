@@ -435,3 +435,42 @@ def test_qk_norm_at_a_small_head_dim_is_flagged():
         ),
     )
     assert not any("caps the attention logit" in w for w in wide.design_warnings())
+
+
+def test_an_unread_activation_is_refused_and_small_width_attention_is_flagged():
+    """docs/38: ffn.activation was read by nothing (every FFN is a SwiGLU), so geglu/relu2
+    are refused until built; and at d_model <= 128 an attention stack with init_std below
+    0.5/sqrt(d_model) and tied embeddings learns look-ups unreliably, which a miniature's
+    attention arms must not confuse with a result."""
+    import dataclasses
+
+    from prophet.config import (
+        FeedForwardConfig,
+        FrontendConfig,
+        HeadsConfig,
+        MixerConfig,
+        ProphetConfig,
+        RecurrentCoreConfig,
+    )
+
+    small = ProphetConfig(
+        name="small",
+        d_model=64,
+        n_layers=2,
+        max_seq_len=64,
+        frontend=FrontendConfig(vocab_size=100, tie_word_embeddings=True),
+        mixer=MixerConfig(pattern=["full_attn"], n_heads=4, n_kv_heads=2, qk_norm=False),
+        ffn=FeedForwardConfig(kind="dense", hidden_mult=2.0),
+        recurrent=RecurrentCoreConfig(enabled=False),
+        heads=HeadsConfig(n_multi_token_predict=0),
+    )
+    small.validate()
+    assert any("small width" in w for w in small.design_warnings())
+    fixed = dataclasses.replace(
+        small, init_std=0.06, frontend=dataclasses.replace(small.frontend, tie_word_embeddings=False)
+    )
+    assert not any("small width" in w for w in fixed.design_warnings())
+    gdn_only = dataclasses.replace(small, mixer=dataclasses.replace(small.mixer, pattern=["gdn"]))
+    assert not any("small width" in w for w in gdn_only.design_warnings())
+    with pytest.raises(ValueError, match="not implemented"):
+        dataclasses.replace(small, ffn=dataclasses.replace(small.ffn, activation="geglu")).validate()

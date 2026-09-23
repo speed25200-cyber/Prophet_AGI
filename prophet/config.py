@@ -715,6 +715,13 @@ class ProphetConfig:
                 if getattr(self.heads, name) < 1:
                     errors.append(f"heads.{name} must be >= 1")
 
+        if self.ffn.activation != "swiglu":
+            # The field was read by nothing: every FFN is a SwiGLU whatever it says. Refuse
+            # the others until they are built, rather than run a silent SwiGLU (docs/38).
+            errors.append(
+                f"ffn.activation={self.ffn.activation!r} is not implemented; only 'swiglu' is built"
+            )
+
         # frontend.mode other than "bpe" is *costed* here (prophet.budget sizes the R01
         # retrofit from it) and *refused* at model build (ProphetModel raises
         # NotImplementedError), so validation stays permissive on purpose.
@@ -803,6 +810,21 @@ class ProphetConfig:
                 "linear_beta_max <= 1.0 keeps every state-transition eigenvalue positive, "
                 "which provably cannot express parity or other sign-flipping problems; "
                 "2.0 costs one multiplication"
+            )
+
+        has_attention = any(kind in ("full_attn", "swa") for _, _, kind in layout)
+        if (
+            has_attention
+            and self.d_model <= 128  # measured at 64 only (docs/38)
+            and self.init_std < 0.5 / self.d_model**0.5
+            and self.frontend.tie_word_embeddings
+        ):
+            out.append(
+                f"small width (d_model={self.d_model}) with init_std={self.init_std} "
+                f"(< 0.5/sqrt(d_model) = {0.5 / self.d_model**0.5:.3f}) and tied embeddings: "
+                "measured at d_model=64, attention learns look-ups unreliably here (8-pair "
+                "recall in 3000 steps on 1 seed of 4, against 4 of 4 untied at init 0.06; "
+                "docs/38). A miniature's attention arms can fail for this reason alone"
             )
 
         return out
