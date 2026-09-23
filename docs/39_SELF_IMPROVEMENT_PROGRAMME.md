@@ -409,3 +409,53 @@ graine 2. **La réplication échoue.**
    d'entraînement, pas un défaut.
 5. **Observation non pré-enregistrée, à confirmer.** À la graine 2, proposer aide le banc
    à trois opérandes : +0,100 contre −0,033, différence +0,133 [+0,033 ; +0,250].
+
+## Amendement 4 — 2026-09-23, après la réplication : SI-1c, pré-enregistrée — tirer plus de propositions
+
+**Le mur** : la part de propositions nouvelles au départ, qui décide si le mécanisme
+démarre (réplication ci-dessus).
+
+**Sonde en lecture seule** (checkpoints de calibration, `propose_round` comme le run) :
+
+| Graine | tirages | 0,7 / top-5 (recette) : valides, nouvelles, à deux opérateurs | 1,0 / top-20 : valides, nouvelles, à deux opérateurs |
+|---|---:|---|---|
+| 0 | 30 | 27, 4, 0 | 23, 6, 0 |
+| 1 | 30 | 29, 0, 0 | 22, 4, 2 |
+| 2 | 30 | 26, 0, 0 | 22, 0, 0 |
+| 1 | **120** | 112, **7**, **3** | 87, 10, 5 |
+| 2 | **120** | 100, 1, 0 | 85, 3, 1 |
+
+Élargir le tirage ajoute peu de nouveauté et coûte en validité (≈ −15 points ; à 1,5, la
+moitié des propositions sont refusées). Tirer **plus** au même réglage multiplie le nombre
+de propositions nouvelles, sans rien coûter en validité. C'est aussi à 120 tirages
+qu'apparaissent les premières propositions à **deux opérateurs** : l'axe de la structure,
+qu'aucune des 405 propositions valides des runs précédents n'avait touché.
+
+**SI-1c.** La seule variable qui change par rapport à SI-1b est `--propose-n 120` : 120
+propositions par tour, toutes validées. Toutes les propositions valides sont résolues,
+avec trois tentatives dont deux reprises. Le reste est identique :
+- graines 0, 1 et 2 ;
+- les mêmes amorces et les mêmes barreaux, déjà calibrés ;
+- 5 tours.
+
+`closed-clean` ne lit pas `--propose-n` : ses runs de SI-1b et de la réplication servent
+de témoin tels quels. Le compute est compté, et il est plus élevé pour `closed-propose`.
+
+**Critères**, durcis d'après la réplication :
+
+| | Critère, à chaque graine |
+|---|---|
+| **M′** (mécanisme) | au moins une proposition **nouvelle** promue (résolue à une reprise) sur les 5 tours |
+| **H26c′** (celle qui compte) | banc à quatre chiffres au tour 5 : différence `closed-propose` − `closed-clean`, tâche par tâche, intervalle bootstrap à 95 % **excluant zéro** |
+| H23c′ | la même différence sur le banc à trois opérandes (secondaire) |
+| H20c, H22c, H24c | inchangés |
+
+**SI-1c réussit si H26c′ passe à chacune des trois graines.**
+
+**Lecture pré-écrite.**
+- **H26c′ passe partout** : tirer davantage rend le mécanisme fiable à 7 M. La boucle va
+  au-delà de son générateur, sans tâche humaine, sur l'axe que sa reprise rattrape.
+- **H26c′ passe là où M′ passe, et seulement là** : le mur est quantitatif. Il faut un
+  nombre minimal de propositions nouvelles pour que la récompense soit versée.
+- **M′ passe mais pas H26c′** : la récompense versée ne suffit pas.
+- **H23c′ passe** : les propositions à deux opérateurs ouvrent l'axe de la structure.
