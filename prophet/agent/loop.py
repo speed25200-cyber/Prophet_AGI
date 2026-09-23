@@ -171,6 +171,12 @@ class AgentConfig:
     argmax start lies in a tool ``"observations"`` (docs/31 amendment 17). What is copied
     from the goal is a constant of the task and not worth exploring; what is copied from
     an observation is the choice a loop can get systematically wrong."""
+    copy_explore_end: bool = False
+    """When ``copy_topk`` explores a copy event, draw the pointer's end among its
+    ``copy_topk`` best positions too, instead of the argmax (docs/39 amendment 2). The
+    start draw fixes a wrong value; a value cut short -- an expression missing its third
+    operand, a result missing its last digit -- is an end error, and a retry that explores
+    only the start replays it exactly."""
     copy_boundaries: str = "off"
     """Restrict the copy pointer's start to word boundaries -- positions whose previous
     token ends in whitespace, a quote or punctuation, or that open an observation --
@@ -179,6 +185,14 @@ class AgentConfig:
     value is a whole word or field; a start inside a word is never right, and on the
     misplaced pointer of docs/32 §13 the right start ranked 11th and 15th, behind
     positions inside the same name."""
+    copy_end_boundaries: str = "off"
+    """The same rule at the other end: restrict the copy pointer's end to word ends --
+    tokens followed by whitespace, a quote or punctuation, or that close the context or
+    an observation -- on the attempts that explore (``"explore"``: ``copy_topk`` > 0, every
+    copy event of the attempt) or on every attempt (``"always"``); ``"off"`` leaves it
+    free (docs/39 amendment 2). Digits are single tokens and the generator never writes
+    more than three: the pointer ends ``1263`` after ``126``, and no draw among its best
+    ends reaches the fourth digit."""
 
 
 @dataclass
@@ -225,14 +239,21 @@ class EpisodeResult:
 
 
 def choose_copy_span(
-    s_logits: torch.Tensor, e_logits: torch.Tensor, *, temperature: float, topk: int = 0
+    s_logits: torch.Tensor,
+    e_logits: torch.Tensor,
+    *,
+    temperature: float,
+    topk: int = 0,
+    end_topk: int = 0,
 ) -> tuple[int, int]:
     """Start and end indices of the copy span among the key positions. ``temperature``
     zero (or negative) takes the argmax of each pointer; otherwise both are sampled from
     their tempered softmax, the end restricted to positions at or after the start.
     ``topk`` > 0 draws the start uniformly among the ``topk`` highest-scoring positions
     instead (docs/31 amendment 15): a confident pointer's second choice is then reached
-    as often as its first, which no temperature achieves."""
+    as often as its first, which no temperature achieves. ``end_topk`` > 0 draws the end
+    the same way, among the ``end_topk`` best positions at or after the start (docs/39
+    amendment 2: a copy cut one token short is an end error, which no start explores)."""
     finite = int(torch.isfinite(s_logits).sum())
     if topk > 0 and finite > 0:
         candidates = torch.topk(s_logits, min(topk, finite)).indices
@@ -242,7 +263,11 @@ def choose_copy_span(
     else:
         start_i = int(s_logits.argmax())
     e_logits = e_logits.masked_fill(torch.arange(e_logits.numel()) < start_i, float("-inf"))
-    if temperature > 0:
+    finite_end = int(torch.isfinite(e_logits).sum())
+    if end_topk > 0 and finite_end > 0:
+        candidates = torch.topk(e_logits, min(end_topk, finite_end)).indices
+        end_i = int(candidates[torch.randint(candidates.numel(), (1,))].item())
+    elif temperature > 0:
         end_i = int(torch.multinomial(torch.softmax(e_logits / temperature, -1), 1).item())
     else:
         end_i = int(e_logits.argmax())
@@ -473,11 +498,19 @@ class AgentLoop:
             boundary = torch.tensor([self._word_start(int(k)) for k in key_pos])
             if bool(boundary.any()):
                 s_logits = s_logits.masked_fill(~boundary, float("-inf"))
+        end = {"end_topk": topk} if self.cfg.copy_explore_end and topk > 0 else {}
+        if self.cfg.copy_end_boundaries == "always" or (
+            self.cfg.copy_end_boundaries == "explore" and self.cfg.copy_topk > 0
+        ):
+            ending = torch.tensor([self._word_end(int(k)) for k in key_pos])
+            if bool(ending.any()):
+                e_logits = e_logits.masked_fill(~ending, float("-inf"))
         start_i, end_i = choose_copy_span(
             s_logits,
             e_logits,
             temperature=self.cfg.sample_temperature if self.cfg.sample_copy else 0.0,
             topk=topk,
+            **end,
         )
         start, end = int(key_pos[start_i]), int(key_pos[end_i])
         if end < start or end >= len(self._ids):
@@ -541,6 +574,19 @@ class AgentLoop:
             return True
         previous = self.tok.decode([self._ids[position - 1]])
         return previous == "" or previous[-1] in self._BOUNDARY_CHARS
+
+    def _word_end(self, position: int) -> bool:
+        """Whether a copied span may end at ``position``: the last token of the context
+        or of an observation, or a token whose successor starts with whitespace, a quote
+        or punctuation (a control token decodes to nothing and counts too)."""
+        if position < 0 or position >= len(self._ids):
+            return False
+        if position == len(self._ids) - 1:
+            return True
+        if any(position == end - 1 for _, end in self._observation_spans):
+            return True
+        following = self.tok.decode([self._ids[position + 1]])
+        return following == "" or following[0] in self._BOUNDARY_CHARS
 
     # -- the episode -------------------------------------------------------------------
 

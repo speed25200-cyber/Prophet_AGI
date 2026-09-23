@@ -214,3 +214,18 @@ def test_the_calc_hard_bench_has_three_operands_and_is_deterministic():
     assert not generator & {t.extra["expression"] for t in a}
     with pytest.raises(KeyError):
         make_hard("files", 2)
+
+
+def test_the_calc_digits_bench_has_two_four_digit_operands_and_is_deterministic():
+    """docs/39 amendment 2: the second out-of-distribution bench, on the axis a retry can
+    rescue. The generator never writes a four-digit operand; every task is novel."""
+    from prophet.agent.propose import CalcSpec, make_hard_calc_digits, novel
+
+    a, b = make_hard_calc_digits(20, seed=17), make_hard_calc_digits(20, seed=17)
+    assert [t.goal for t in a] == [t.goal for t in b]
+    assert [t.goal for t in a] != [t.goal for t in make_hard_calc_digits(20, seed=19)]
+    for task in a:
+        left, op, right = task.extra["expression"].split()
+        assert len(left) == len(right) == 4 and op in "+-*"
+        assert task.family == "calc" and task.answer == str(eval(task.extra["expression"]))  # noqa: S307
+        assert novel(CalcSpec("calc", task.extra["expression"]), [])

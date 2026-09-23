@@ -857,6 +857,57 @@ def test_choose_copy_span_topk_reaches_every_top_candidate_equally():
     assert AgentConfig(copy_topk=3).copy_topk == 3 and AgentConfig().copy_topk == 0
 
 
+def test_copy_exploration_can_draw_the_end_too(monkeypatch):
+    """docs/39 amendment 2: a value cut one token short is an end error. With
+    ``copy_explore_end`` the exploring draw takes the end among the best ``copy_topk``
+    positions at or after the start; without it (or without ``copy_topk``) the end stays
+    the argmax."""
+    import types
+
+    import torch as _t
+
+    from prophet.agent import loop as loop_module
+
+    s = _t.tensor([5.0, 0.0, 0.0, 0.0, -50.0])
+    e = _t.tensor([9.0, 0.0, 6.0, 5.0, -50.0])  # argmax 0; the next best are 2 and 3
+    assert choose_copy_span(s, e, temperature=0.0, topk=1) == (0, 0)
+    _t.manual_seed(0)
+    ends = [choose_copy_span(s, e, temperature=0.0, topk=1, end_topk=3)[1] for _ in range(300)]
+    counts = {i: ends.count(i) for i in set(ends)}
+    assert set(counts) == {0, 2, 3} and all(60 <= c <= 140 for c in counts.values()), counts
+    s2 = _t.tensor([0.0, 0.0, 5.0, 0.0, 0.0])  # start 2: ends before it are never drawn
+    for _ in range(50):
+        st, en = choose_copy_span(s2, e, temperature=0.0, topk=1, end_topk=3)
+        assert st == 2 and en >= 2
+    seen = []
+
+    def spy(s_logits, e_logits, *, temperature, topk=0, **kw):
+        seen.append((topk, kw.get("end_topk", 0)))
+        return 0, 0
+
+    monkeypatch.setattr(loop_module, "choose_copy_span", spy)
+    reg = ToolRegistry()
+    reg.add(
+        ToolSchema("say", "Say", {"type": "object", "properties": {"text": {"type": "string"}}})
+    )
+    tok = ProphetTokenizer(merges=[])
+    for cfg, expect in (
+        (AgentConfig(copy_topk=3, copy_explore_end=True), (3, 3)),
+        (AgentConfig(copy_topk=3), (3, 0)),
+        (AgentConfig(copy_explore_end=True), (0, 0)),
+    ):
+        loop = AgentLoop(None, tok, reg, cfg)
+        loop._ids = list(range(10))
+        out = types.SimpleNamespace(
+            copy_gate=_t.tensor([[1.0]]),
+            copy_start=_t.tensor([[[5.0, 0.0]]]),
+            copy_end=_t.tensor([[[0.0, 5.0]]]),
+            copy_key_positions=_t.tensor([2, 4]),
+        )
+        loop._try_copy('{"name":"say","args":{"text":', out)
+        assert seen.pop() == expect, (cfg, expect)
+
+
 def test_copy_exploration_can_be_limited_to_spans_read_from_observations(monkeypatch):
     """docs/31 amendment 17: with ``copy_explore="observations"`` the top-k draw applies
     only when the pointer's preferred start lies in a tool observation; a span copied
@@ -951,6 +1002,59 @@ def test_copy_starts_can_be_restricted_to_word_boundaries(monkeypatch):
     e = _t.tensor([0.0, 0.0, 0.0, 0.0])
     _t.manual_seed(0)
     assert {choose_copy_span(s, e, temperature=0.0, topk=3)[0] for _ in range(100)} == {0, 2}
+
+
+def test_copy_ends_can_be_restricted_to_word_ends(monkeypatch):
+    """docs/39 amendment 2: digits are single tokens, and a pointer trained on operands of
+    at most three digits ends ``1263`` after ``126``. Ends inside a word are masked on the
+    attempts that explore (``"explore"``, i.e. ``copy_topk`` > 0) or on every attempt
+    (``"always"``)."""
+    import types
+
+    import torch as _t
+
+    from prophet.agent import loop as loop_module
+
+    seen = []
+
+    def spy(s_logits, e_logits, *, temperature, topk=0, **kw):
+        seen.append([float(v) for v in e_logits])
+        return int(s_logits.argmax()), int(e_logits.argmax())
+
+    monkeypatch.setattr(loop_module, "choose_copy_span", spy)
+    reg = ToolRegistry()
+    reg.add(
+        ToolSchema("say", "Say", {"type": "object", "properties": {"text": {"type": "string"}}})
+    )
+    tok = ProphetTokenizer(merges=[])
+    text = "Compute 908 + 1263 with"
+    ids = [ord(c) for c in text]  # the bare tokenizer is byte-level: one digit per token
+    six, three = text.index("1263") + 2, text.index("1263") + 3
+    positions = [text.index("908") + 2, six, three, len(text) - 1]  # "8" ends a word
+    for mode, topk, expect_masked in (
+        ("off", 3, []),
+        ("explore", 3, [six]),
+        ("explore", 0, []),
+        ("always", 0, [six]),
+    ):
+        loop = AgentLoop(None, tok, reg, AgentConfig(copy_topk=topk, copy_end_boundaries=mode))
+        loop._ids = list(ids)
+        assert loop._word_end(three) and loop._word_end(len(ids) - 1)
+        assert not loop._word_end(six) and not loop._word_end(len(ids))
+        out = types.SimpleNamespace(
+            copy_gate=_t.tensor([[1.0]]),
+            copy_start=_t.tensor([[[5.0, 0.0, 0.0, 0.0]]]),
+            copy_end=_t.tensor([[[0.0, 9.0, 1.0, 0.0]]]),  # prefers the cut after "126"
+            copy_key_positions=_t.tensor(positions),
+        )
+        loop._try_copy('{"name":"say","args":{"text":', out)
+        masked = [positions[i] for i, v in enumerate(seen.pop()) if v == float("-inf")]
+        assert masked == expect_masked, (mode, topk, masked)
+    # The last token of an observation closes a word too.
+    loop = AgentLoop(None, tok, reg, AgentConfig())
+    loop._ids = [ord(c) for c in "ab12cd"]
+    loop._observation_spans = [(0, 4)]
+    assert loop._word_end(3) and not loop._word_end(2)
 
 
 def test_grammar_reports_the_inside_of_a_string_value_and_the_decoder_can_widen():

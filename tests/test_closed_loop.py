@@ -491,6 +491,30 @@ def test_copy_topk_explores_from_the_second_attempt_only(work, tmp_path, monkeyp
     )
     assert seen[:1] == [0] and all(k == 3 for k in seen[1:]) and len(seen) >= 1
     assert generation["promoted_explored"] >= 0
+    # docs/39 amendment 2: the end draw rides on the same exploring attempts.
+    ends = []
+    monkeypatch.setattr(
+        closed_loop,
+        "run_bench",
+        lambda model, tokenizer, tasks, cfg, **kw: (
+            ends.append(cfg.copy_explore_end) or real(model, tokenizer, tasks, cfg, **kw)
+        ),
+    )
+    generate_round(
+        model,
+        tokenizer,
+        "calc",
+        tasks,
+        Q(tmp_path / "q3.json"),
+        round_index=1,
+        attempts=2,
+        temperature=0.7,
+        copy_topk=3,
+        explore_from_attempt=1,
+        copy_explore_end=True,
+    )
+    assert ends and all(ends)
+    monkeypatch.setattr(closed_loop, "run_bench", spy)
     seen.clear()
     generate_round(
         model,
@@ -1035,3 +1059,85 @@ def test_train_rows_hands_the_gate_keys_to_the_trainer(work, tmp_path, monkeypat
     )
     assert [tc.gate_keys for tc in captured] == [{"propose_calc": ()}]
     assert closed_loop.PROPOSE_COPY_KEYS == {"none": (), "ask": ("ask",)}
+
+
+def test_copy_explore_end_is_recorded_when_set_and_needs_copy_topk(work, tmp_path):
+    """docs/39 amendment 2: the option enters protocol.json only when set, and without
+    --copy-topk nothing would read it, so the script refuses it."""
+    base = [
+        "--work",
+        str(work),
+        "--arm",
+        "frozen",
+        "--family",
+        "calc",
+        "--config",
+        str(work / "tiny.json"),
+        "--seq-len",
+        str(SEQ_LEN),
+        "--batch-size",
+        "2",
+        "--rounds",
+        "0",
+        "--tasks-per-round",
+        "3",
+        "--attempts",
+        "2",
+        "--steps-per-round",
+        "2",
+        "--seed-episodes",
+        "3",
+        "--seed-steps",
+        "2",
+        "--bench-tasks",
+        "2",
+        "--bpb-docs",
+        "3",
+    ]
+    out = tmp_path / "end"
+    assert main(base + ["--out", str(out), "--copy-topk", "2", "--copy-explore-end"]) == 0
+    protocol = json.loads((out / "protocol.json").read_text())
+    assert protocol["copy_explore_end"] is True and "copy_end_boundaries" not in protocol
+    with pytest.raises(SystemExit):
+        main(base + ["--out", str(tmp_path / "bare"), "--copy-explore-end"])
+    # The end-boundary switch: recorded when set, read by every loop config of the run,
+    # and refused in its "explore" mode without --copy-topk.
+    out = tmp_path / "words"
+    argv = base + ["--out", str(out), "--copy-topk", "2", "--copy-end-boundaries", "explore"]
+    assert main(argv) == 0
+    assert json.loads((out / "protocol.json").read_text())["copy_end_boundaries"] == "explore"
+    assert closed_loop.generation_config("calc", temperature=0.0).copy_end_boundaries == "explore"
+    with pytest.raises(SystemExit):
+        main(base + ["--out", str(tmp_path / "bare2"), "--copy-end-boundaries", "explore"])
+    assert main(base + ["--out", str(tmp_path / "plain")]) == 0
+    assert closed_loop.generation_config("calc", temperature=0.0).copy_end_boundaries == "off"
+
+
+def test_bench_checkpoint_replays_the_runs_greedy_bench_on_an_ood_set(work, tmp_path):
+    """docs/39 amendment 2: a checkpoint is benched after the run on an out-of-distribution
+    set, with the model config and decoding switches of the run's protocol.json."""
+    from scripts import bench_checkpoint
+
+    out = tmp_path / "frozen"
+    run(work, out, "frozen", rounds=0, copy_topk=2, copy_end_boundaries="explore")
+    closed_loop.COPY_END_BOUNDARIES = closed_loop.NO_REPEAT_ACTION = "reset"
+    result = bench_checkpoint.main(
+        [
+            "--work",
+            str(work),
+            "--run",
+            str(out),
+            "--bench",
+            "calc-digits",
+            "--seeds",
+            "17,19",
+            "--n",
+            "2",
+        ]
+    )
+    assert result["round"] == 0 and len(result["verified"]) == 4
+    assert result["success"] == sum(result["verified"]) / 4
+    # The switches come from the protocol, not from whatever the process held.
+    assert closed_loop.COPY_END_BOUNDARIES == "explore" and closed_loop.NO_REPEAT_ACTION is False
+    with pytest.raises(SystemExit):
+        bench_checkpoint.main(["--work", str(work), "--run", str(out), "--bench", "nope"])

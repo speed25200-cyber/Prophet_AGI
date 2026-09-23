@@ -87,6 +87,7 @@ SAMPLE_COPY = False  # set by main() from --sample-copy; generation only (the be
 NO_REPEAT_ACTION = False  # set by main() from --no-repeat-action; read by generation_config callers
 NO_REPEAT_EMITTED = False  # set by main() from --no-repeat-emitted; bench and generation alike
 COPY_BOUNDARIES = "off"  # set by main() from --copy-boundaries; bench and generation alike
+COPY_END_BOUNDARIES = "off"  # set by main() from --copy-end-boundaries; likewise
 PROPOSE_COPY_KEYS = {"none": (), "ask": ("ask",)}
 """--propose-copy -> the proposal keys the copy pointer may fill. Decoding and training
 both read it: the gate is trained on a proposal only where the proposer asks it."""
@@ -110,6 +111,7 @@ def generation_config(
     copy_topk: int = 0,
     copy_explore: str = "all",
     copy_boundaries: str | None = None,
+    copy_explore_end: bool = False,
 ) -> AgentConfig:
     """The bench's loop settings (docs/09), with the family named so the quarantine
     files the episodes under it and a temperature the caller chooses: sampled for
@@ -130,7 +132,9 @@ def generation_config(
         sample_copy=sample_copy,
         copy_topk=copy_topk,
         copy_explore=copy_explore,
+        copy_explore_end=copy_explore_end,
         copy_boundaries=COPY_BOUNDARIES if copy_boundaries is None else copy_boundaries,
+        copy_end_boundaries=COPY_END_BOUNDARIES,
         no_repeat_emitted=NO_REPEAT_EMITTED,
     )
 
@@ -329,6 +333,7 @@ def generate_round(
     copy_topk: int = 0,
     explore_from_attempt: int = 2,
     copy_explore: str = "all",
+    copy_explore_end: bool = False,
 ) -> dict:
     """Run the loop on every task, up to ``attempts`` times each; verified successes
     enter the quarantine through the loop itself (tier 0, promoted).
@@ -361,6 +366,7 @@ def generate_round(
                 sample_copy=SAMPLE_COPY,
                 copy_topk=copy_topk if exploring else 0,
                 copy_explore=copy_explore,
+                copy_explore_end=copy_explore_end,
             ),
             quarantine=quarantine,
             tools_for=task_families.tools_for,
@@ -780,11 +786,24 @@ def main(argv: list[str] | None = None) -> int:
         "observation (docs/31 amendment 17)",
     )
     ap.add_argument(
+        "--copy-explore-end",
+        action="store_true",
+        help="the exploring retries draw the copy pointer's end among its --copy-topk best "
+        "positions too (docs/39 amendment 2: a value cut short is an end error)",
+    )
+    ap.add_argument(
         "--copy-boundaries",
         choices=("off", "explore", "always"),
         default="off",
         help="restrict the copy pointer's start to word boundaries: for the exploratory "
         "draw only, or for the argmax too (docs/31 amendment 19)",
+    )
+    ap.add_argument(
+        "--copy-end-boundaries",
+        choices=("off", "explore", "always"),
+        default="off",
+        help="restrict the copy pointer's end to word ends: on the attempts that explore "
+        "(--copy-topk), or on every attempt (docs/39 amendment 2)",
     )
     ap.add_argument(
         "--explore-from-attempt",
@@ -881,12 +900,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     global NO_REPEAT_ACTION, NO_REPEAT_EMITTED, SAMPLE_COPY, COPY_BOUNDARIES, GATE_KEYS
+    global COPY_END_BOUNDARIES
     NO_REPEAT_ACTION = bool(args.no_repeat_action)
     NO_REPEAT_EMITTED = bool(args.no_repeat_emitted)
     if NO_REPEAT_EMITTED and not NO_REPEAT_ACTION:
         ap.error("--no-repeat-emitted refines --no-repeat-action; pass both")
     SAMPLE_COPY = bool(args.sample_copy)
     COPY_BOUNDARIES = args.copy_boundaries
+    COPY_END_BOUNDARIES = args.copy_end_boundaries
     if args.rounds < 0 or args.tasks_per_round < 1 or args.attempts < 1 or args.steps_per_round < 0:
         ap.error("rounds >= 0, tasks and attempts >= 1, steps >= 0")
     if not 0 <= args.replay_fraction < 1:
@@ -960,13 +981,19 @@ def main(argv: list[str] | None = None) -> int:
         protocol["bench_families"] = "+".join(bench_families)
     if args.copy_topk < 0 or args.explore_from_attempt < 1:
         ap.error("copy-topk >= 0, explore-from-attempt >= 1")
+    if (args.copy_explore_end or args.copy_end_boundaries == "explore") and not args.copy_topk:
+        ap.error("--copy-explore-end and --copy-end-boundaries explore act with --copy-topk")
     if args.copy_topk:
         protocol["copy_topk"] = args.copy_topk
         protocol["explore_from_attempt"] = args.explore_from_attempt
         if args.copy_explore != "all":
             protocol["copy_explore"] = args.copy_explore
+        if args.copy_explore_end:
+            protocol["copy_explore_end"] = True
     if args.copy_boundaries != "off":
         protocol["copy_boundaries"] = args.copy_boundaries
+    if args.copy_end_boundaries != "off":
+        protocol["copy_end_boundaries"] = args.copy_end_boundaries
     if args.arm == "closed-propose":
         protocol["propose"] = {"n": propose_n}
     if args.propose_amorce:
@@ -1249,6 +1276,7 @@ def main(argv: list[str] | None = None) -> int:
                     copy_topk=args.copy_topk,
                     explore_from_attempt=args.explore_from_attempt,
                     copy_explore=args.copy_explore,
+                    copy_explore_end=args.copy_explore_end,
                 )
             else:
                 generation = {
@@ -1304,6 +1332,7 @@ def main(argv: list[str] | None = None) -> int:
                         copy_topk=args.copy_topk,
                         explore_from_attempt=args.explore_from_attempt,
                         copy_explore=args.copy_explore,
+                        copy_explore_end=args.copy_explore_end,
                     )
                     for f, tasks in tasks_by_family.items()
                 }

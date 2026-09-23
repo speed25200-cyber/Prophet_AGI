@@ -85,7 +85,70 @@ qui explorent, `no_repeat_emitted`).
 
 ## 3. Résultats
 
-*(à venir)*
+### SI-1, 2026-09-23 (graine 0, après l'amendement 1)
+
+Calibration : le premier barreau (50 pas, *P* = 50) passe.
+
+| Mesure | Valeur |
+|---|---|
+| banc du générateur | 1,0 |
+| succès canonique | 1,0 |
+| banc hors distribution | 0,783 |
+| propositions valides | 28 sur 30 |
+| propositions malformées | 0 |
+
+Trois bras de 5 tours, ≈ 20 min de compute chacun. Script de lecture en brouillon ; il
+réutilise `summarize_closed_loop.py`, et tous les chiffres sont ici.
+
+| | Critère | Mesure | Verdict |
+|---|---|---|---|
+| H20c | ≥ 0,5 valides à chaque tour | 0,97 ; 0,97 ; 0,97 ; 0,93 ; 0,87 | **passe** |
+| H21c | ≥ 3 tours sur 5 résolus entre 0,2 et 0,8 | 0,83 ; 1,0 ; 1,0 ; 0,93 ; 1,0 — aucun tour | **échoue** |
+| H22c | banc du générateur, perte ≤ 0,05 | 1,0 aux six mesures | **passe** |
+| H23c | gain hors distribution, `closed-propose` > `closed-clean`, intervalle > 0 | **−0,100** [−0,200 ; −0,017] (1 gagnée, 7 perdues) contre −0,033 [−0,083 ; 0] | **échoue** |
+| H24c | ΔBPB ≤ témoin + 0,02 | +0,095 contre +0,095 | **passe** |
+| H25c | ≥ 50 % de nouvelles | **4,3 %** (6 sur 141) | **échoue** |
+
+Banc hors distribution tour par tour (60 tâches) :
+
+| Bras | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---:|---:|---:|---:|---:|---:|
+| `closed-propose` | 0,783 | 0,767 | 0,717 | 0,717 | 0,717 | **0,683** |
+| `closed-clean` | 0,783 | 0,733 | 0,767 | 0,750 | 0,750 | 0,750 |
+| `oracle` | 0,783 | 0,717 | 0,750 | 0,717 | 0,733 | 0,750 |
+
+**La lecture pré-écrite s'applique.** H20c passe, H25c échoue : le proposeur recopie la forme
+de son amorce, deux opérandes à chaque proposition, et la portée ne peut pas venir de lui.
+Proposer fait même **reculer** le banc hors distribution (−0,10, intervalle excluant zéro).
+Les deux témoins restent dans le bruit (−0,033). S'entraîner sur des tâches à deux
+opérandes, les siennes ou celles du générateur, n'apprend rien sur trois.
+
+**Pourquoi le proposeur n'a jamais bougé : sa récompense n'a jamais été versée.**
+- **Aucune** proposition n'a été résolue à une reprise en 5 tours : 134 résolues du premier
+  coup, 7 jamais. La seule récompense du proposeur (docs/33 §2 : résolue à une reprise, pas
+  du premier coup) ne s'est donc jamais déclenchée. Aucune proposition n'a été promue, et
+  la distribution du proposeur est restée celle de l'amorce.
+- Le diagnostic en lecture seule du banc hors distribution au tour 0 compte 13 échecs sur
+  60, de deux sortes, **deux longueurs de copie** apprises sur le générateur :
+  - (a) **expression tronquée**, 8 cas : `calc("41 - 250")` pour `41 - 250 - 56`. Le
+    pointeur s'arrête après le deuxième opérande, la seule longueur qu'il ait vue ;
+  - (b) **résultat tronqué**, 5 cas : la note `24557863` pour `245578632`. La copie de
+    l'observation perd le dernier chiffre des résultats longs.
+- Or l'exploration des reprises (docs/31 amendement 15) tire le **début** du span parmi
+  les 3 meilleurs ; la **fin** reste gloutonne. Sous `--copy-explore observations`, elle
+  ne joue même que sur les spans lus dans une observation, et l'expression de `calc` est
+  copiée du but. Une reprise rejoue donc exactement la même troncature.
+
+  Ce n'est pas un défaut silencieux : l'exploration a été conçue pour `lookup`, où
+  l'erreur est la valeur désignée (le début). Mais sous cette recette, la récompense du
+  proposeur `calc` ne pouvait pas être versée.
+
+Ce que SI-1 établit à 7 M :
+- un champ unique fait démarrer le proposeur (0 → 28 valides sur 30, contre au mieux 12
+  pour `lookup`) ;
+- la boucle de proposition tourne sans nuire au générateur ni à la langue ;
+- elle **ne va pas au-delà du générateur**, parce que rien ne récompense un pas au-delà :
+  un proposeur dont la récompense ne peut pas être versée n'apprend rien.
 
 ## Amendement 1 — 2026-09-23, après le premier barreau, avant tout tour entraîné : deux défauts
 
@@ -145,3 +208,72 @@ barreau relit les siens.
 **Lecture pré-écrite.** Si le premier barreau fait encore tomber le banc du solveur sous la
 fenêtre, la porte n'était pas seule en cause : on s'arrête pour diagnostiquer, sans régler
 de paramètre.
+
+## Amendement 2 — 2026-09-23, après SI-1 : SI-1b, pré-enregistrée — payer la récompense du proposeur
+
+**Ce qui manquait à SI-1** (§3) : une reprise ne pouvait rien rattraper, donc la récompense
+du proposeur n'a jamais été versée. Il faut d'abord qu'une reprise puisse réussir là où le
+premier essai échoue ; alors seulement on peut demander si le proposeur bouge.
+
+**Le mécanisme, mesuré avant tout run** (sonde en lecture seule sur le checkpoint du tour
+0 : les reprises de `generate_round`, deux essais qui explorent après un premier qui
+n'explore pas) :
+
+| Reprises | Banc hors distribution : rattrapées sur 13 échecs | Propositions jamais résolues : rattrapées sur 6 |
+|---|---:|---:|
+| début tiré parmi 3, spans des observations (recette de SI-1) | 0 | 0 |
+| début tiré parmi 3, tous les spans | 0 | 0 |
+| + fin tirée parmi 3 (`copy_explore_end`) | 1 à 2 | 0 |
+| **+ fin restreinte aux fins de mot (`copy_end_boundaries = "explore"`)** | **4** | **4** |
+| + les deux | 3 | 4 |
+
+Les six propositions jamais résolues échouent toutes de la même façon : l'opérande à quatre
+chiffres est coupé au troisième (`908 + 1263` → `calc("908 + 126")`). Les chiffres sont des
+jetons isolés, et le générateur n'écrit jamais plus de trois chiffres. Aucun tirage parmi
+les trois meilleures fins n'atteint le quatrième. La règle de docs/31 amendement 19 (une
+valeur copiée est un mot entier) le fait, appliquée à la fin du span.
+
+**Deux options nouvelles**, lues par le code et testées :
+- `AgentConfig.copy_explore_end` et `choose_copy_span(end_topk=)` : la fin tirée parmi les
+  *k* meilleures positions, sous `--copy-explore-end`. Mesurée ci-dessus, **pas retenue**.
+- `AgentConfig.copy_end_boundaries` (`off`, `explore`, `always`) et `_word_end`, sous
+  `--copy-end-boundaries`. En mode `explore`, la restriction ne joue que sur les essais qui
+  explorent (`copy_topk` > 0), si bien que le banc glouton et le premier essai sont
+  inchangés.
+
+**Un second banc hors distribution** : `make_hard_calc_digits`, 2 × 30 tâches `a op b` à
+deux opérandes de **quatre chiffres** (graines 17 et 19), que le générateur n'écrit jamais.
+C'est l'axe qu'une reprise peut rattraper, là où le banc à trois opérandes en mesure un
+autre. Il est évalué après le run par `scripts/bench_checkpoint.py`, qui relit la config
+et les réglages de décodage du `protocol.json` du run.
+
+Mesures a posteriori sur SI-1, **non pré-enregistrées**, qui servent de référence :
+- tour 0 : 0,050 ;
+- après 5 tours : `closed-propose` 0,167, `closed-clean` 0,217, `oracle` 0,150.
+
+**SI-1b.** La seule variable qui change par rapport à SI-1 est `--copy-end-boundaries
+explore`.
+- Bras `closed-propose` et `closed-clean` : tous deux reprennent leurs échecs, donc la
+  variable touche les deux.
+- Le bras `oracle` de SI-1 est repris tel quel : il ne passe pas par les reprises.
+- Même répertoire d'amorce que SI-1 (le barreau 50 / 50, déjà calibré ; le tour 0 est
+  identique puisque le banc est glouton), même graine, 5 tours.
+
+| | Critère |
+|---|---|
+| **M** (mécanisme) | des propositions résolues **à une reprise** sur ≥ 3 tours sur 5 : la récompense du proposeur est versée |
+| H20c, H21c, H22c, H24c, H25c | inchangés (§2) |
+| H23c | inchangé : banc à trois opérandes |
+| **H26c portée en chiffres** | banc à quatre chiffres, du tour 0 au tour 5 : gain de `closed-propose` > gain de `closed-clean`, intervalle de `closed-propose` (60 tâches) excluant zéro |
+
+**Lecture pré-écrite.**
+- Si **M** échoue, ce qui rattrapait dans la sonde ne rattrape pas dans la boucle. On
+  s'arrête pour comprendre.
+- Si **M** passe et que la part de propositions nouvelles **monte** d'un tour à l'autre, le
+  proposeur bouge quand on le récompense : c'est la première trace dans ce dépôt d'un
+  modèle qui déplace lui-même la distribution de ses tâches.
+- Si **H26c** passe, c'est la première mesure d'une boucle qui va au-delà de son
+  générateur, sur l'axe que son exploration atteint.
+- Si **H23c** passe aussi, le gain se transfère à un axe que rien n'a exploré.
+- Si **M** passe mais pas **H26c**, les propositions récompensées ne donnent pas au solveur
+  plus que la boucle propre.

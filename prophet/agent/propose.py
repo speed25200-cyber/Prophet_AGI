@@ -43,6 +43,7 @@ __all__ = [
     "CalcSpec",
     "make_hard",
     "make_hard_calc",
+    "make_hard_calc_digits",
 ]
 
 FAMILIES = ("lookup", "calc")
@@ -363,6 +364,30 @@ def make_hard_calc(n: int, *, seed: int = 0) -> list[Task]:
         tasks.append(
             Task(
                 f"calc-hard-{seed}-{i}",
+                "calc",
+                goal,
+                _safe_calc(expression),
+                {},
+                {"expression": expression, "hard": True},
+            )
+        )
+    return tasks
+
+
+def make_hard_calc_digits(n: int, *, seed: int = 0) -> list[Task]:
+    """A second out-of-distribution calc bench (docs/39 amendment 2): two operands of four
+    digits, which the generator never writes either (it draws 10 to 998). The axis a
+    retry can rescue -- a copy cut inside a number -- where ``make_hard_calc`` measures
+    the third operand. Same template, tool and verifier as ``calc``."""
+    rng = random.Random(f"calc-digits-{seed}")
+    tasks = []
+    for i in range(n):
+        a, b = (rng.randrange(1000, 10000) for _ in range(2))
+        expression = f"{a} {rng.choice('+-*')} {b}"
+        goal = f"Compute {expression} with the calc tool, note the result, then finish."
+        tasks.append(
+            Task(
+                f"calc-digits-{seed}-{i}",
                 "calc",
                 goal,
                 _safe_calc(expression),
