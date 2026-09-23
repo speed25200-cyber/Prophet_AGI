@@ -101,7 +101,12 @@ Il n'a jamais tourné sur GPU.
 | Le décodage admettait ce que JSON refuse | **défaut trouvé et corrigé** | 27 malformées sur 30 au premier barreau à cause de lui | 33 amend. 8 |
 | H26 : les champs en objet, dans la forme que le solveur lit | **réfuté sur le critère**, verrou des champs levé | 12 valides sur 30 (0,40), solveur 0,933 dans la fenêtre ; champs justes 0 → 23 sur 29 à dose égale | 32 §23 |
 | H27 : la clé demandée copiée par le pointeur | **réfuté** | 6 valides sur 30 : le pointeur copie la valeur au lieu de la clé | 32 §23 |
-| H21–H25 : bord de compétence, transfert, **portée hors distribution**, oubli, nouveauté | **jamais lancées** | la calibration n'est jamais passée | 33 §3 |
+| H21–H25 : bord de compétence, transfert, **portée hors distribution**, oubli, nouveauté | **jamais lancées** pour `lookup` | la calibration n'est jamais passée | 33 §3 |
+| **SI-1 : un champ unique (`calc`) fait démarrer le proposeur** | **établi à 7 M** | 28 valides sur 30 dès le premier barreau, 0,87 à 0,97 à chaque tour | 39 §3 |
+| SI-1, H23c : proposer va au-delà du générateur | **réfuté à 7 M** | banc à trois opérandes −0,10 [−0,20 ; −0,017], témoin −0,033 ; 4,3 % de propositions nouvelles | 39 §3 |
+| Pourquoi : la récompense du proposeur n'a jamais été versée | **établi** | 0 proposition résolue à une reprise en 5 tours : l'exploration tire le début du span, et les échecs sont des fins coupées | 39 §3 |
+| SI-1b : fins restreintes aux fins de mot sur les reprises, la récompense est versée et le proposeur bouge | **en cours** | sonde : 4 propositions sur 6 rattrapées (0 avec la recette de SI-1) | 39 amend. 2 |
+| Deux défauts qui tuaient SI-1 : échappement dans un nom d'outil ; porte de copie entraînée là où le proposeur ne l'interroge pas | **trouvés et corrigés** | 30 malformées sur 30 ; logit de la porte +9,32 → −1,16, banc du solveur 1,0 → 0,0 | 39 amend. 1 |
 
 H23 est celle qui compte pour le but. **Proposer va plus loin que le générateur** sur un
 banc hors de sa distribution. Sans elle, proposer n'est qu'un générateur plus cher.
