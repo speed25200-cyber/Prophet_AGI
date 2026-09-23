@@ -204,7 +204,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--warmup", type=int, default=100)
     args = ap.parse_args(argv)
     pairs = tuple(int(x) for x in args.pairs.split(","))
-    arms = [("state", int(d), int(k)) for d in args.dk.split(",") for k in args.k.split(",")]
+    # An empty --dk runs no state arm: the control alone (docs/37 amendment 1).
+    arms = [("state", int(d), int(k)) for d in args.dk.split(",") if d for k in args.k.split(",")]
     if args.layout:
         arms += [("layout", 16, int(k)) for k in args.k.split(",")]
     out = Path(args.out)

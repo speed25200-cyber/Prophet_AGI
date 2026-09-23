@@ -55,3 +55,25 @@ def test_a_run_reports_every_pair_count_for_every_arm(tmp_path):
     assert set(report["arms"]) == {"state-d8-k1", "state-d8-k2", "layout-d16-k1", "layout-d16-k2"}
     for arm in report["arms"].values():
         assert set(arm["accuracy_by_pairs"]) == {"2", "4"}
+
+
+def test_an_empty_dk_runs_the_control_alone(tmp_path):
+    argv = [
+        "--out",
+        str(tmp_path),
+        "--dk",
+        "",
+        "--k",
+        "1",
+        "--pairs",
+        "2",
+        "--layout",
+        "--steps",
+        "1",
+        "--eval-n",
+        "2",
+        "--warmup",
+        "1",
+    ]
+    assert r.main(argv) == 0
+    assert set(json.loads((tmp_path / "report.json").read_text())["arms"]) == {"layout-d16-k1"}
