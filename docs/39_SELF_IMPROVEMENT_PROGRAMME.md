@@ -277,3 +277,78 @@ explore`.
 - Si **H23c** passe aussi, le gain se transfère à un axe que rien n'a exploré.
 - Si **M** passe mais pas **H26c**, les propositions récompensées ne donnent pas au solveur
   plus que la boucle propre.
+
+### SI-1b, 2026-09-23 (graine 0, amendement 2) — **non reproduit** : une seule graine
+
+Deux bras de 5 tours (≈ 21 min de compute chacun), sur l'amorce de SI-1. Le bras `oracle`
+est repris de SI-1. Les bancs a posteriori viennent de `scripts/bench_checkpoint.py`. Pour
+le banc à trois opérandes, rejoué a posteriori, les valeurs sont identiques à celles que le
+run a mesurées au tour 5 (0,783 ; 0,750 ; 0,750) : la mesure a posteriori est la même
+mesure.
+
+| | Critère | Mesure | Verdict |
+|---|---|---|---|
+| **M** | récompense versée sur ≥ 3 tours sur 5 | propositions résolues à une reprise : **5 ; 1 ; 0 ; 0 ; 0** | **échoue** |
+| H20c | ≥ 0,5 valides à chaque tour | 0,97 ; 0,90 ; 0,93 ; 0,87 ; 0,83 | passe |
+| H21c | ≥ 3 tours résolus entre 0,2 et 0,8 | 1,0 à chaque tour | échoue |
+| H22c | banc du générateur, perte ≤ 0,05 | 1,0 → 0,983 | passe |
+| H23c | trois opérandes, `closed-propose` > `closed-clean`, intervalle > 0 | **0,0** [−0,10 ; +0,083] (4 gagnées, 4 perdues) contre −0,033 | échoue |
+| H24c | ΔBPB ≤ témoin + 0,02 | +0,098 contre +0,095 | passe |
+| H25c | ≥ 50 % de nouvelles (sur les 5 tours) | **34,8 %** ; par tour 5/29, 10/27, 8/28, 11/26, **13/25** | échoue |
+| **H26c** | quatre chiffres, gain `closed-propose` > `closed-clean`, intervalle > 0 | **+0,917** [+0,833 ; +0,983], 55 gagnées, 0 perdue, contre +0,167 | **passe** |
+
+Banc à quatre chiffres (60 tâches, graines 17 et 19), succès :
+
+| tour 0 | `closed-propose`, tour 5 | `closed-clean`, tour 5 | `oracle`, tour 5 |
+|---:|---:|---:|---:|
+| 0,050 | **0,967** | 0,217 | 0,150 |
+
+**Ce qui s'est passé, tour par tour.**
+1. **Tour 1.** Les 5 propositions nouvelles, toutes à opérande de quatre chiffres,
+   échouent au premier essai et sont rattrapées à la reprise : c'est la troncature que la
+   restriction aux fins de mot corrige. Toutes les 5 sont promues. **La récompense du
+   proposeur est versée pour la première fois**, et exactement sur les propositions qui
+   sortent de la distribution.
+2. **Tour 2.** Le solveur, entraîné sur ces reprises, résout les quatre chiffres du
+   premier coup (26 sur 27, une reprise). La part de nouvelles double : 10 sur 27.
+3. **Tours 3 à 5.** Plus rien n'est au bord, donc plus rien n'est promu. Mais les 6
+   propositions promues sont rejouées à chaque tour, et la part de nouvelles monte
+   encore, jusqu'à 13 sur 25. Le solveur résout tout ce qu'on lui propose.
+
+**Lecture, par la lecture pré-écrite.**
+- **H26c passe.** C'est la **première mesure dans ce dépôt d'une boucle qui va au-delà de
+  son générateur**, sans tâche humaine : 0,05 → 0,967 sur des tâches que le générateur
+  n'écrit jamais. Le témoin nourri par le générateur n'atteint que 0,217, l'oracle 0,150.
+- **Sa portée est étroite, et le chiffre le dit.** L'axe gagné est celui que
+  l'exploration atteint : la longueur des nombres. Rien ne se transfère au troisième
+  opérande (H23c : 0,0).
+- **M échoue sous sa forme écrite, et la raison compte.** La récompense a été versée deux
+  tours, puis le bord a disparu : le solveur a rattrapé le proposeur, et le proposeur ne
+  va pas plus loin. Sur 135 propositions valides, **aucune** n'a deux opérateurs, et les
+  règles plafonnent les nombres à quatre chiffres. Le proposeur a épuisé le seul axe
+  qu'il explore.
+
+**Les deux murs, nommés** (ce que SI-8 devait trouver) :
+1. **Le proposeur n'explore pas la structure.** Un second opérateur a une probabilité que
+   le tirage des valeurs (top-5) n'atteint jamais.
+2. **Une reprise ne sait pas ajouter ce qui manque.** Même proposée, une expression à
+   trois opérandes échoue par un opérande omis, et la fin coupée après `250` est une fin
+   de mot légitime : aucune règle de bornes ne la rattrape (sonde de l'amendement 2 : 4
+   sur 13 au mieux sur ce banc).
+
+## Amendement 3 — 2026-09-23, après SI-1b : réplication pré-enregistrée aux graines 1 et 2
+
+SI-1b tient sur une graine. Avant de s'appuyer sur H26c, elle est rejouée **à l'identique**
+aux graines 1 et 2 :
+- premier temps de l'amorce propre à chaque graine ;
+- échelle de calibration de §2, premier barreau qui passe ;
+- `closed-propose` et `closed-clean`, 5 tours, `--copy-end-boundaries explore` ;
+- bancs a posteriori à quatre chiffres et à trois opérandes.
+
+Le bras `oracle` n'est pas rejoué : il ne porte sur aucun critère de la réplication. Les
+bancs sont les mêmes pour toutes les graines (générateur 7 et 11, hors distribution 17 et
+19). Seules changent les tâches d'amorce et de tour, et les graines d'entraînement.
+
+**Critère de réplication** : H26c passe **à chacune** des deux graines. M, H23c et H25c sont
+rapportés graine par graine. Si une graine ne passe pas un barreau de calibration, elle est
+rapportée comme telle et ne compte ni pour ni contre.
