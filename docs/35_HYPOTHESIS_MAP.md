@@ -105,7 +105,9 @@ Il n'a jamais tourné sur GPU.
 | **SI-1 : un champ unique (`calc`) fait démarrer le proposeur** | **établi à 7 M** | 28 valides sur 30 dès le premier barreau, 0,87 à 0,97 à chaque tour | 39 §3 |
 | SI-1, H23c : proposer va au-delà du générateur | **réfuté à 7 M** | banc à trois opérandes −0,10 [−0,20 ; −0,017], témoin −0,033 ; 4,3 % de propositions nouvelles | 39 §3 |
 | Pourquoi : la récompense du proposeur n'a jamais été versée | **établi** | 0 proposition résolue à une reprise en 5 tours : l'exploration tire le début du span, et les échecs sont des fins coupées | 39 §3 |
-| SI-1b : fins restreintes aux fins de mot sur les reprises, la récompense est versée et le proposeur bouge | **en cours** | sonde : 4 propositions sur 6 rattrapées (0 avec la recette de SI-1) | 39 amend. 2 |
+| SI-1b, H26c : quand une reprise peut rattraper, la boucle qui propose va au-delà du générateur | **établi à 7 M sur une graine**, réplication en cours (graines 1 et 2) | banc à quatre chiffres, que le générateur n'écrit jamais : **0,05 → 0,967** (55 gagnées, 0 perdue), témoin 0,217, oracle 0,150 | 39 §3, amend. 2–3 |
+| SI-1b : le proposeur bouge quand sa récompense est versée | **observé**, critère M échoué | récompense versée aux tours 1–2 (sur les 5 puis 1 propositions nouvelles) ; part de nouvelles 17 % → 52 % ; puis plus de bord : le solveur a rattrapé | 39 §3 |
+| SI-1b, H23c : le gain se transfère à un autre axe (troisième opérande) | **réfuté à 7 M** | 0,0 (4 gagnées, 4 perdues) ; aucune proposition à deux opérateurs sur 135 | 39 §3 |
 | Deux défauts qui tuaient SI-1 : échappement dans un nom d'outil ; porte de copie entraînée là où le proposeur ne l'interroge pas | **trouvés et corrigés** | 30 malformées sur 30 ; logit de la porte +9,32 → −1,16, banc du solveur 1,0 → 0,0 | 39 amend. 1 |
 
 H23 est celle qui compte pour le but. **Proposer va plus loin que le générateur** sur un
@@ -136,7 +138,8 @@ L'auto-amélioration se mesure par trois courbes, tour après tour, à compute c
 
 1. le gain sur le banc du générateur (le programme 2 l'a : +0,256 en cinq tours) ;
 2. **le gain sur un banc hors distribution**, que le générateur ne produit jamais (docs/33
-   le définit ; jamais mesuré dans une boucle) ;
+   le définit ; **mesuré pour la première fois en SI-1b** : 0,05 → 0,967 sur des opérandes
+   de quatre chiffres, contre 0,217 pour le témoin, une graine, docs/39 §3) ;
 3. **la taille de l'ensemble jamais réussi**, qui doit baisser (18 → 6 sur une graine en
    §16).
 
@@ -148,7 +151,10 @@ retiré. Chaque fois qu'une courbe s'aplatit, le dépôt a nommé le mur. Aujour
 | **Amorçage** : il faut déjà réussir parfois | `calc` passe de 0 à 100 % entre 40/80 et 100/200 (31 §2) | une amorce calibrée famille par famille (fait) |
 | **Vérificateur** : il filtre, il ne contredit pas | graine dure : +0,000 (32 §14) | la reprise qui explore (+0,233, 32 §16) ; un curriculum (non testé) |
 | ~~**Étape absente** : `done` prématuré~~ | 32 §21 | **levé** : c'était un défaut de décodage (H28, 32 §24) |
-| **Proposeur** : il ne démarre pas | 0,40 de validité au mieux (32 §22–23) | le format objet a levé les champs ; reste `ask`, une référence : cibler des clés à l'entraînement du pointeur, l'échelle 375 M |
+| **Proposeur** : il ne démarre pas | 0,40 de validité au mieux pour `lookup` (32 §22–23) | **levé pour `calc`** : un champ unique, 28 valides sur 30 (39 §3) ; pour `lookup`, cibler des clés à l'entraînement du pointeur, l'échelle 375 M |
+| ~~**Récompense du proposeur jamais versée**~~ | SI-1 : 0 proposition résolue à une reprise en 5 tours (39 §3) | **levé** : fins restreintes aux fins de mot sur les reprises (SI-1b, récompense versée aux tours 1–2) |
+| **Le proposeur n'explore pas la structure** | SI-1b : 0 proposition à deux opérateurs sur 135 ; les nombres plafonnent à quatre chiffres, le bord disparaît au tour 3 (39 §3) | une nouveauté tirée sur la structure, pas seulement sur les valeurs (non testé) |
+| **Une reprise n'ajoute pas ce qui manque** | un opérande omis finit sur une fin de mot légitime ; 4 sur 13 rattrapés au mieux (39 amend. 2) | une reprise qui relit le but, ou qui pense avant d'agir (non testé) |
 | **Familles écrites par un humain** | 33 §5 | des tâches-programmes jugées par un exécuteur (non testé) |
 | **Capacité** : 7 M ne boucle pas utilement | 10 §3a | le programme 1 (375 M, A100) |
 
@@ -167,6 +173,10 @@ d'abord un mélangeur à produits de Householder, non implémenté)
    contrôle ≥ 350 M, où la récurrence sert ; à 7 M boucler n'achète rien (2,184 contre
    2,179), un AUROC n'y dirait rien de l'échelle visée. Il tourne en minutes sur le
    checkpoint du programme 1.
+4. ~~SI-1 puis SI-1b, le proposeur `calc`~~ : faits (39 §3). Pour la première fois, une
+   boucle qui propose ses tâches dépasse son générateur, sur l'axe que sa reprise
+   rattrape. Réplication aux graines 1 et 2 en cours (39 amendement 3). Ensuite, le mur de
+   la structure, à pré-enregistrer.
 
 **Sur A100, dès qu'une session est disponible** (docs/34 §9 pour le choix de la carte) :
 
