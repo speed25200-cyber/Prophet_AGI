@@ -1307,3 +1307,30 @@ def test_propose_share_is_read_by_the_round_and_recorded(work, tmp_path):
             base
             + ["--arm", "closed-propose", "--out", str(tmp_path / "d"), "--propose-share", "1.5"]
         )
+
+
+def test_round_lr_decay_scales_each_rounds_training(work, tmp_path, monkeypatch):
+    """docs/39 amendment 9: with --round-lr-decay inv-sqrt, round r trains at the base
+    scale over sqrt(r); constant by default; recorded only when set."""
+    assert closed_loop.round_lr_scale(0.25, 1) == 0.25 == closed_loop.round_lr_scale(0.25, 4)
+    assert closed_loop.round_lr_scale(0.25, 4, "inv-sqrt") == 0.125
+    assert abs(closed_loop.round_lr_scale(0.3, 9, "inv-sqrt") - 0.1) < 1e-12
+    with pytest.raises(ValueError):
+        closed_loop.round_lr_scale(0.25, 2, "linear")
+    scales = []
+    real = closed_loop.train_rows
+
+    def spy(*a, **kw):
+        scales.append(kw.get("lr_scale", 1.0))
+        return real(*a, **kw)
+
+    monkeypatch.setattr(closed_loop, "train_rows", spy)
+    out = tmp_path / "decay"
+    run(work, out, "oracle", rounds=2, lr_scale=0.5, round_lr_decay="inv-sqrt")
+    assert json.loads((out / "protocol.json").read_text())["round_lr_decay"] == "inv-sqrt"
+    assert scales[-2:] == [0.5, 0.5 / 2**0.5]
+    scales.clear()
+    plain = tmp_path / "plain"
+    run(work, plain, "oracle", rounds=2, lr_scale=0.5)
+    assert "round_lr_decay" not in json.loads((plain / "protocol.json").read_text())
+    assert scales[-2:] == [0.5, 0.5]

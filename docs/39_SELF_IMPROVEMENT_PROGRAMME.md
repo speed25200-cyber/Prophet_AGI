@@ -791,3 +791,33 @@ planning d'apprentissage complet, avec échauffement et pic (`train_rows` : « a
 schedule each call »). Une dérive qui s'accumule à chaque pic en serait la signature. Un
 taux qui décroît d'un tour à l'autre (apprentissage continu) est la variable à tester
 avant de conclure que seule une mémoire peut tenir la langue.
+
+## Amendement 9 — 2026-09-24 : SI-8c, pré-enregistrée — un taux qui décroît d'un tour à l'autre
+
+**L'hypothèse** (suggérée par SI-8a et SI-8b, §3) : l'oubli d'une boucle longue accélère
+parce que chaque tour relance un planning complet, avec un pic constant. Un modèle de
+langue continuellement ré-entraîné au même taux dérive un peu plus à chaque pic.
+
+**Une option nouvelle**, lue par le code et testée : `--round-lr-decay inv-sqrt`
+(`round_lr_scale`). Le tour *r* s'entraîne à l'échelle de base divisée par √*r* : ×1 au
+tour 1, ×0,5 au tour 4, ×0,32 au tour 10. Elle n'entre dans `protocol.json` que si elle
+est posée. L'amorce n'est pas touchée.
+
+**SI-8c.** Recette de SI-8a, graine 0, plafond 8, rejeu 0,5, 10 tours, bancs à chaque
+tour. La seule variable est `--round-lr-decay inv-sqrt`. Les témoins sont SI-8a graine 0 :
+plafond 8 pour l'oubli, plafond 4 pour la marche.
+
+| | Critère |
+|---|---|
+| **F** | ΔBPB au tour 10 ≤ +0,185 (la moitié de SI-8a) |
+| **S1′** | cinq chiffres au tour 10 contre le plafond 4 de SI-8a, intervalle bootstrap excluant zéro |
+| rapporté | la courbe ΔBPB, et l'accroissement par tour des tours 6 à 10 comparé à SI-8a ; la validité ; les bancs |
+
+**Lecture pré-écrite.**
+- **F et S1′ passent** : la dérive venait de la relance du pic. Un taux décroissant tient
+  la langue sans perdre la marche, et il entre dans la recette des boucles longues.
+- **F passe, S1′ échoue** : le taux décroissant fige la boucle en même temps que la
+  langue.
+- **F échoue** : ni la proportion (SI-8b) ni le taux ne tiennent la langue. L'argument
+  pour une mémoire hors gradient (R03, SI-6) est alors celui des données, et plus
+  seulement celui d'une intuition.

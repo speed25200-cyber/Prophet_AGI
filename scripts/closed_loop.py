@@ -721,6 +721,21 @@ def device_protocol(device: str) -> dict[str, str]:
     return {"device": device, "device_name": torch.cuda.get_device_name(0)}
 
 
+ROUND_LR_DECAYS = ("none", "inv-sqrt")
+
+
+def round_lr_scale(base: float, round_index: int, decay: str = "none") -> float:
+    """The per-round learning-rate scale: ``base`` every round (``"none"``), or ``base``
+    divided by the square root of the round (``"inv-sqrt"``, docs/39 amendment 9). Each
+    round restarts a full schedule, warm-up and peak; with a constant peak, the drift of
+    the language accelerates round after round (SI-8a, SI-8b)."""
+    if decay == "none":
+        return base
+    if decay == "inv-sqrt":
+        return base / max(round_index, 1) ** 0.5
+    raise ValueError(f"unknown round learning-rate decay {decay!r}")
+
+
 SATURATED = 0.95
 """A family that starts at or above this cannot gain: it is judged on what it keeps
 (docs/31 amendment 20)."""
@@ -931,6 +946,13 @@ def main(argv: list[str] | None = None) -> int:
         + " (docs/39 amendment 5)",
     )
     ap.add_argument(
+        "--round-lr-decay",
+        choices=ROUND_LR_DECAYS,
+        default="none",
+        help="per-round learning-rate scale: constant, or divided by sqrt(round) "
+        "(docs/39 amendment 9)",
+    )
+    ap.add_argument(
         "--propose-share",
         type=float,
         default=0.0,
@@ -1064,6 +1086,8 @@ def main(argv: list[str] | None = None) -> int:
         protocol["calc_max_digits"] = args.calc_max_digits
     if extra_benches:
         protocol["extra_bench"] = list(extra_benches)
+    if args.round_lr_decay != "none":
+        protocol["round_lr_decay"] = args.round_lr_decay
     if args.propose_share:
         if (
             args.arm != "closed-propose"
@@ -1500,7 +1524,7 @@ def main(argv: list[str] | None = None) -> int:
                     replay_fraction=args.replay_fraction,
                     checkpoint_dir=args.out / "scratch",
                     seed=args.seed * 1_000 + r,
-                    lr_scale=args.lr_scale,
+                    lr_scale=round_lr_scale(args.lr_scale, r, args.round_lr_decay),
                     device=args.device,
                     replay_names=replay_names,
                     share_rows=share_rows,
