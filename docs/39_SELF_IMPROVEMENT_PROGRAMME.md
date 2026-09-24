@@ -899,3 +899,29 @@ avec la recette entière :
   malgré le plafond relevé. On le nomme graine par graine.
 - **V ou F échoue** : deux éléments se gênent (la part fixe et le taux décroissant). On
   les teste en factoriel avant l'A100.
+
+**Observation en cours de SI-8d (2026-09-24), avant tout résultat : un mur (e), les
+propositions qui s'emballent.** À la graine 0, la validité tombe à 53, puis 21 sur 120
+aux tours 5 et 6. Toutes les propositions malformées ont la même forme : un nombre qui ne
+s'arrête plus (`"915 * 10888388856589868969666848688498856796889978665598..."`), jusqu'à
+épuiser le budget de 160 jetons du span.
+
+Relu dans les runs précédents, ce phénomène était déjà là : toutes les malformées de SI-8a
+(plafond 4 et 8) et de SI-8c sont des emballements. Leur nombre croît avec les tours :
+
+| run | malformées par tour, tours 1 → 10 (toutes des emballements) |
+|---|---|
+| SI-8a plafond 4 | 5 · 16 · 2 · 8 · 4 · 7 · 20 · 12 · 3 · 6 |
+| SI-8a plafond 8 | 5 · 9 · 11 · 16 · 34 · 18 · 12 · 25 · 34 · 3 |
+| SI-8c | 5 · 9 · 19 · 29 · 23 · 27 · 57 · 34 · 28 · 25 |
+| SI-8d, graine 0 | 5 · 1 · 25 · 19 · 66 · **99** |
+
+**La cause** : la grammaire dit viable tout préfixe de chiffres, alors que les règles
+refusent au-delà du plafond. Récompensé pour des nombres plus longs, le proposeur allonge
+sans fin, et le décodeur le suit jusqu'au bout du budget. C'est le principe « viable doit
+vouloir dire complétable » (défauts 22 et 24), appliqué à la **validité** : un préfixe
+qui ne peut plus donner une proposition valide ne devrait pas être viable.
+
+Le correctif (les règles de proposition connues de la grammaire) attendra la fin de
+SI-8d. La chaîne relance Python pour chaque graine, et modifier le code maintenant
+changerait le protocole pré-enregistré au milieu de l'expérience.
