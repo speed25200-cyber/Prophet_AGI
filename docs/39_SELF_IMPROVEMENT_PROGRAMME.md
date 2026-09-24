@@ -821,3 +821,45 @@ plafond 8 pour l'oubli, plafond 4 pour la marche.
 - **F échoue** : ni la proportion (SI-8b) ni le taux ne tiennent la langue. L'argument
   pour une mémoire hors gradient (R03, SI-6) est alors celui des données, et plus
   seulement celui d'une intuition.
+
+### SI-8c, 2026-09-24 (amendement 9) — **F et S1′ passent** : c'est la relance du pic qui usait la langue
+
+Graine 0, plafond 8, rejeu 0,5, `--round-lr-decay inv-sqrt`, 10 tours. Environ 2 h 15 de
+CPU (3 088 s comptées). Le tour 1, à l'échelle pleine, reproduit SI-8a au chiffre près
+(0,917 ; 0,617 ; 0,483 ; 12 promues).
+
+| | SI-8a plafond 8 (taux constant) | SI-8b (rejeu 0,75) | **SI-8c (taux ÷ √r)** |
+|---|---|---|---|
+| ΔBPB, tours 1 → 10 | −0,010 … **+0,371** | −0,020 … +0,276 | −0,010 ; +0,004 ; +0,013 ; +0,024 ; +0,039 ; +0,055 ; +0,073 ; +0,089 ; +0,108 ; **+0,125** |
+| accroissement par tour, tours 6 à 10 | 0,047 ; 0,043 ; 0,064 ; 0,052 ; 0,073 (**accélère**) | 0,036 → 0,054 | **0,016 ; 0,018 ; 0,016 ; 0,019 ; 0,017** (constant) |
+| cinq chiffres au tour 10 | 0,683 | 0,733 | 0,733 |
+| six chiffres au tour 10 | 0,367 | 0,150 | 0,367 |
+| validité, pire tour | 0,66 | **0,0** (4 tours) | 0,52 |
+| trois opérandes au tour 10 | 0,700 | 0,600 | 0,683 |
+
+| | Critère | Mesure | Verdict |
+|---|---|---|---|
+| **F** | ΔBPB au tour 10 ≤ +0,185 | **+0,125** (−66 %) | **passe** |
+| **S1′** | cinq chiffres contre le plafond 4 de SI-8a | **+0,417** [+0,267 ; +0,567] | **passe** |
+| rapporté | six chiffres contre le plafond 4 | +0,133 [+0,033 ; +0,250] | |
+| rapporté | contre SI-8a plafond 8 : 4, 5 et 6 chiffres | −0,017 ; +0,050 ; 0,000, intervalles incluant zéro | la montée est intacte |
+
+Le banc du générateur reste ≥ 0,983 à chaque tour.
+
+**La lecture pré-écrite qui s'applique** : la dérive venait de la relance du pic. Un taux
+qui décroît tient la langue sans perdre la marche, et il entre dans la recette des
+boucles longues. La mémoire (SI-6) reste utile, mais ce n'était pas elle qui manquait
+d'abord.
+
+**Ce qui reste.** L'oubli ne s'annule pas : +0,017 bit/octet par tour, constant sur les
+tours 6 à 10. À ce rythme, cent tours coûteraient +1,7. C'est encore un mur pour une
+boucle vraiment sans fin, mais il est linéaire, lent et mesuré, au lieu d'accélérer.
+
+**La recette des boucles longues à ce point**, chaque élément validé par une mesure :
+- fins de mot sur les reprises (amendement 2) ;
+- 120 propositions par tour (amendement 4) ;
+- plafond des règles relevé (amendement 5) ;
+- part fixe de 0,2 pour les propositions (amendement 7) ;
+- taux ÷ √r d'un tour à l'autre (amendement 9).
+
+La part fixe et le taux décroissant n'ont jamais tourné ensemble.
