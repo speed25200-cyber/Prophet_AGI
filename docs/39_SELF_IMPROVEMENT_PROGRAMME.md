@@ -749,3 +749,45 @@ Le témoin est SI-8a graine 0 : plafond 8 pour l'oubli, plafond 4 pour la marche
   compromis est à régler, ou il faut une mémoire hors gradient (SI-6).
 - **F échoue** : même à 0,75, l'oubli d'une boucle longue n'est pas une affaire de
   proportion. C'est l'argument pour la mémoire (R03, SI-6) sur A100.
+
+### SI-8b, 2026-09-24 (amendement 8) — **F échoue, S1′ passe** : le rejeu ne tient pas la langue d'une boucle longue
+
+Graine 0, plafond 8, 10 tours, rejeu 0,75. Environ 2 h 15 de CPU (2 751 s comptées). Un
+redémarrage du conteneur au tour 1 a été repris depuis le checkpoint du tour 0, avec 136
+entrées orphelines écartées (défaut 20 de CLAUDE.md, qui a joué son rôle).
+
+ΔBPB, tour par tour :
+
+| tour | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SI-8a, plafond 8 (rejeu 0,5) | −0,010 | +0,011 | +0,028 | +0,062 | +0,092 | +0,139 | +0,182 | +0,246 | +0,298 | +0,371 |
+| SI-8a, plafond 4 (rejeu 0,5) | −0,010 | +0,006 | +0,026 | +0,066 | +0,098 | +0,146 | +0,197 | +0,252 | +0,312 | +0,377 |
+| **SI-8b (rejeu 0,75)** | −0,020 | −0,015 | +0,003 | +0,025 | +0,054 | +0,090 | +0,132 | +0,174 | +0,222 | **+0,276** |
+
+| | Critère | Mesure | Verdict |
+|---|---|---|---|
+| **F** | ΔBPB au tour 10 ≤ +0,185 | **+0,276** (−26 % seulement) | **échoue** |
+| **S1′** | cinq chiffres au tour 10 contre le plafond 4 de SI-8a | **+0,417** [+0,267 ; +0,550] | passe |
+
+Rapporté aussi :
+- contre SI-8a plafond 8 : quatre chiffres −0,100 [−0,183 ; −0,033], six chiffres −0,217
+  [−0,350 ; −0,083] ;
+- trois opérandes : 0,783 → 0,600 ;
+- validité par tour : 0,87 ; 0,99 ; 1,0 ; 0,97 ; 0,87 ; **0,0** ; 0,70 ; **0,0 ; 0,0 ;
+  0,0**.
+
+**La lecture pré-écrite qui s'applique** : même à 0,75, l'oubli d'une boucle longue n'est
+pas une affaire de proportion. C'est l'argument pour la mémoire (R03, SI-6) sur A100.
+
+**Ce que le rejeu coûte, en plus.** Il dilue les propositions dans le flux, et le
+proposeur oublie à nouveau son format (quatre tours à 0 valide). C'est le mécanisme
+établi par SI-1d, qui n'était pas actif ici (une variable à la fois). La montée ralentit
+aussi : moins de propositions longues, six chiffres en recul.
+
+**Une hypothèse que les courbes suggèrent, non testée.** Dans les trois runs, l'oubli
+**accélère** avec les tours : environ +0,03 par tour au début, +0,05 à +0,07 à la fin. Il
+est le même avec ou sans propositions au-delà (plafond 4 ou 8). Or chaque tour relance un
+planning d'apprentissage complet, avec échauffement et pic (`train_rows` : « a fresh
+schedule each call »). Une dérive qui s'accumule à chaque pic en serait la signature. Un
+taux qui décroît d'un tour à l'autre (apprentissage continu) est la variable à tester
+avant de conclure que seule une mémoire peut tenir la langue.

@@ -126,6 +126,8 @@ banc hors de sa distribution. Sans elle, proposer n'est qu'un générateur plus 
 |---|---|---|---|
 | Un affinage agentique sans rejeu détruit la langue | **établi** | 2,18 → **7,36** bit/octet (un modèle vierge : 4,35) ; avec rejeu 2,61 mais succès 15 %/25 % | 10 §2 |
 | Avec rejeu 0,5, l'oubli croît avec la longueur de la boucle | **observé** (SI-8a graine 0, les deux bras) | ΔBPB +0,10 en 5 tours, **+0,37 en 10 tours** ; le mur d'une boucle longue | 39 §3 |
+| SI-8b : un rejeu de 0,75 tient la langue sur 10 tours | **réfuté** | ΔBPB +0,276 au lieu de +0,371 (−26 %), la dérive accélère toujours ; il dilue les propositions (4 tours à 0 valide) | 39 §3 |
+| L'oubli vient de la relance d'un planning complet à chaque tour | **ouvert** (suggéré par la courbe convexe) | un taux qui décroît d'un tour à l'autre, à tester avant la mémoire | 39 §3 |
 | Porter l'état entre épisodes aide | **réfuté** sans entraînement dédié | 57,5 % → **0 %** au banc, poids gelés | CLAUDE.md (tableau des défauts) |
 | Mémoire à deux niveaux, écriture « sommeil » sans gradient (R03, E2) | **ouvert** | ≈ 5 h + évaluations ; 20 h financées | 07, 06 |
 | Distiller dans les poids (W3), ratio σ transfert / rappel | **non testé** | W3-E0 à E6 : 13,5 A100-h | W3 §7 |
