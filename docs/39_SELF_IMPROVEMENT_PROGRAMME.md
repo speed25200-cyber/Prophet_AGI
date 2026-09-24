@@ -863,3 +863,39 @@ boucle vraiment sans fin, mais il est linéaire, lent et mesuré, au lieu d'acc�
 - taux ÷ √r d'un tour à l'autre (amendement 9).
 
 La part fixe et le taux décroissant n'ont jamais tourné ensemble.
+
+## Amendement 10 — 2026-09-24 : SI-8d, pré-enregistrée — la recette entière, à trois graines
+
+**La question.** Les cinq éléments de la recette ont chacun été mesurés seuls. Tiennent-ils
+ensemble, et la boucle démarre-t-elle **à chaque graine** ? La dépendance à la graine est
+restée le point faible (réplication, SI-1c).
+
+**SI-8d.** Pour les graines 0, 1 et 2, 10 tours chacune, sur les amorces déjà calibrées,
+avec la recette entière :
+- `--copy-end-boundaries explore` ;
+- `--propose-n 120` ;
+- `--calc-max-digits 8` ;
+- `--propose-share 0.2` ;
+- `--round-lr-decay inv-sqrt` ;
+- rejeu 0,5 ;
+- bancs à 4, 5 et 6 chiffres à chaque tour.
+
+**Critères, à chaque graine** :
+
+| | Critère |
+|---|---|
+| **V** | au moins 0,5 de propositions valides à chaque tour |
+| **F** | ΔBPB au tour 10 ≤ +0,185 |
+| **M** | au moins une proposition promue a un entier de plus de quatre chiffres |
+| **G** (la marche) | cinq chiffres, du tour 0 au tour 10 : gain apparié, intervalle excluant zéro, gain ≥ +0,30 |
+| rapporté | à la graine 0, la différence avec le plafond 4 de SI-8a ; les bancs et les longueurs promues, tour par tour ; le compute |
+
+**La recette réussit si V, F, M et G passent à chacune des trois graines.**
+
+**Lecture pré-écrite.**
+- **Tout passe partout** : la recette tient ensemble et ne dépend plus de la graine à
+  7 M. Elle est celle de la boucle à 375 M.
+- **Une graine échoue sur M** : le mur (a), la rareté des nouvelles rattrapables, reste
+  malgré le plafond relevé. On le nomme graine par graine.
+- **V ou F échoue** : deux éléments se gênent (la part fixe et le taux décroissant). On
+  les teste en factoriel avant l'A100.
